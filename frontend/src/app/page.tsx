@@ -1689,19 +1689,27 @@ export default function Home() {
                         {/* Attachment preview if present */}
                         {m.attachment && (m.attachment.url || m.attachment.name) && (
                           <div className="mb-1">
-                            {m.attachment.mime && m.attachment.mime.startsWith('image/') && m.attachment.url ? (
-                              <img
-                                src={m.attachment.url}
-                                alt={m.attachment.name || 'image'}
-                                className="block h-auto max-w-[min(100%,240px)] md:max-w-[min(100%,360px)] object-contain rounded border border-white/10 cursor-zoom-in hover:opacity-90 transition"
-                                onClick={(e)=>{ e.stopPropagation(); openImageAt(m.attachment!.url!); }}
-                              />
-                            ) : (
-                              <a href={m.attachment.url || '#'} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-blue-300 hover:text-blue-200 underline">
-                                <svg xmlns='http://www.w3.org/2000/svg' className='h-4 w-4' viewBox='0 0 24 24' fill='currentColor'><path d='M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z'/><path d='M14 2v6h6'/></svg>
-                                <span className="truncate max-w-[200px]">{m.attachment.name || 'مرفق'}</span>
-                              </a>
-                            )}
+                            {(() => {
+                              const url = m.attachment.url || '';
+                              const mime = m.attachment.mime || '';
+                              const isImage = (mime.startsWith('image/')) || /\.(png|jpe?g|gif|webp|bmp|svg)(?:[?#].*)?$/i.test(url);
+                              if (isImage && url) {
+                                return (
+                                  <img
+                                    src={url}
+                                    alt={m.attachment.name || 'image'}
+                                    className="block h-auto max-w-[min(100%,240px)] md:max-w-[min(100%,360px)] object-contain rounded border border-white/10 cursor-zoom-in hover:opacity-90 transition"
+                                    onClick={(e)=>{ e.stopPropagation(); openImageAt(url); }}
+                                  />
+                                );
+                              }
+                              return (
+                                <a href={url || '#'} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-blue-300 hover:text-blue-200 underline">
+                                  <svg xmlns='http://www.w3.org/2000/svg' className='h-4 w-4' viewBox='0 0 24 24' fill='currentColor'><path d='M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z'/><path d='M14 2v6h6'/></svg>
+                                  <span className="truncate max-w-[200px]">{m.attachment.name || 'مرفق'}</span>
+                                </a>
+                              );
+                            })()}
                           </div>
                         )}
                         {/* Text content */}
@@ -1727,8 +1735,8 @@ export default function Home() {
             </div>
             {/* شريط سفلي موحد (معاملات + رسالة) */}
             <div
-              className="border-t border-chatDivider bg-chatPanel fixed bottom-0 left-0 right-0 md:sticky md:left-auto md:right-auto md:bottom-0 z-50 flex flex-col gap-2 p-3"
-              style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+              className="border-t border-chatDivider bg-chatPanel fixed bottom-0 left-0 right-0 md:sticky md:left-auto md:right-auto md:bottom-0 z-50 flex flex-col gap-2 p-3 mb-1"
+              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 4px)' }}
             >
               {(!isAdminLike(profile?.username) && !isAdminLike(currentContact?.otherUsername)) && (
                 <div className="flex flex-wrap items-center gap-2 text-xs md:text-sm">
@@ -1763,8 +1771,9 @@ export default function Home() {
                           <path className='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z'></path>
                         </svg>
                       ) : (
-                        <svg xmlns='http://www.w3.org/2000/svg' className='h-5 w-5' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
-                          <path d='M12 4v16m8-8H4' />
+                        <svg xmlns='http://www.w3.org/2000/svg' className='h-4 w-4' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
+                          <polygon points='22 2 15 22 11 13 2 9 22 2'></polygon>
+                          <line x1='22' y1='2' x2='11' y2='13'></line>
                         </svg>
                       )}
                     </button>
