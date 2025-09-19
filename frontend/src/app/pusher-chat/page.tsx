@@ -1,8 +1,6 @@
 "use client";
 import { useEffect, useState } from 'react';
-import Pusher from 'pusher-js';
-
-Pusher.logToConsole = false;
+// import Pusher from 'pusher-js';
 
 export default function PusherChatPage() {
   const [messages, setMessages] = useState<{username:string; message:string; conversationId?:number|null}[]>([]);
@@ -11,17 +9,35 @@ export default function PusherChatPage() {
   const [conversationId, setConversationId] = useState<number|''>('');
 
   useEffect(() => {
-    const key = process.env.NEXT_PUBLIC_PUSHER_KEY as string;
-    const cluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER as string;
-    const convId = typeof conversationId === 'number' ? conversationId : null;
-    const channelName = convId ? `chat_${convId}` : 'chat';
-
-    const pusher = new Pusher(key, { cluster });
-    const channel = pusher.subscribe(channelName);
-    channel.bind('message', (data: any) => {
-      setMessages(prev => [...prev, { username: data?.username, message: data?.message, conversationId: data?.conversationId ?? null }]);
-    });
-    return () => { channel.unbind_all(); channel.unsubscribe(); pusher.disconnect(); };
+    const key = (process.env.NEXT_PUBLIC_PUSHER_KEY as string) || '';
+    const cluster = (process.env.NEXT_PUBLIC_PUSHER_CLUSTER as string) || '';
+    if (!key || !cluster) {
+      setMessages(prev => [{ username: 'system', message: 'Pusher disabled (missing key/cluster)', conversationId: null }, ...prev]);
+      return;
+    }
+    let pusher: any = null;
+    let channel: any = null;
+    let channelName: string | null = null;
+    (async () => {
+      try {
+        const mod = await import('pusher-js');
+        const Pusher = (mod as any).default || (mod as any);
+        pusher = new Pusher(key, { cluster });
+        const convId = typeof conversationId === 'number' ? conversationId : null;
+        channelName = convId ? `chat_${convId}` : 'chat';
+        channel = pusher.subscribe(channelName);
+        channel.bind('message', (data: any) => {
+          setMessages(prev => [...prev, { username: data?.username, message: data?.message, conversationId: data?.conversationId ?? null }]);
+        });
+      } catch (e) {
+        setMessages(prev => [{ username: 'system', message: `Pusher init failed: ${e}`, conversationId: null }, ...prev]);
+      }
+    })();
+    return () => {
+      try { channel && channel.unbind_all && channel.unbind_all(); } catch {}
+      try { channelName && pusher && pusher.unsubscribe && pusher.unsubscribe(channelName); } catch {}
+      try { pusher && pusher.disconnect && pusher.disconnect(); } catch {}
+    };
   }, [conversationId]);
 
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';

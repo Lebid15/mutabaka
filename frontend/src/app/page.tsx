@@ -11,7 +11,8 @@ const fallbackCurrencies = [
 
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import Pusher from 'pusher-js';
+// Pusher is optional; we lazy-load and only initialize if keys exist
+// import Pusher from 'pusher-js';
 import { apiClient } from '../lib/api';
 import { DEBUG_FORCE_APPEND } from '../lib/config';
 import { attachPrimingListeners, tryPlayMessageSound, setRuntimeSoundUrl } from '../lib/sound';
@@ -716,11 +717,15 @@ export default function Home() {
   // Per-user Pusher notifications: update previews and unread counters and react to user profile updates
   useEffect(() => {
     if (!isAuthed || !profile?.id) return;
-    const key = process.env.NEXT_PUBLIC_PUSHER_KEY as string;
-    const cluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER as string;
-    const pusher = new Pusher(key, { cluster });
+    const key = (process.env.NEXT_PUBLIC_PUSHER_KEY as string) || '';
+    const cluster = (process.env.NEXT_PUBLIC_PUSHER_CLUSTER as string) || '';
+    if (!key || !cluster) {
+      try { console.warn('[Pusher] Disabled: missing NEXT_PUBLIC_PUSHER_KEY/CLUSTER'); } catch {}
+      return;
+    }
+    let pusher: any = null;
+    let channel: any = null;
     const channelName = `user_${profile.id}`;
-    const channel = pusher.subscribe(channelName);
     let soundPromptShown = false;
     const onNotify = (data: any) => {
       try {
@@ -774,11 +779,21 @@ export default function Home() {
         }
       } catch {}
     };
-    channel.bind('notify', onNotify);
+    (async () => {
+      try {
+        const mod = await import('pusher-js');
+        const Pusher = (mod as any).default || (mod as any);
+        pusher = new Pusher(key, { cluster });
+        channel = pusher.subscribe(channelName);
+        channel.bind('notify', onNotify);
+      } catch (e) {
+        try { console.error('[Pusher] init failed', e); } catch {}
+      }
+    })();
     return () => {
-      try { channel.unbind('notify', onNotify); } catch {}
-      try { pusher.unsubscribe(channelName); } catch {}
-      try { pusher.disconnect(); } catch {}
+      try { channel && channel.unbind('notify', onNotify); } catch {}
+      try { pusher && pusher.unsubscribe && pusher.unsubscribe(channelName); } catch {}
+      try { pusher && pusher.disconnect && pusher.disconnect(); } catch {}
     };
   }, [isAuthed, profile?.id, selectedConversationId, mobileView, contacts]);
 
@@ -1032,11 +1047,15 @@ export default function Home() {
   // استقبال الرسائل عبر Pusher بدل WebSocket الداخلي
   useEffect(() => {
     if (!isAuthed || !selectedConversationId) return;
-    const key = process.env.NEXT_PUBLIC_PUSHER_KEY as string;
-    const cluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER as string;
+    const key = (process.env.NEXT_PUBLIC_PUSHER_KEY as string) || '';
+    const cluster = (process.env.NEXT_PUBLIC_PUSHER_CLUSTER as string) || '';
+    if (!key || !cluster) {
+      try { console.warn('[Pusher] Chat feed disabled: missing NEXT_PUBLIC_PUSHER_*'); } catch {}
+      return;
+    }
+    let pusher: any = null;
+    let channel: any = null;
     const channelName = `chat_${selectedConversationId}`;
-    const pusher = new Pusher(key, { cluster });
-    const channel = pusher.subscribe(channelName);
     let soundPromptShown = false;
     const onMessage = (data: any) => {
       try {
@@ -1117,11 +1136,21 @@ export default function Home() {
         }
       } catch {}
     };
-    channel.bind('message', onMessage);
+    (async () => {
+      try {
+        const mod = await import('pusher-js');
+        const Pusher = (mod as any).default || (mod as any);
+        pusher = new Pusher(key, { cluster });
+        channel = pusher.subscribe(channelName);
+        channel.bind('message', onMessage);
+      } catch (e) {
+        try { console.error('[Pusher] chat init failed', e); } catch {}
+      }
+    })();
     return () => {
-      try { channel.unbind('message', onMessage); } catch {}
-      try { pusher.unsubscribe(channelName); } catch {}
-      try { pusher.disconnect(); } catch {}
+      try { channel && channel.unbind('message', onMessage); } catch {}
+      try { pusher && pusher.unsubscribe && pusher.unsubscribe(channelName); } catch {}
+      try { pusher && pusher.disconnect && pusher.disconnect(); } catch {}
     };
   }, [isAuthed, selectedConversationId, profile?.username, contacts]);
   
