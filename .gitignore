@@ -16,6 +16,13 @@ media/
 # Local db
 backend/db.sqlite3
 
+# Env files (keep examples tracked)
+.env
+.env.local
+backend/.env
+frontend/.env.local
+!*.example
+
 # Node
 node_modules/
 .next/
