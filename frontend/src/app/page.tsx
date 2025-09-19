@@ -1642,7 +1642,13 @@ export default function Home() {
                 </div>
               </div>
             )}
-            <div ref={scrollRef} className="flex-1 p-6 pb-40 flex flex-col gap-2 overflow-y-auto bg-[#0f1f25] custom-scrollbar" dir="rtl" id="chatScrollRegion">{/* pb-40 لترك مساحة أسفل للأشرطة المثبتة */}
+            <div
+              ref={scrollRef}
+              className="flex-1 p-6 pb-48 md:pb-40 flex flex-col gap-2 overflow-y-auto bg-[#0f1f25] custom-scrollbar"
+              dir="rtl"
+              id="chatScrollRegion"
+              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12rem)' }}
+            >{/* pb-48 للجوال كي لا يغطي الشريط الثابت الرسائل + safe-area */}
               {(function(){
                 const parts: React.ReactNode[] = [];
                 let lastDayKey = '';
@@ -1717,7 +1723,10 @@ export default function Home() {
               )}
             </div>
             {/* شريط سفلي موحد (معاملات + رسالة) */}
-            <div className="border-t border-chatDivider bg-chatPanel sticky bottom-0 z-10 flex flex-col gap-2 p-3">
+            <div
+              className="border-t border-chatDivider bg-chatPanel fixed bottom-0 left-0 right-0 md:sticky md:left-auto md:right-auto md:bottom-0 z-50 flex flex-col gap-2 p-3"
+              style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+            >
               {(!isAdminLike(profile?.username) && !isAdminLike(currentContact?.otherUsername)) && (
                 <div className="flex flex-wrap items-center gap-2 text-xs md:text-sm">
                   <button onClick={()=>setTxPanelCollapsed(c=>!c)} className="bg-gray-700 hover:bg-gray-600 text-white rounded px-2 py-1" title={txPanelCollapsed? 'إظهار المعاملات':'إخفاء المعاملات'}>
