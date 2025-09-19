@@ -385,7 +385,10 @@ export default function Home() {
             for (let i = copy.length - 1; i >= 0; i--) {
               const m = copy[i];
               if (m.client_id === clientId) {
-                copy[i] = { ...m, id: res.id, status: 'delivered', attachment: { url: res.attachment_url || null, name: res.attachment_name, mime: res.attachment_mime, size: res.attachment_size } } as any;
+                // Patch attachment info and, if no caption was provided, remove the provisional filename text
+                const patched: any = { ...m, id: res.id, status: 'delivered', attachment: { url: res.attachment_url || null, name: res.attachment_name, mime: res.attachment_mime, size: res.attachment_size } };
+                if (!caption) patched.text = '';
+                copy[i] = patched;
                 break;
               }
             }
@@ -1204,6 +1207,35 @@ export default function Home() {
                 } : undefined,
               } as any,
             ]));
+            // If the incoming message has an attachment without a URL yet, fetch it immediately and patch in place
+            if (payload.attachment && !payload.attachment.url && typeof payload.id === 'number') {
+              (async () => {
+                try {
+                  const since = Math.max(0, payload.id - 1);
+                  const data = await apiClient.getMessagesSince(selectedConversationId, since, 5);
+                  const arr = Array.isArray(data) ? data : (Array.isArray((data as any)?.results) ? (data as any).results : []);
+                  const found = arr.find((it: any) => it && it.id === payload.id);
+                  if (found) {
+                    setMessages(prev => prev.map(m => {
+                      if (m.id !== payload.id) return m;
+                      const updated: any = { ...m };
+                      // Update text from backend (empty if no caption)
+                      updated.text = (found.body ?? '').toString();
+                      // Update attachment fields
+                      if (found.attachment_url || found.attachment_name) {
+                        updated.attachment = {
+                          url: found.attachment_url || null,
+                          name: found.attachment_name || undefined,
+                          mime: found.attachment_mime || undefined,
+                          size: typeof found.attachment_size === 'number' ? found.attachment_size : undefined,
+                        };
+                      }
+                      return updated;
+                    }));
+                  }
+                } catch {}
+              })();
+            }
             const isViewing = selectedConversationId === payload.conversation_id && mobileView === 'chat';
             if (!isViewing) {
               setUnreadByConv(prev => ({ ...prev, [payload.conversation_id]: (prev[payload.conversation_id] || 0) + 1 }));
