@@ -9,6 +9,9 @@ from .forms import CustomUserChangeForm, CustomUserCreationForm
 class CustomUserAdmin(UserAdmin):
     form = CustomUserChangeForm
     add_form = CustomUserCreationForm
+    # Use the same (Jazzmin-tab aware) template for add view as change view
+    # so that fieldset tabs behave correctly on the Add page.
+    add_form_template = 'admin/change_form.html'
     list_display = ("id", "username", "display_name", "email", "first_name", "last_name", "country_code", "phone", "created_by")
     list_display_links = ("username",)
     list_editable = ("display_name",)
