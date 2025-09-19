@@ -1,13 +1,27 @@
 // Centralized configuration for API & WebSocket endpoints
 // Uses environment variables (NEXT_PUBLIC_*) so it works on client side.
-// Fallbacks keep development simple.
+// In production, if envs are missing, infer from window.location so deploys behind proxies just work.
 
-const API_HOST = process.env.NEXT_PUBLIC_API_HOST || '127.0.0.1';
-const API_PORT = process.env.NEXT_PUBLIC_API_PORT || '8000';
-const API_PROTO = process.env.NEXT_PUBLIC_API_PROTO || 'http';
-const WS_PROTO = process.env.NEXT_PUBLIC_WS_PROTO || (API_PROTO === 'https' ? 'wss' : 'ws');
+function inferFromWindow() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const proto = window.location.protocol.replace(':',''); // http or https
+    const host = window.location.hostname; // domain or IP
+    let port = window.location.port; // may be '' for default
+    // Normalize default ports
+    if (!port) port = proto === 'https' ? '443' : '80';
+    const wsProto = proto === 'https' ? 'wss' : 'ws';
+    return { proto, host, port, wsProto };
+  } catch { return null; }
+}
 
-export const API_BASE = `${API_PROTO}://${API_HOST}:${API_PORT}`.replace(/:\d+$/,(m)=> m===':80'? '' : m); // naive normalization
+const inferred = inferFromWindow();
+const API_PROTO = process.env.NEXT_PUBLIC_API_PROTO || inferred?.proto || 'http';
+const API_HOST = process.env.NEXT_PUBLIC_API_HOST || inferred?.host || '127.0.0.1';
+const API_PORT = process.env.NEXT_PUBLIC_API_PORT || inferred?.port || '8000';
+const WS_PROTO = process.env.NEXT_PUBLIC_WS_PROTO || inferred?.wsProto || (API_PROTO === 'https' ? 'wss' : 'ws');
+
+export const API_BASE = `${API_PROTO}://${API_HOST}:${API_PORT}`.replace(/:\d+$/,(m)=> (m===':80' && API_PROTO==='http') || (m===':443' && API_PROTO==='https') ? '' : m);
 export const WS_BASE = `${WS_PROTO}://${API_HOST}:${API_PORT}`;
 
 export const WS_PATH_CONVERSATION = (id:number) => `/ws/conversations/${id}/`;
