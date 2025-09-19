@@ -49,3 +49,6 @@ export const defaultReconnect: Required<ReconnectOptions> = {
 
 // Web Push public key (VAPID)
 export const VAPID_PUBLIC_KEY = (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '').trim();
+
+// Service worker version for cache-busting. Bump this to force clients to fetch a fresh sw.js
+export const SW_VERSION = (process.env.NEXT_PUBLIC_SW_VERSION || '').trim();

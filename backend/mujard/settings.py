@@ -216,9 +216,14 @@ SIMPLE_JWT = {
 }
 
 # Web Push (VAPID) configuration – values should be set in environment or .env for local dev
+# Accept VAPID_CONTACT_EMAIL or VAPID_SUBJECT (common naming) for the subject claim
 VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY')
 VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY')
-VAPID_CONTACT_EMAIL = os.environ.get('VAPID_CONTACT_EMAIL', 'mailto:admin@example.com')
+VAPID_CONTACT_EMAIL = (
+    os.environ.get('VAPID_CONTACT_EMAIL')
+    or os.environ.get('VAPID_SUBJECT')
+    or 'mailto:admin@example.com'
+)
 
 # Jazzmin basic customization (adjust freely later)
 JAZZMIN_SETTINGS = {

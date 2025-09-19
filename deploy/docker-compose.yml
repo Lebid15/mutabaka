@@ -20,6 +20,11 @@ services:
     env_file: .env
     environment:
       - DJANGO_SETTINGS_MODULE=mujard.settings
+      # Web Push VAPID configuration (ensure these exist in your .env or CI/CD secrets)
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
+      - VAPID_CONTACT_EMAIL=${VAPID_CONTACT_EMAIL}
+      - VAPID_SUBJECT=${VAPID_SUBJECT}
     volumes:
       - ${SERVER_PATH}/media:/app/media
       - ${SERVER_PATH}/static:/app/static
@@ -33,6 +38,9 @@ services:
   frontend:
     image: ${REGISTRY}/${IMAGE_NAME}-frontend:latest
     env_file: .env
+    # Note: The Next.js client needs the public VAPID key at build time. If your CI builds the image,
+    # ensure it passes --build-arg NEXT_PUBLIC_VAPID_PUBLIC_KEY=$VAPID_PUBLIC_KEY to the frontend Docker build.
+    # At runtime, these NEXT_PUBLIC_* vars are not used by Next.js unless using runtime config.
     expose:
       - "3000"
     restart: unless-stopped

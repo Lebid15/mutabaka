@@ -525,7 +525,10 @@ class APIClient {
     if (typeof window === 'undefined') return null;
     if (!('serviceWorker' in navigator)) return null;
     try {
-      const reg = await navigator.serviceWorker.register('/sw.js');
+      // Use versioned URL to force updates when SW_VERSION changes
+      const { SW_VERSION } = await import('./config');
+      const suffix = SW_VERSION ? `?v=${encodeURIComponent(SW_VERSION)}` : '';
+      const reg = await navigator.serviceWorker.register(`/sw.js${suffix}`);
       return reg;
     } catch (e) { return null; }
   }
