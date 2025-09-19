@@ -1,0 +1,29 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block content %}
+  <h1 class="page-title">{{ title }}</h1>
+  <div class="module">
+    <form method="post" style="margin-top: 1rem;">
+      {% csrf_token %}
+      <fieldset class="module aligned">
+        <div class="form-row">
+          {{ form.body.errors }}
+          <label>{{ form.body.label }}:</label>
+          {{ form.body }}
+        </div>
+      </fieldset>
+      <div class="submit-row">
+        <input type="submit" name="apply" value="إرسال" class="default" />
+      </div>
+    </form>
+    <div style="margin-top:1rem;">
+      <strong>المحادثات المحددة:</strong>
+      <ul>
+        {% for c in conversations %}
+          <li>#{{ c.id }} — {{ c.user_a }} × {{ c.user_b }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+{% endblock %}

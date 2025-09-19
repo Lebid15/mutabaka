@@ -1,0 +1,29 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Install backend deps + migrate",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"python -m pip install --upgrade pip ; pip install -r \"c:\\Users\\LABED HAJ ALAYA\\Desktop\\mutabaka\\backend\\requirements.txt\" ; cd \"c:\\Users\\LABED HAJ ALAYA\\Desktop\\mutabaka\\backend\" ; python manage.py migrate"
+			]
+		},
+		{
+			"label": "Make migrations for subscriptions",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"cd \"c:\\Users\\LABED HAJ ALAYA\\Desktop\\mutabaka\\backend\" ; python manage.py makemigrations subscriptions"
+			]
+		}
+	]
+}
