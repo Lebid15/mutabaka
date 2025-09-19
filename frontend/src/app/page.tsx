@@ -1693,7 +1693,7 @@ export default function Home() {
                               <img
                                 src={m.attachment.url}
                                 alt={m.attachment.name || 'image'}
-                                className="block h-auto max-w-[240px] md:max-w-[360px] object-contain rounded border border-white/10 cursor-zoom-in hover:opacity-90 transition"
+                                className="block h-auto max-w-[min(100%,240px)] md:max-w-[min(100%,360px)] object-contain rounded border border-white/10 cursor-zoom-in hover:opacity-90 transition"
                                 onClick={(e)=>{ e.stopPropagation(); openImageAt(m.attachment!.url!); }}
                               />
                             ) : (
