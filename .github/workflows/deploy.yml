@@ -67,15 +67,39 @@ jobs:
           HOST: ${{ secrets.HOST }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
 
-      - name: Validate required inputs
+      - name: Validate required inputs (diagnostic)
+        shell: bash
         run: |
-          [ -z "${HOST}" ] && { echo "HOST missing"; exit 1; }
-          [ -z "${USER}" ] && { echo "USER missing"; exit 1; }
-          [ -z "${SERVER_PATH}" ] && { echo "SERVER_PATH missing"; exit 1; }
+          set -e -o pipefail
+          set -x
+          # Print boolean presence flags and lengths (secrets are masked by GitHub to ***)
+          echo "HAS_HOST=$([[ -n "${HOST:-}" ]] && echo 1 || echo 0)"
+          echo "HAS_USER=$([[ -n "${USER:-}" ]] && echo 1 || echo 0)"
+          echo "HAS_SERVER_PATH=$([[ -n "${SERVER_PATH:-}" ]] && echo 1 || echo 0)"
+          echo "HAS_REGISTRY_USERNAME=$([[ -n "${REGISTRY_USERNAME:-}" ]] && echo 1 || echo 0)"
+          echo "HAS_REGISTRY_TOKEN=$([[ -n "${REGISTRY_TOKEN:-}" ]] && echo 1 || echo 0)"
+          echo "HAS_SSH_PORT=$([[ -n "${SSH_PORT:-}" ]] && echo 1 || echo 0)"  # optional
+          printf 'LEN_HOST=%s\n' "${#HOST}" || true
+          printf 'LEN_USER=%s\n' "${#USER}" || true
+          printf 'LEN_SERVER_PATH=%s\n' "${#SERVER_PATH}" || true
+          # Dump a sample of env for context (values of secrets are masked automatically)
+          env | sort | sed -n '1,40p'
+
+          FAIL=0
+          if [ -z "${HOST:-}" ]; then echo "HOST missing"; FAIL=1; fi
+          if [ -z "${USER:-}" ]; then echo "USER missing"; FAIL=1; fi
+          if [ -z "${SERVER_PATH:-}" ]; then echo "SERVER_PATH missing"; FAIL=1; fi
+          # These are required for docker login later
+          if [ -z "${REGISTRY_USERNAME:-}" ]; then echo "REGISTRY_USERNAME missing"; FAIL=1; fi
+          if [ -z "${REGISTRY_TOKEN:-}" ]; then echo "REGISTRY_TOKEN missing"; FAIL=1; fi
+          if [ "$FAIL" -ne 0 ]; then exit 1; fi
         env:
           HOST: ${{ secrets.HOST }}
           USER: ${{ secrets.USER }}
           SERVER_PATH: ${{ secrets.SERVER_PATH }}
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
 
       - name: Upload deploy artifacts (compose, nginx, env example)
         run: |
