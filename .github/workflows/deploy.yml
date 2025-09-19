@@ -67,8 +67,21 @@ jobs:
           HOST: ${{ secrets.HOST }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
 
+      - name: Validate required inputs
+        run: |
+          [ -z "${HOST}" ] && { echo "HOST missing"; exit 1; }
+          [ -z "${USER}" ] && { echo "USER missing"; exit 1; }
+          [ -z "${SERVER_PATH}" ] && { echo "SERVER_PATH missing"; exit 1; }
+        env:
+          HOST: ${{ secrets.HOST }}
+          USER: ${{ secrets.USER }}
+          SERVER_PATH: ${{ secrets.SERVER_PATH }}
+
       - name: Upload deploy artifacts (compose, nginx, env example)
         run: |
+          [ -z "${HOST}" ] && { echo "HOST missing"; exit 1; }
+          [ -z "${USER}" ] && { echo "USER missing"; exit 1; }
+          [ -z "${SERVER_PATH}" ] && { echo "SERVER_PATH missing"; exit 1; }
           SSH_CMD="ssh"
           if [ -n "${SSH_PORT}" ] && [[ "${SSH_PORT}" =~ ^[0-9]+$ ]]; then SSH_CMD="ssh -p ${SSH_PORT}"; fi
           rsync -avz -e "$SSH_CMD" ./deploy/ ${USER}@${HOST}:${SERVER_PATH}/
@@ -84,17 +97,18 @@ jobs:
           if [ -n "${SSH_PORT}" ] && [[ "${SSH_PORT}" =~ ^[0-9]+$ ]]; then PORT_FLAG="-p ${SSH_PORT}"; fi
           ssh ${PORT_FLAG} ${USER}@${HOST} << EOF
           set -e
-          cd ${SERVER_PATH}
+          mkdir -p "${SERVER_PATH}"
+          cd "${SERVER_PATH}"
           mkdir -p media static data
           # Preserve existing .env; create from example if missing
-          if [ ! -f .env ]; then cp .env.example .env; fi
+          if [ ! -f .env ] && [ -f .env.example ]; then cp .env.example .env; fi
           # Ensure REGISTRY and IMAGE_NAME are set correctly
-          if grep -q '^REGISTRY=' .env; then
+          if grep -q '^REGISTRY=' .env 2>/dev/null; then
             sed -i 's|^REGISTRY=.*|REGISTRY=${REGISTRY}|' .env
           else
             echo "REGISTRY=${REGISTRY}" >> .env
           fi
-          if grep -q '^IMAGE_NAME=' .env; then
+          if grep -q '^IMAGE_NAME=' .env 2>/dev/null; then
             sed -i 's|^IMAGE_NAME=.*|IMAGE_NAME=${IMAGE_NAME}|' .env
           else
             echo "IMAGE_NAME=${IMAGE_NAME}" >> .env
