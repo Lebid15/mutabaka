@@ -1704,6 +1704,16 @@ export default function Home() {
                             )}
                           </div>
                         )}
+                        {/* Text content */}
+                        {content && (
+                          <div className="text-[13px] leading-6">
+                            {showHighlight ? highlightText(content, searchQuery) : content}
+                          </div>
+                        )}
+                        {/* Timestamp */}
+                        <div className="mt-1 text-[10px] text-gray-300 flex items-center justify-end" dir="ltr">
+                          {formatTimeShort(m.created_at)}
+                        </div>
                       </div>
                     );
                   }
