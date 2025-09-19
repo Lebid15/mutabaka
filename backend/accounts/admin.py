@@ -14,25 +14,38 @@ class CustomUserAdmin(UserAdmin):
     list_editable = ("display_name",)
     search_fields = ("username", "display_name", "email", "phone", "first_name", "last_name")
     list_filter = ("country_code",)
+    # Change view fieldsets (displayed when editing an existing user)
+    # Each field should appear only once across tabs.
     fieldsets = (
-        (None, {"fields": ("username", "password", "email")}),
-    (_("Personal info"), {"fields": ("first_name", "last_name", "display_name", "country_code", "phone", "logo")}),
-        (_("Permissions"), {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
-        (_("Important dates"), {"fields": ("last_login", "date_joined", "last_password_change")}),
+        # General tab
+        (None, {"classes": ("tab", "general"), "fields": ("username", "password", "email")}),
+        (_("Personal info"), {"classes": ("tab", "general"), "fields": ("first_name", "last_name", "display_name", "country_code", "phone", "logo")}),
+        # Permissions tab
+        (_("Permissions"), {"classes": ("tab", "permissions"), "fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
+        # Keep dates outside tabs (or make them collapsed)
+        (_("Important dates"), {"classes": ("collapse",), "fields": ("last_login", "date_joined", "last_password_change")}),
     )
     readonly_fields = ("last_password_change",)
     actions = ["reset_totp"]
 
-    # Ensure the Add User form has our display_name and other fields
+    # Add view fieldsets (displayed when creating a new user)
+    # Use password1/password2 here and DO NOT repeat fields across tabs.
     add_fieldsets = (
-        (None, {
-            'classes': ('wide',),
+        (_('General'), {
+            'classes': ('wide', 'tab', 'general'),
             'fields': ('username', 'password1', 'password2', 'email', 'first_name', 'last_name', 'display_name', 'country_code', 'phone', 'logo'),
         }),
         (_('Permissions'), {
+            'classes': ('tab', 'permissions'),
             'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions'),
         }),
     )
+
+    def get_fieldsets(self, request, obj=None):
+        """Ensure add view uses add_fieldsets only, avoiding duplication with fieldsets when Jazzmin tabs are enabled."""
+        if obj is None:
+            return self.add_fieldsets
+        return super().get_fieldsets(request, obj)
 
     def save_form(self, request, form, change):
         # Ensure display_name is carried from the form into the instance
