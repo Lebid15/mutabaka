@@ -363,6 +363,8 @@ export default function Home() {
       }
     })();
     try { attachPrimingListeners(); } catch {}
+    // Load admin-configured notification sound (if any) so the whole app uses it, not only Settings page
+    (async () => { try { const url = await apiClient.getNotificationSoundUrl(); if (url) setRuntimeSoundUrl(url); } catch {} })();
   }, []);
   // إرسال عبر Pusher HTTP API
   const sendChat = async () => {
