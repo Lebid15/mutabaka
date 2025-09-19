@@ -140,6 +140,17 @@ jobs:
           else
             echo "IMAGE_NAME=${IMAGE_NAME}" >> .env
           fi
+          # Pin image tags to this commit for deterministic pulls
+          if grep -q '^BACKEND_TAG=' .env 2>/dev/null; then
+            sed -i 's|^BACKEND_TAG=.*|BACKEND_TAG=${GITHUB_SHA}|' .env
+          else
+            echo "BACKEND_TAG=${GITHUB_SHA}" >> .env
+          fi
+          if grep -q '^FRONTEND_TAG=' .env 2>/dev/null; then
+            sed -i 's|^FRONTEND_TAG=.*|FRONTEND_TAG=${GITHUB_SHA}|' .env
+          else
+            echo "FRONTEND_TAG=${GITHUB_SHA}" >> .env
+          fi
           # Login to registry in case it is private
           echo ${REGISTRY_TOKEN} | docker login ghcr.io -u ${REGISTRY_USERNAME} --password-stdin
           docker compose pull
@@ -153,5 +164,6 @@ jobs:
           SERVER_PATH: ${{ secrets.SERVER_PATH }}
           REGISTRY: ${{ env.REGISTRY }}
           IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          GITHUB_SHA: ${{ github.sha }}
           REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
           REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}

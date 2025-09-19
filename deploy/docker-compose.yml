@@ -16,7 +16,7 @@ services:
     restart: unless-stopped
 
   backend:
-    image: ${REGISTRY}/${IMAGE_NAME}-backend:latest
+    image: ${REGISTRY}/${IMAGE_NAME}-backend:${BACKEND_TAG:-latest}
     env_file: .env
     environment:
       - DJANGO_SETTINGS_MODULE=mujard.settings
@@ -36,7 +36,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ${REGISTRY}/${IMAGE_NAME}-frontend:latest
+    image: ${REGISTRY}/${IMAGE_NAME}-frontend:${FRONTEND_TAG:-latest}
     env_file: .env
     # Note: The Next.js client needs the public VAPID key at build time. If your CI builds the image,
     # ensure it passes --build-arg NEXT_PUBLIC_VAPID_PUBLIC_KEY=$VAPID_PUBLIC_KEY to the frontend Docker build.
