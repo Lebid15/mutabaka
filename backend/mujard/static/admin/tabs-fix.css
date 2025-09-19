@@ -1,0 +1,3 @@
+/* Ensure Jazzmin tab panes hide correctly even if bootstrap tab CSS is not applied for some reason */
+.tab-content > .tab-pane { display: none; }
+.tab-content > .tab-pane.active.show { display: block; }
