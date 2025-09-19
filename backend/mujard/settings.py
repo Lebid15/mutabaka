@@ -30,7 +30,13 @@ SECRET_KEY = 'django-insecure-ng4-da2*l&g*kz(gf=ytjyts5x-@6bu%=op-i+xxhobkv(w*2y
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ["127.0.0.1", "localhost", "testserver"]
+ALLOWED_HOSTS = [
+    "127.0.0.1",
+    "localhost",
+    "testserver",
+    "mutabaka.com",
+    "www.mutabaka.com",
+]
 
 
 # Application definition
