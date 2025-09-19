@@ -1,6 +1,11 @@
 "use client";
 // أزلنا CSS module (page.module.css) لأن التصميم الآن يعتمد كلياً على Tailwind
 
+import { useEffect, useState, useRef, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
+import { apiClient } from '../lib/api';
+import { attachPrimingListeners, tryPlayMessageSound, setRuntimeSoundUrl } from '../lib/sound';
+
 // قائمة احتياطية (fallback) في حال تأخر تحميل العملات من الخادم
 const fallbackCurrencies = [
   { name: "دولار", code: "USD", symbol: "$" },
@@ -8,14 +13,6 @@ const fallbackCurrencies = [
   { name: "تركي", code: "TRY", symbol: "₺" },
   { name: "سوري", code: "SYP", symbol: "SP" },
 ];
-
-import { useEffect, useState, useRef, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
-// Pusher is optional; we lazy-load and only initialize if keys exist
-// import Pusher from 'pusher-js';
-import { apiClient } from '../lib/api';
-import { DEBUG_FORCE_APPEND } from '../lib/config';
-import { attachPrimingListeners, tryPlayMessageSound, setRuntimeSoundUrl } from '../lib/sound';
 // تنسيق وقت قصير مثل واتساب (ساعة:دقيقة)
 const formatTimeShort = (iso?: string) => {
   try {
@@ -76,7 +73,6 @@ function parseTransaction(body: string): null | { direction: 'lna'|'lkm'; amount
 function TransactionBubble({ sender, tx, createdAt }: { sender: 'current'|'other'; tx: { direction: 'lna'|'lkm'; amount: number; currency: string; symbol: string; note?: string }, createdAt?: string }) {
   const isMine = sender === 'current';
   const sign = tx.direction === 'lna' ? '+' : '-';
-  // انعكاس الجهة والألوان: رسائلي يمين بخلفية المستلم السابقة، ورسائل الطرف الآخر يسار بخلفية المرسل السابقة
   const wrapClass = isMine
     ? 'self-start bg-bubbleReceived text-gray-100 px-3 py-2 rounded-2xl rounded-bl-sm w-11/12 text-xs shadow'
     : 'self-end bg-bubbleSent text-white px-3 py-2 rounded-2xl rounded-br-sm w-11/12 text-xs shadow';
@@ -147,7 +143,6 @@ function SidebarHeaderAddContact({ onAdded, existingUsernames, currentUsername, 
       setQuery('');
       setResults([]);
     } catch (e:any) {
-      // رسائل ودية للقيود المرتبطة بالاشتراك
       const msg = (e && e.message) ? e.message : 'تعذر إنشاء المحادثة';
       setError(msg);
       if (e && (e.status === 403 || e.status === 401)) {
@@ -238,131 +233,132 @@ function SidebarHeaderAddContact({ onAdded, existingUsernames, currentUsername, 
   );
 }
 
+function PasswordField({ value, onChange }: { value: string; onChange: (v:string)=>void }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        value={value}
+        onChange={e=>onChange(e.target.value)}
+        placeholder="كلمة المرور"
+        type={show ? 'text' : 'password'}
+        className="w-full pr-9 pl-3 bg-chatBg border border-chatDivider rounded py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-600"
+      />
+      <button
+        type="button"
+        onClick={()=>setShow(s=>!s)}
+        className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-200"
+        aria-label={show ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
+      >
+        {show ? (
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+            <path d="M12 5c-7.633 0-11 7-11 7s3.367 7 11 7 11-7 11-7-3.367-7-11-7zm0 12a5 5 0 1 1 .001-10.001A5 5 0 0 1 12 17z"/>
+          </svg>
+        ) : (
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+            <path d="M3.707 2.293 2.293 3.707 6.3 7.714A12.62 12.62 0 0 0 1 12s3.367 7 11 7c2.226 0 4.154-.55 5.77-1.375l3.23 3.23 1.414-1.414-18.707-18.148zM12 17c-2.761 0-5-2.239-5-5 0-.633.12-1.237.336-1.791l6.455 6.455c-.554.216-1.158.336-1.791.336zm8.664-3.209c.22-.57.336-1.174.336-1.791 0-1.003-.222-1.954-.619-2.814-1.71-3.68-5.132-5.186-8.381-5.186-1.422 0-2.746.274-3.934.75l1.57 1.57c.786-.24 1.623-.37 2.492-.37 4.239 0 7.495 3.399 8.036 6.007-.19.828-.543 1.601-1.058 2.308l1.558 1.526z"/>
+          </svg>
+        )}
+      </button>
+    </div>
+  );
+}
+
 export default function Home() {
   const scrollRef = useRef<HTMLDivElement|null>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  function PasswordField({ value, onChange }: { value: string; onChange: (v:string)=>void }) {
-    const [show, setShow] = useState(false);
-    return (
-      <div className="relative">
-        <input
-          value={value}
-          onChange={e=>onChange(e.target.value)}
-          placeholder="كلمة المرور"
-          type={show ? 'text' : 'password'}
-          className="w-full pr-9 pl-3 bg-chatBg border border-chatDivider rounded py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-600"
-        />
-        <button
-          type="button"
-          onClick={()=>setShow(s=>!s)}
-          className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-200"
-          aria-label={show ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
-        >
-          {show ? (
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-              <path d="M12 5c-7.633 0-11 7-11 7s3.367 7 11 7 11-7 11-7-3.367-7-11-7zm0 12a5 5 0 1 1 .001-10.001A5 5 0 0 1 12 17z"/>
-            </svg>
-          ) : (
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-              <path d="M3.707 2.293 2.293 3.707 6.3 7.714A12.62 12.62 0 0 0 1 12s3.367 7 11 7c2.226 0 4.154-.55 5.77-1.375l3.23 3.23 1.414-1.414-18.707-18.148zM12 17c-2.761 0-5-2.239-5-5 0-.633.12-1.237.336-1.791l6.455 6.455c-.554.216-1.158.336-1.791.336zm8.664-3.209c.22-.57.336-1.174.336-1.791 0-1.003-.222-1.954-.619-2.814-1.71-3.68-5.132-5.186-8.381-5.186-1.422 0-2.746.274-3.934.75l1.57 1.57c.786-.24 1.623-.37 2.492-.37 4.239 0 7.495 3.399 8.036 6.007-.19.828-.543 1.601-1.058 2.308l1.558 1.526z"/>
-            </svg>
-          )}
-        </button>
-      </div>
-    );
-  }
+  // قائمة العملات من الخادم
+  const [serverCurrencies, setServerCurrencies] = useState<any[]>([]);
+  // Auth/session
+  const [isAuthed, setIsAuthed] = useState(false);
+  const [authStatus, setAuthStatus] = useState<'checking'|'authed'|'anon'>('checking');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
-  const [isAuthed, setIsAuthed] = useState(false);
-  const [authStatus, setAuthStatus] = useState<'checking'|'authed'|'guest'>('checking');
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string|null>(null);
+  const [loading, setLoading] = useState(false);
+  const [profile, setProfile] = useState<any|null>(null);
+
+  // Contacts & conversations
+  const [contacts, setContacts] = useState<any[]>([]);
   const [conversations, setConversations] = useState<any[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<number|null>(null);
-  const [contacts, setContacts] = useState<any[]>([]); // derived from conversations (other participant)
-  const [pinnedIds, setPinnedIds] = useState<number[]>(() => {
-    if (typeof window === 'undefined') return [];
-    try { return JSON.parse(localStorage.getItem('pinned_conversations_v1')||'[]')||[]; } catch { return []; }
-  });
-  useEffect(()=>{ try { localStorage.setItem('pinned_conversations_v1', JSON.stringify(pinnedIds)); } catch {} }, [pinnedIds]);
-  // meta لتحديد user_a/user_b لكل محادثة لعكس الإشارة حسب منظور المستخدم الحالي
-  const [convMetaById, setConvMetaById] = useState<Record<number, { user_a_id:number; user_b_id:number }>>({});
-  const [profile, setProfile] = useState<any|null>(null);
   const [openMenuForConvId, setOpenMenuForConvId] = useState<number|null>(null);
   const [muteBusyFor, setMuteBusyFor] = useState<number|null>(null);
-  const [confirmDialog, setConfirmDialog] = useState<null | { open: boolean; kind: 'clear'|'delete'; convId: number }>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{ open: true; kind: 'delete'|'clear'; convId: number } | null>(null);
+  const [pinnedIds, setPinnedIds] = useState<number[]>([]);
   const [showSubBanner, setShowSubBanner] = useState(false);
   const [subBannerMsg, setSubBannerMsg] = useState<string|undefined>(undefined);
+  const [convMetaById, setConvMetaById] = useState<Record<number, { user_a_id:number; user_b_id:number }>>({});
 
-  // أرصدة المحافظ (مثال مبدئي: هذا المستخدم هو "أحمد" ويرى أرصدته بالموجب وما يستلمه بالموجب وما يرسله بالسالب)
-  const initialWallet = { USD: 0, TRY: 0, EUR: 0, SYP: 0 };
-  const [wallet, setWallet] = useState(initialWallet); // محفظة المستخدم الحالي (عامة - سنوقف استخدامها للعرض)
-  const [counterpartyWallet, setCounterpartyWallet] = useState(initialWallet); // محفظة الطرف الآخر (عامة - سنوقف استخدامها للعرض)
-  // محفظة زوجية لكل محادثة: balances من منظور المستخدم الحالي فقط
-  // pairWalletByConv[conversationId] = { [currencyCode]: number }
-  const [pairWalletByConv, setPairWalletByConv] = useState<Record<number, Record<string, number>>>({});
-  const getPairWallet = (convId: number | null) => {
-    if (!convId) return initialWallet;
-    return pairWalletByConv[convId] || initialWallet;
-  };
-  const [selectedCurrency, setSelectedCurrency] = useState('USD');
-  const [amountOurs, setAmountOurs] = useState(''); // لنا
-  const [amountYours, setAmountYours] = useState(''); // لكم
-  type ChatItem = { id?: number; client_id?: string; sender: 'current' | 'other'; text: string; created_at?: string; kind?: 'text'|'transaction'|'system'; tx?: { direction: 'lna'|'lkm'; amount: number; currency: string; symbol: string; note?: string }; status?: 'sending'|'sent'|'delivered'|'read'; attachment?: { url?: string|null; name?: string; mime?: string; size?: number|null } };
-  const [messages, setMessages] = useState<ChatItem[]>([]);
-  const lastMessageIdRef = useRef<number>(0);
-  const lastReadAnnounceRef = useRef<number>(0);
-  const [ws, setWs] = useState<WebSocket|null>(null);
+  // Chat state
+  const [messages, setMessages] = useState<any[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [loadingSummary, setLoadingSummary] = useState(false);
   const [summary, setSummary] = useState<any[]|null>(null);
   const [netBalance, setNetBalance] = useState<any[]|null>(null);
-  const [loadingSummary, setLoadingSummary] = useState(false);
+  const [ws, setWs] = useState<WebSocket|null>(null);
   const [outgoingText, setOutgoingText] = useState('');
+  const [pendingAttachment, setPendingAttachment] = useState<File|null>(null);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const typingTimeoutRef = useRef<any>(null);
   const lastTypingSentRef = useRef<number>(0);
-  const [txLoading, setTxLoading] = useState(false); // حالة إرسال المعاملة
-  const [toasts, setToasts] = useState<{ id:number; type:'success'|'error'|'info'; msg:string }[]>([]);
-  const pushToast = (t: {type:'success'|'error'|'info'; msg:string}) => {
-    const id = Date.now() + Math.random();
+  const lastMessageIdRef = useRef<number>(0);
+
+  // Toasts
+  type Toast = { id: string; type: 'success'|'error'|'info'; msg: string };
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const pushToast = (t: { type: 'success'|'error'|'info'; msg: string }) => {
+    const id = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
     setToasts(prev => [...prev, { id, ...t }]);
-    setTimeout(()=> setToasts(prev => prev.filter(x=>x.id!==id)), 3500);
+    setTimeout(() => setToasts(prev => prev.filter(x => x.id !== id)), 4000);
   };
-  // مرفق قيد الانتظار (يُرسل فقط عند الضغط على سهم الإرسال)
-  const [pendingAttachment, setPendingAttachment] = useState<File|null>(null);
-  const [pendingCurrencies, setPendingCurrencies] = useState<Set<string>>(new Set());
-  // Lightbox للصور
+
+  // Lightbox for image attachments
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const buildImageItems = () => {
-    try {
-      return messages
-        .filter(m => !!m.attachment && !!m.attachment.url && !!m.attachment.mime && m.attachment.mime.startsWith('image/'))
-        .map(m => ({ url: m.attachment!.url as string, name: m.attachment!.name || 'image' }));
-    } catch { return [] as {url:string; name?:string}[]; }
+    const items: { url: string; name?: string }[] = [];
+    messages.forEach(m => {
+      if (m.attachment && m.attachment.url && m.attachment.mime && m.attachment.mime.startsWith('image/')) {
+        items.push({ url: m.attachment.url, name: m.attachment.name });
+      }
+    });
+    return items;
   };
   const openImageAt = (url: string) => {
     const items = buildImageItems();
     const idx = items.findIndex(it => it.url === url);
-    if (idx >= 0) { setLightboxIndex(idx); setLightboxOpen(true); }
+    setLightboxIndex(idx === -1 ? 0 : idx);
+    setLightboxOpen(true);
   };
+
+  // Transactions UI state
+  const [selectedCurrency, setSelectedCurrency] = useState('USD');
+  const [amountOurs, setAmountOurs] = useState('');
+  const [amountYours, setAmountYours] = useState('');
+  const [txLoading, setTxLoading] = useState(false);
+  const [pendingCurrencies, setPendingCurrencies] = useState<Set<string>>(new Set());
+
+  // Initial auth check and audio priming
   useEffect(() => {
-    if (!lightboxOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setLightboxOpen(false); }
-      if (e.key === 'ArrowLeft') { setLightboxIndex(i => Math.max(0, i - 1)); }
-      if (e.key === 'ArrowRight') { const len = buildImageItems().length; setLightboxIndex(i => Math.min(len - 1, i + 1)); }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [lightboxOpen, messages]);
-  // قائمة العملات من الخادم
-  const [serverCurrencies, setServerCurrencies] = useState<any[]>([]);
-  const currencyIdByCode = (code:string) => {
-    const c = serverCurrencies.find((c:any)=> c.code === code);
-    return c ? c.id : undefined;
-  };
-  const currencyCodes = () => (serverCurrencies.length ? serverCurrencies.map((c:any)=>c.code) : Object.keys(initialWallet));
+    (async () => {
+      try {
+        const me = await apiClient.getProfile().catch(() => null);
+        if (me) {
+          setProfile(me);
+          setIsAuthed(true);
+          setAuthStatus('authed');
+        } else {
+          setIsAuthed(false);
+          setAuthStatus('anon');
+        }
+      } catch {
+        setIsAuthed(false);
+        setAuthStatus('anon');
+      }
+    })();
+    try { attachPrimingListeners(); } catch {}
+  }, []);
   // إرسال عبر Pusher HTTP API
   const sendChat = async () => {
     if (!selectedConversationId) return;
@@ -517,6 +513,21 @@ export default function Home() {
       pushToast({ type: 'error', msg: 'تعذر تحديث جهات الاتصال' });
     }
   };
+  // أرصدة المحافظ (مثال مبدئي)
+  const initialWallet = { USD: 0, TRY: 0, EUR: 0, SYP: 0 };
+  const [wallet, setWallet] = useState(initialWallet);
+  const [counterpartyWallet, setCounterpartyWallet] = useState(initialWallet);
+  const [pairWalletByConv, setPairWalletByConv] = useState<Record<number, Record<string, number>>>({});
+  const getPairWallet = (convId: number | null) => {
+    if (!convId) return initialWallet;
+    return pairWalletByConv[convId] || initialWallet;
+  };
+  const currencyIdByCode = (code:string) => {
+    const c = serverCurrencies.find((c:any)=> c.code === code);
+    return c ? c.id : undefined;
+  };
+  const currencyCodes = () => (serverCurrencies.length ? serverCurrencies.map((c:any)=>c.code) : Object.keys(initialWallet));
+
 
   const searchMatches = useMemo(() => {
     const q = searchQuery.trim();
@@ -730,6 +741,16 @@ export default function Home() {
             })();
             return copy;
           });
+          // update unread badge if that conversation is not currently open
+          const convId = Number(data.conversation_id);
+          if (convId) {
+            const isViewing = selectedConversationId === convId && mobileView === 'chat';
+            if (!isViewing) {
+              setUnreadByConv(prev => ({ ...prev, [convId]: (prev[convId] || 0) + (Number(data.unread_count) || 1) }));
+            } else {
+              setUnreadByConv(prev => ({ ...prev, [convId]: 0 }));
+            }
+          }
         }
       } catch {}
     });
@@ -742,199 +763,9 @@ export default function Home() {
       }
     }, 15000);
     return () => { closed = true; clearInterval(hb); sub.close(); };
-  }, [isAuthed, profile?.id]);
+  }, [isAuthed, profile?.id, selectedConversationId, mobileView]);
 
-  // Per-user Pusher notifications: update previews and unread counters and react to user profile updates
-  useEffect(() => {
-    if (!isAuthed || !profile?.id) return;
-    const key = (process.env.NEXT_PUBLIC_PUSHER_KEY as string) || '';
-    const cluster = (process.env.NEXT_PUBLIC_PUSHER_CLUSTER as string) || '';
-    if (!key || !cluster) {
-      try { console.warn('[Pusher] Disabled: missing NEXT_PUBLIC_PUSHER_KEY/CLUSTER'); } catch {}
-      return;
-    }
-    let pusher: any = null;
-    let channel: any = null;
-    const channelName = `user_${profile.id}`;
-    let soundPromptShown = false;
-    const onNotify = (data: any) => {
-      try {
-        if (data?.type === 'user.updated' && data?.user && data.user.id) {
-          const upd = data.user;
-          setContacts(prev => {
-            const copy = prev ? [...prev] : [];
-            for (let i = 0; i < copy.length; i++) {
-              const c = copy[i];
-              // We don't directly store other user id, so infer via username match if available
-              if (c.otherUsername && c.otherUsername === upd.username) {
-                copy[i] = {
-                  ...c,
-                  name: upd.display_name || upd.username || c.name,
-                  avatar: c.avatar?.includes('ui-avatars.com')
-                    ? `https://ui-avatars.com/api/?name=${encodeURIComponent((upd.display_name||upd.username||'U'))}&background=0D8ABC&color=fff`
-                    : c.avatar,
-                };
-              }
-            }
-            return copy;
-          });
-          return; // handled
-        }
-        // default: treat as message notify
-        const convId = Number(data?.conversation_id);
-        if (!convId) return;
-        setContacts(prev => {
-          const copy = prev ? [...prev] : [];
-          const idx = copy.findIndex(c => c.id === convId);
-          if (idx !== -1) {
-            copy[idx] = { ...copy[idx], last_message_preview: data?.preview || copy[idx].last_message_preview, last_message_at: data?.last_message_at || copy[idx].last_message_at };
-          }
-          return copy;
-        });
-        const isViewing = selectedConversationId === convId && mobileView === 'chat';
-        if (!isViewing) {
-          setUnreadByConv(prev => ({ ...prev, [convId]: (prev[convId] || 0) + 1 }));
-          const from = data?.from ? String(data.from) : 'مستخدم';
-          const preview = data?.preview ? String(data.preview) : '';
-          pushToast({ type: 'info', msg: `رسالة جديدة من ${from}${preview ? `: ${preview}` : ''}` });
-          const shouldSound = (typeof document !== 'undefined' && document.hidden) || !isViewing;
-          if (shouldSound) {
-            // Skip sound if this conversation is muted
-            const muted = contacts.some(c => c.id === convId && c.isMuted);
-            if (muted) return;
-            tryPlayMessageSound().then(ok => {
-              if (!ok && !soundPromptShown) { soundPromptShown = true; pushToast({ type: 'info', msg: 'انقر في الصفحة لتفعيل صوت الإشعارات' }); }
-            }).catch(()=>{});
-          }
-        }
-      } catch {}
-    };
-    (async () => {
-      try {
-        const mod = await import('pusher-js');
-        const Pusher = (mod as any).default || (mod as any);
-        pusher = new Pusher(key, { cluster });
-        channel = pusher.subscribe(channelName);
-        channel.bind('notify', onNotify);
-      } catch (e) {
-        try { console.error('[Pusher] init failed', e); } catch {}
-      }
-    })();
-    return () => {
-      try { channel && channel.unbind('notify', onNotify); } catch {}
-      try { pusher && pusher.unsubscribe && pusher.unsubscribe(channelName); } catch {}
-      try { pusher && pusher.disconnect && pusher.disconnect(); } catch {}
-    };
-  }, [isAuthed, profile?.id, selectedConversationId, mobileView, contacts]);
-
-  // استرجاع جلسة مخزنة بمجرد تحميل الصفحة
-  useEffect(() => {
-    // Prime audio playback via first user gesture
-    attachPrimingListeners();
-    // Load runtime sound URL from backend admin (if configured)
-    (async () => {
-      try {
-        const url = await apiClient.getNotificationSoundUrl();
-        if (url) setRuntimeSoundUrl(url);
-      } catch {}
-    })();
-    // عند التحميل نحاول استرجاع الجلسة لمرة واحدة
-    (async () => {
-      if (authStatus !== 'checking') return;
-      if (apiClient.access && apiClient.refresh) {
-        try {
-          const me = await apiClient.getProfile();
-          setProfile(me);
-          setIsAuthed(true);
-          setAuthStatus('authed');
-          return;
-        } catch {
-          // ignore fallthrough to guest
-        }
-      }
-      setAuthStatus('guest');
-    })();
-  }, [authStatus]);
-
-  // جلب العملات مرة واحدة بعد التوثيق
-  useEffect(() => {
-    if (!isAuthed) return;
-    (async () => {
-      try {
-        let data: any[] = [];
-        try {
-          data = await apiClient.getCurrencies();
-        } catch (e:any) {
-          // فشل جلب أولي => إعادة محاولة بعد 600ms
-          await new Promise(r=>setTimeout(r,600));
-          try { data = await apiClient.getCurrencies(); } catch {}
-        }
-        if (!Array.isArray(data)) data = [];
-        if (data.length === 0) {
-          // محاولة bootstrap تلقائية إذا لم يكن لدينا بيانات
-          try {
-            const boot = await apiClient.bootstrapCurrencies();
-            const again = await apiClient.getCurrencies().catch(()=>[]);
-            setServerCurrencies(Array.isArray(again)? again : []);
-            if (!again || (Array.isArray(again) && again.length === 0)) {
-              pushToast({ type: 'error', msg: 'فشل تهيئة العملات – الخادم أعاد قائمة فارغة' });
-            } else if (boot && Array.isArray(again) && again.length) {
-              pushToast({ type: 'success', msg: 'تم إنشاء العملات الافتراضية' });
-            }
-          } catch (e:any) {
-            pushToast({ type: 'error', msg: 'تعذر إنشاء العملات – تحقق من تسجيل الدخول أو الخادم' });
-          }
-        } else {
-          setServerCurrencies(data);
-        }
-      } catch { /* تجاهل نهائي */ }
-    })();
-  }, [isAuthed]);
-
-  // بعد التوثيق: ضمان وجود محادثة مع الأدمن للمستخدمين الجدد، وإظهار شريط الاشتراك عند المنع
-  useEffect(() => {
-    if (!isAuthed || !profile?.id) return;
-    (async () => {
-      try {
-        const res = await apiClient.ensureAdminConversation();
-        if (res && res.created) {
-          try {
-            const convs = await apiClient.listConversations();
-            const convArr = Array.isArray(convs) ? convs : [];
-            setConversations(convArr);
-            const meta: Record<number, { user_a_id:number; user_b_id:number }> = {};
-            for (const c of convArr) {
-              if (c && c.id && c.user_a && c.user_b) meta[c.id] = { user_a_id: c.user_a.id, user_b_id: c.user_b.id };
-            }
-            setConvMetaById(meta);
-            const mapped = convArr.map((c: any) => {
-              const meId = profile?.id;
-              let other = c.user_a;
-              if (meId && c.user_a && c.user_a.id === meId) other = c.user_b; else if (meId && c.user_b && c.user_b.id === meId) other = c.user_a; else if (c.user_b) other = c.user_b;
-              return {
-                id: c.id,
-                otherUserId: other?.id,
-                otherUsername: other?.username,
-                name: other?.display_name || other?.username || other?.email || 'مستخدم',
-                avatar: other?.logo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent((other?.display_name||other?.username||'U'))}&background=0D8ABC&color=fff`,
-                last_message_at: c.last_message_at,
-                last_message_preview: c.last_message_preview,
-                isMuted: !!(c as any).isMuted,
-                mutedUntil: (c as any).mutedUntil ?? null,
-              };
-            });
-            setContacts(mapped);
-          } catch {}
-        }
-      } catch (e:any) {
-        if (e && (e.status === 403 || e.status === 401)) {
-          setSubBannerMsg(e.message || 'يرجى الاشتراك لتفعيل كامل الميزات');
-          setShowSubBanner(true);
-        }
-      }
-    })();
-  }, [isAuthed, profile?.id]);
-
+  // NOTE: Per-user Pusher notifications block removed. Inbox WS already updates previews/unread.
   // منطق إضافة المعاملة: إذا أدخل المستخدم قيمة في حقل "لنا" فهذا يعني أنه استلم (credit) وبالتالي زيادة في محفظته ونقصان عند الطرف الآخر
   // وإذا وضع في "لكم" يعني أنه دفع (debit) فتقل محفظته وتزداد محفظة الطرف الآخر.
   const addTransaction = async () => {
@@ -1288,44 +1119,108 @@ export default function Home() {
     controller.on('message', (ev: MessageEvent) => {
       try {
         const payload = JSON.parse(ev.data);
-        // Debug conversation traffic
-        if (payload?.type) console.debug('[CHAT WS]', payload.type, {
-          type: payload.type,
-          conversation_id: payload.conversation_id,
-          id: payload.id,
-          client_id: payload.client_id,
-          created_at: payload.created_at,
-        });
-        // Ignore payload.type === 'chat.message' since Pusher is the source of truth for messages now.
+        const PUSHER_ENABLED = Boolean(process.env.NEXT_PUBLIC_PUSHER_KEY && process.env.NEXT_PUBLIC_PUSHER_CLUSTER);
+        if (payload?.type) {
+          try { console.debug('[CHAT WS]', payload.type, { conversation_id: payload.conversation_id, id: payload.id, client_id: payload.client_id, created_at: payload.created_at }); } catch {}
+        }
+        // Fallback: if Pusher is not configured, use WS chat.message to update the thread
+        if (payload.type === 'chat.message' && !PUSHER_ENABLED) {
+          const isMine = !!(profile?.username && payload?.sender === profile.username);
+          const txt = (payload?.body ?? '').toString();
+          const tx = parseTransaction(txt);
+          if (isMine) {
+            setMessages(prev => {
+              const copy = [...prev];
+              for (let i = copy.length - 1; i >= 0; i--) {
+                const m = copy[i];
+                if (m.sender === 'current' && m.status === 'sending' && m.text === txt) {
+                  copy[i] = {
+                    ...m,
+                    id: typeof payload.id === 'number' ? payload.id : m.id,
+                    status: 'delivered',
+                    created_at: m.created_at || payload.created_at || new Date().toISOString(),
+                    kind: tx ? 'transaction' : 'text',
+                    tx: tx || undefined,
+                    attachment: payload.attachment ? {
+                      name: payload.attachment.name,
+                      mime: payload.attachment.mime,
+                      size: payload.attachment.size,
+                      url: payload.attachment.url || m.attachment?.url || undefined,
+                    } : m.attachment,
+                  } as any;
+                  return copy;
+                }
+              }
+              return [
+                ...prev,
+                {
+                  sender: 'current',
+                  text: txt,
+                  created_at: payload.created_at || new Date().toISOString(),
+                  kind: tx ? 'transaction' : 'text',
+                  tx: tx || undefined,
+                  status: 'delivered',
+                  id: typeof payload.id === 'number' ? payload.id : undefined,
+                  attachment: payload.attachment ? {
+                    name: payload.attachment.name,
+                    mime: payload.attachment.mime,
+                    size: payload.attachment.size,
+                    url: payload.attachment.url || undefined,
+                  } : undefined,
+                } as any,
+              ];
+            });
+          } else {
+            setMessages(prev => ([
+              ...prev,
+              {
+                sender: 'other',
+                text: txt,
+                created_at: payload.created_at || new Date().toISOString(),
+                kind: tx ? 'transaction' : 'text',
+                tx: tx || undefined,
+                status: 'delivered',
+                id: typeof payload.id === 'number' ? payload.id : undefined,
+                attachment: payload.attachment ? {
+                  name: payload.attachment.name,
+                  mime: payload.attachment.mime,
+                  size: payload.attachment.size,
+                  url: payload.attachment.url || undefined,
+                } : undefined,
+              } as any,
+            ]));
+            const isViewing = selectedConversationId === payload.conversation_id && mobileView === 'chat';
+            if (!isViewing) {
+              setUnreadByConv(prev => ({ ...prev, [payload.conversation_id]: (prev[payload.conversation_id] || 0) + 1 }));
+            } else {
+              setUnreadByConv(prev => ({ ...prev, [payload.conversation_id]: 0 }));
+            }
+          }
+          return;
+        }
         if (payload.type === 'chat.typing') {
-          // إظهار شريط يكتب الآن عندما الطرف الآخر يكتب
           const isMe = payload.user && profile && payload.user === profile.username;
           if (!isMe) {
             setIsOtherTyping(payload.state !== 'stop');
             if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-            if (payload.state !== 'stop') {
-              typingTimeoutRef.current = setTimeout(()=> setIsOtherTyping(false), 3000);
-            }
+            if (payload.state !== 'stop') typingTimeoutRef.current = setTimeout(() => setIsOtherTyping(false), 3000);
           }
         }
         if (payload.type === 'chat.read') {
           const isMe = payload.reader && profile && payload.reader === profile.username;
           if (!isMe) {
             const lastId = Number(payload.last_read_id || 0);
-            if (lastId > 0) {
-              setMessages(prev => prev.map(m => (m.sender === 'current' && (m.id||0) <= lastId) ? { ...m, status: 'read' } : m));
-            }
+            if (lastId > 0) setMessages(prev => prev.map(m => (m.sender === 'current' && (m.id || 0) <= lastId) ? { ...m, status: 'read' } : m));
           }
         }
       } catch {}
     });
--    controller.on('open', () => { /* يمكن عرض حالة متصل */ });
--    controller.on('close', () => { /* يمكن لاحقاً تحديث UI */ });
-+    controller.on('open', () => { setWs(controller.socket || null); });
-+    controller.on('close', () => { setWs(null); });
-+    setWs(controller.socket || null);
-     return () => controller.close();
-   }, [isAuthed, selectedConversationId, profile?.username]);
+    controller.on('open', () => { setWs((controller as any).socket || null); });
+    controller.on('close', () => { setWs(null); });
+    // initialize reference immediately in case 'open' fires very fast
+    setWs((controller as any).socket || null);
+    return () => { try { controller.close(); } catch {} };
+  }, [isAuthed, selectedConversationId, profile?.username, mobileView]);
 
   // Zero-polling: لا يوجد استعلام دوري للرسائل؛ WS هو المصدر الوحيد بعد الجلب الأولي.
 
@@ -1652,6 +1547,9 @@ export default function Home() {
               <img src={currentContact.avatar} alt={currentContact.name} className="w-9 h-9 rounded-full border border-chatDivider" />
               <div className="flex flex-col">
                 <span className="text-sm font-semibold flex items-center gap-1">{currentContact.name} {currentContact.isMuted && <span title="مكتمة">🔕</span>}</span>
+                {isOtherTyping && (
+                  <span className="text-[10px] text-green-300 mt-0.5">يكتب الآن…</span>
+                )}
               </div>
               <div className="ml-auto flex items-center gap-3 text-gray-300">
                 <button onClick={()=>{ setSearchOpen(s=>!s); if (!searchOpen) setTimeout(()=>{ const el = document.getElementById('inchat_search_input'); el && (el as HTMLInputElement).focus(); }, 50); }} className="hover:text-white transition" title="بحث">
@@ -1887,9 +1785,7 @@ export default function Home() {
                    </svg>
                  </button>
                </div>
-               {isOtherTyping && (
-                 <div className="px-2 pt-1 text-[10px] text-gray-300">يكتب الآن…</div>
-               )}
+               {/* typing indicator moved to header under contact name */}
             </div>
             {/* إغلاق الغلاف الخاص بواجهة المحادثة */}
             </div>
