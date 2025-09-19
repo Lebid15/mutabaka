@@ -1,5 +1,5 @@
 {% extends "admin/change_form.html" %}
-{% load i18n %}
+{% load i18n static %}
 
 {# Custom user change form: add an explicit Change Password button since default link not shown with custom admin #}
 
@@ -17,6 +17,11 @@
 {% endblock %}
 
 {# Fallback button above form if theme hides object-tools #}
+{% block extrahead %}
+  {{ block.super }}
+  <script src="{% static 'admin/tabs-fix.js' %}" defer></script>
+{% endblock %}
+
 {% block content %}
   {% if change and original %}
     <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;">

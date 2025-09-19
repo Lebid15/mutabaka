@@ -227,7 +227,8 @@ JAZZMIN_SETTINGS = {
     "site_brand": "Mutabaka",
     "welcome_sign": "مرحباً بك في لوحة التحكم",
     "show_ui_builder": False,
-    "custom_css": "admin/tabs-fix.css",
+    # Use Jazzmin's default styles for tabs; no custom CSS overrides
+    # "custom_css": "admin/tabs-fix.css",
     # Ensure change forms render as tabbed UI (prevents stacked duplicate sections)
     "changeform_format": "horizontal_tabs",
     "changeform_format_overrides": {},

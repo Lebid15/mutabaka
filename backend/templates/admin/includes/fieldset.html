@@ -1,59 +1,26 @@
-{# Override to remove deprecated length_is filter breaking in Django 5 #}
+{# Self-contained fieldset include compatible with Django 5; preserves fieldset.classes #}
 {% load i18n admin_urls static admin_modify %}
 
-{% for fieldset in adminform %}
-  {% if fieldset.name %}
-    <div class="card mb-4">
-      <div class="card-header">
-        <div class="card-title">{{ fieldset.name }}</div>
-      </div>
-      <div class="p-5 card-body">
-  {% else %}
-      <div class="mb-4">
-  {% endif %}
+{# IMPORTANT: This template is included once per fieldset by the parent template.
+	 It must render ONLY the provided 'fieldset' variable, not loop over adminform. #}
 
-    {% for line in fieldset %}
-      {# Compute if single field without using length_is #}
-      {% with line.fields|length as line_count %}
-      <div class="form-group{% if line_count == 1 and line.errors %} errors{% endif %}{% if not line.has_visible_field %} hidden{% endif %}{% for field in line %}{% if field.field.name %} field-{{ field.field.name }}{% endif %}{% endfor %}">
-        <div class="row">
-          {% for field in line %}
-            {# Determine single vs multi field line without using assignment in with #}
-            {% if line_count == 1 %}
-            <label class="col-sm-3 text-left" for="id_{{ field.field.name }}">
-              {{ field.field.label|capfirst }}
-              {% if field.field.field.required %}<span class="text-red">* </span>{% endif %}
-            </label>
-            <div class="col-sm-7{% if field.field.name %} field-{{ field.field.name }}{% endif %}">
-              {% if field.is_readonly %}
-                <div class="readonly">{{ field.contents }}</div>
-              {% else %}
-                {{ field.field }}
-              {% endif %}
-              {% if field.errors %}<div class="help text-red">{{ field.errors }}</div>{% endif %}
-              {% if field.field.help_text %}<div class="help text-muted small">{{ field.field.help_text|safe }}</div>{% endif %}
-            </div>
-            {% else %}
-            <label class="{% if forloop.counter != 1 %}col-auto{% else %}col-sm-3{% endif %} text-left" for="id_{{ field.field.name }}">
-              {{ field.field.label|capfirst }}
-              {% if field.field.field.required %}<span class="text-red">* </span>{% endif %}
-            </label>
-            <div class="col-auto fieldBox{% if field.field.name %} field-{{ field.field.name }}{% endif %}">
-              {% if field.is_readonly %}
-                <div class="readonly">{{ field.contents }}</div>
-              {% else %}
-                {{ field.field }}
-              {% endif %}
-              {% if field.errors %}<div class="help text-red">{{ field.errors }}</div>{% endif %}
-              {% if field.field.help_text %}<div class="help text-muted small">{{ field.field.help_text|safe }}</div>{% endif %}
-            </div>
-            {% endif %}
-          {% endfor %}
-        </div>
-      </div>
-      {% endwith %}
-    {% endfor %}
-
-  </div>
-  {% if fieldset.name %}</div>{% endif %}
-{% endfor %}
+<fieldset class="module aligned {{ fieldset.classes }}">
+	{% if fieldset.name %}<h2>{{ fieldset.name }}</h2>{% endif %}
+	{% for line in fieldset %}
+		<div class="form-row{% if line.errors %} errors{% endif %}{% if not line.has_visible_field %} hidden{% endif %}">
+			{% for field in line %}
+				<div class="fieldBox field-{{ field.field.name }}">
+					{% if not field.is_readonly %}
+						{{ field.label_tag }}
+						{{ field.field }}
+					{% else %}
+						<label>{{ field.field.label|capfirst }}</label>
+						<div class="readonly">{{ field.contents }}</div>
+					{% endif %}
+					{% if field.errors %}<div class="help text-red">{{ field.errors }}</div>{% endif %}
+					{% if field.field.help_text %}<div class="help text-muted small">{{ field.field.help_text|safe }}</div>{% endif %}
+				</div>
+			{% endfor %}
+		</div>
+	{% endfor %}
+</fieldset>
