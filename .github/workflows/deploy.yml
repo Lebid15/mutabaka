@@ -1,0 +1,94 @@
+name: Deploy Mutabaka
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
+
+      - name: Build & push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAME }}-backend:latest
+            ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAME }}-backend:${{ github.sha }}
+
+      - name: Build & push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAME }}-frontend:latest
+            ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAME }}-frontend:${{ github.sha }}
+
+      - name: Configure SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add host to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p ${SSH_PORT} ${HOST} >> ~/.ssh/known_hosts
+        env:
+          HOST: ${{ secrets.HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+
+      - name: Upload deploy artifacts (compose, nginx, env example)
+        run: |
+          rsync -avz -e "ssh -p ${SSH_PORT}" ./deploy/ ${USER}@${HOST}:${SERVER_PATH}/
+        env:
+          HOST: ${{ secrets.HOST }}
+          USER: ${{ secrets.USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SERVER_PATH: ${{ secrets.SERVER_PATH }}
+
+      - name: Deploy on server
+        run: |
+          ssh -p ${SSH_PORT} ${USER}@${HOST} << 'EOF'
+          set -e
+          cd ${SERVER_PATH}
+          mkdir -p media static data
+          # Preserve existing .env; create from example if missing
+          if [ ! -f .env ]; then cp .env.example .env; fi
+          # Login to registry in case it is private
+          echo ${REGISTRY_TOKEN} | docker login ${REGISTRY} -u ${REGISTRY_USERNAME} --password-stdin
+          docker compose pull
+          docker compose up -d
+          docker image prune -f || true
+          EOF
+        env:
+          HOST: ${{ secrets.HOST }}
+          USER: ${{ secrets.USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SERVER_PATH: ${{ secrets.SERVER_PATH }}
+          REGISTRY: ${{ secrets.REGISTRY }}
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
