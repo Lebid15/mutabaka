@@ -79,8 +79,8 @@ function TransactionBubble({ sender, tx, createdAt }: { sender: 'current'|'other
   const isMine = sender === 'current';
   const sign = tx.direction === 'lna' ? '+' : '-';
   const wrapClass = isMine
-    ? 'self-start bg-bubbleReceived text-gray-100 px-3 py-2 rounded-2xl rounded-bl-sm w-11/12 text-xs shadow'
-    : 'self-end bg-bubbleSent text-white px-3 py-2 rounded-2xl rounded-br-sm w-11/12 text-xs shadow';
+    ? 'self-start bg-bubbleSent text-gray-100 px-3 py-2 rounded-2xl rounded-bl-sm w-11/12 text-xs shadow'
+    : 'self-end bg-bubbleReceived text-white px-3 py-2 rounded-2xl rounded-br-sm w-11/12 text-xs shadow';
   const badgeClass = tx.direction === 'lna' ? 'bg-green-600/30 text-green-200' : 'bg-red-600/30 text-red-200';
   return (
     <div className={wrapClass}>
@@ -1682,8 +1682,8 @@ export default function Home() {
                         ref={(el)=>{ messageRefs.current[key] = el; }}
                         className={
                           m.sender === 'current'
-                            ? 'self-start bg-bubbleReceived text-gray-100 px-3 py-2 rounded-2xl rounded-bl-sm max-w-[60%] text-xs shadow whitespace-pre-line break-words overflow-hidden'
-                            : 'self-end bg-bubbleSent text-white px-3 py-2 rounded-2xl rounded-br-sm max-w-[60%] text-xs shadow whitespace-pre-line break-words overflow-hidden'
+                            ? 'self-start bg-bubbleSent text-gray-100 px-3 py-2 rounded-2xl rounded-bl-sm max-w-[60%] text-xs shadow whitespace-pre-line break-words overflow-hidden'
+                            : 'self-end bg-bubbleReceived text-white px-3 py-2 rounded-2xl rounded-br-sm max-w-[60%] text-xs shadow whitespace-pre-line break-words overflow-hidden'
                         }
                       >
                         {/* Attachment preview if present */}
