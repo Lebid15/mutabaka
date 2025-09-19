@@ -1644,7 +1644,7 @@ export default function Home() {
             )}
             <div
               ref={scrollRef}
-              className="flex-1 p-6 pb-48 md:pb-40 flex flex-col gap-2 overflow-y-auto bg-[#0f1f25] custom-scrollbar"
+              className="flex-1 p-6 pb-48 md:pb-40 flex flex-col gap-2 overflow-y-auto overflow-x-hidden bg-[#0f1f25] custom-scrollbar"
               dir="rtl"
               id="chatScrollRegion"
               style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12rem)' }}
@@ -1682,8 +1682,8 @@ export default function Home() {
                         ref={(el)=>{ messageRefs.current[key] = el; }}
                         className={
                           m.sender === 'current'
-                            ? 'self-start bg-bubbleReceived text-gray-100 px-3 py-2 rounded-2xl rounded-bl-sm max-w-[60%] text-xs shadow whitespace-pre-line'
-                            : 'self-end bg-bubbleSent text-white px-3 py-2 rounded-2xl rounded-br-sm max-w-[60%] text-xs shadow whitespace-pre-line'
+                            ? 'self-start bg-bubbleReceived text-gray-100 px-3 py-2 rounded-2xl rounded-bl-sm max-w-[60%] text-xs shadow whitespace-pre-line break-words overflow-hidden'
+                            : 'self-end bg-bubbleSent text-white px-3 py-2 rounded-2xl rounded-br-sm max-w-[60%] text-xs shadow whitespace-pre-line break-words overflow-hidden'
                         }
                       >
                         {/* Attachment preview if present */}
@@ -1693,7 +1693,7 @@ export default function Home() {
                               <img
                                 src={m.attachment.url}
                                 alt={m.attachment.name || 'image'}
-                                className="max-w-[240px] rounded border border-white/10 cursor-zoom-in hover:opacity-90 transition"
+                                className="block w-full h-auto max-w-full rounded border border-white/10 cursor-zoom-in hover:opacity-90 transition"
                                 onClick={(e)=>{ e.stopPropagation(); openImageAt(m.attachment!.url!); }}
                               />
                             ) : (
@@ -1704,13 +1704,6 @@ export default function Home() {
                             )}
                           </div>
                         )}
-                        {(content || '').trim() ? (showHighlight ? highlightText(content, searchQuery) : content) : null}
-                        <div className="mt-1 text-[10px] text-gray-400 flex items-center gap-1 justify-end" dir="ltr">
-                          <span>{formatTimeShort(m.created_at)}</span>
-                          {m.sender === 'current' && (
-                            <span>{m.status === 'sending' ? '…' : m.status === 'read' ? '✓✓' : '✓'}</span>
-                          )}
-                        </div>
                       </div>
                     );
                   }
