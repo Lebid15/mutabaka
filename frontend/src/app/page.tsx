@@ -241,7 +241,37 @@ function SidebarHeaderAddContact({ onAdded, existingUsernames, currentUsername, 
 export default function Home() {
   const scrollRef = useRef<HTMLDivElement|null>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const [identifier, setIdentifier] = useState('admin');
+  function PasswordField({ value, onChange }: { value: string; onChange: (v:string)=>void }) {
+    const [show, setShow] = useState(false);
+    return (
+      <div className="relative">
+        <input
+          value={value}
+          onChange={e=>onChange(e.target.value)}
+          placeholder="كلمة المرور"
+          type={show ? 'text' : 'password'}
+          className="w-full pr-9 pl-3 bg-chatBg border border-chatDivider rounded py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-600"
+        />
+        <button
+          type="button"
+          onClick={()=>setShow(s=>!s)}
+          className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-200"
+          aria-label={show ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
+        >
+          {show ? (
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+              <path d="M12 5c-7.633 0-11 7-11 7s3.367 7 11 7 11-7 11-7-3.367-7-11-7zm0 12a5 5 0 1 1 .001-10.001A5 5 0 0 1 12 17z"/>
+            </svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+              <path d="M3.707 2.293 2.293 3.707 6.3 7.714A12.62 12.62 0 0 0 1 12s3.367 7 11 7c2.226 0 4.154-.55 5.77-1.375l3.23 3.23 1.414-1.414-18.707-18.148zM12 17c-2.761 0-5-2.239-5-5 0-.633.12-1.237.336-1.791l6.455 6.455c-.554.216-1.158.336-1.791.336zm8.664-3.209c.22-.57.336-1.174.336-1.791 0-1.003-.222-1.954-.619-2.814-1.71-3.68-5.132-5.186-8.381-5.186-1.422 0-2.746.274-3.934.75l1.57 1.57c.786-.24 1.623-.37 2.492-.37 4.239 0 7.495 3.399 8.036 6.007-.19.828-.543 1.601-1.058 2.308l1.558 1.526z"/>
+            </svg>
+          )}
+        </button>
+      </div>
+    );
+  }
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [isAuthed, setIsAuthed] = useState(false);
   const [authStatus, setAuthStatus] = useState<'checking'|'authed'|'guest'>('checking');
@@ -1349,10 +1379,18 @@ export default function Home() {
         <form onSubmit={handleLogin} className="w-full max-w-sm bg-chatPanel border border-chatDivider rounded-lg p-6 flex flex-col gap-4">
           <h1 className="font-bold text-lg text-center">تسجيل الدخول</h1>
           {error && <div className="text-red-400 text-xs text-center">{error}</div>}
-            <input value={identifier} onChange={e=>setIdentifier(e.target.value)} placeholder="اسم المستخدم أو البريد" className="bg-chatBg border border-chatDivider rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-600" />
-            <input value={password} onChange={e=>setPassword(e.target.value)} placeholder="كلمة المرور" type="password" className="bg-chatBg border border-chatDivider rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-600" />
+            {/* Username with icon */}
+            <div className="relative">
+              <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                  <path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm0 2c-3.866 0-7 3.134-7 7h2a5 5 0 0 1 10 0h2c0-3.866-3.134-7-7-7z" />
+                </svg>
+              </span>
+              <input value={identifier} onChange={e=>setIdentifier(e.target.value)} placeholder="اسم المستخدم أو البريد" className="w-full pl-9 pr-3 bg-chatBg border border-chatDivider rounded py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-600" />
+            </div>
+            {/* Password with eye toggle */}
+            <PasswordField value={password} onChange={setPassword} />
             <button disabled={loading} className="bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded py-2 font-semibold text-sm">{loading ? '...' : 'دخول'}</button>
-            <p className="text-[10px] text-gray-400 text-center">استخدم حساباً موجوداً في Django Admin</p>
         </form>
       </div>
     );
