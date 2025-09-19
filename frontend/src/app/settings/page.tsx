@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api';
 import { VAPID_PUBLIC_KEY } from '@/lib/config';
-import { isSoundEnabled, setSoundEnabled, attachPrimingListeners, setRuntimeSoundUrl } from '@/lib/sound';
+import { isSoundEnabled, setSoundEnabled, attachPrimingListeners, setRuntimeSoundUrl, tryPlayMessageSound } from '@/lib/sound';
 
 export default function SettingsPage() {
   const [supported, setSupported] = useState(false);
@@ -160,9 +160,12 @@ export default function SettingsPage() {
                 <div className="font-semibold">تشغيل صوت الإشعار</div>
                 <div className="text-xs text-gray-400">عند وصول رسالة جديدة والتبويب غير مُركّز أو محادثة أخرى مفتوحة.</div>
               </div>
-              <button onClick={toggleSound} className={"px-3 py-1 rounded text-sm " + (soundEnabled? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-gray-600 hover:bg-gray-700')}>
-                {soundEnabled ? 'مفعّل' : 'متوقف'}
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={toggleSound} className={"px-3 py-1 rounded text-sm " + (soundEnabled? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-gray-600 hover:bg-gray-700')}>
+                  {soundEnabled ? 'مفعّل' : 'متوقف'}
+                </button>
+                <button onClick={async()=>{ const ok = await tryPlayMessageSound(); if (!ok) alert('قد يمنع المتصفح التشغيل التلقائي — انقر في الصفحة ثم حاول مجدداً'); }} className="px-3 py-1 rounded text-sm bg-white/10 hover:bg-white/20">تجربة الصوت</button>
+              </div>
             </div>
             {/* intentionally no test sound button: single fixed sound, user can only enable/disable */}
           </div>

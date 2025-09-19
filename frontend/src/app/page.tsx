@@ -42,6 +42,11 @@ const dayLabelOf = (iso?: string) => {
     return d.toLocaleDateString('ar', { year: 'numeric', month: 'long', day: 'numeric' });
   } catch { return ''; }
 };
+// Helper: treat special admin-like usernames as admin
+function isAdminLike(u?: string | null) {
+  const n = (u || '').toLowerCase();
+  return n === 'admin' || n === 'madmin' || n === 'a_admin' || n === 'l_admin';
+}
 // تحويل الأرقام العربية/الفارسية إلى إنجليزية للتعامل مع parseFloat
 const arabicToEnglishDigits = (s: string) =>
   s
@@ -747,6 +752,12 @@ export default function Home() {
             const isViewing = selectedConversationId === convId && mobileView === 'chat';
             if (!isViewing) {
               setUnreadByConv(prev => ({ ...prev, [convId]: (prev[convId] || 0) + (Number(data.unread_count) || 1) }));
+              // Play sound for background/new message if tab hidden or not in chat view
+              const isHidden = typeof document !== 'undefined' && document.hidden;
+              const muted = contacts.some(c => c.id === convId && c.isMuted);
+              if ((isHidden || mobileView !== 'chat') && !muted) {
+                try { tryPlayMessageSound(); } catch {}
+              }
             } else {
               setUnreadByConv(prev => ({ ...prev, [convId]: 0 }));
             }
@@ -985,14 +996,16 @@ export default function Home() {
           ]));
           // Clear unread counter for this conversation if we are currently viewing it
           setUnreadByConv(prev => ({ ...prev, [selectedConversationId]: 0 }));
-          // Play a soft sound if tab is hidden (we're in this conversation already)
-          if (typeof document !== 'undefined' && document.hidden) {
+          // Play a soft sound if tab is hidden OR user is not viewing chat panel (mobile list view)
+          const isViewing = mobileView === 'chat';
+          if (typeof document !== 'undefined' && (document.hidden || !isViewing)) {
             // Skip sound if current conversation is muted
             const muted = contacts.some(c => c.id === selectedConversationId && c.isMuted);
-            if (muted) return;
-            tryPlayMessageSound().then(ok => {
-              if (!ok && !soundPromptShown) { soundPromptShown = true; pushToast({ type: 'info', msg: 'انقر في الصفحة لتفعيل صوت الإشعارات' }); }
-            }).catch(()=>{});
+            if (!muted) {
+              tryPlayMessageSound().then(ok => {
+                if (!ok && !soundPromptShown) { soundPromptShown = true; pushToast({ type: 'info', msg: 'انقر في الصفحة لتفعيل صوت الإشعارات' }); }
+              }).catch(()=>{});
+            }
           }
         }
       } catch {}
@@ -1192,6 +1205,14 @@ export default function Home() {
             const isViewing = selectedConversationId === payload.conversation_id && mobileView === 'chat';
             if (!isViewing) {
               setUnreadByConv(prev => ({ ...prev, [payload.conversation_id]: (prev[payload.conversation_id] || 0) + 1 }));
+              // Play sound if tab hidden or not in chat view
+              const isHidden = typeof document !== 'undefined' && document.hidden;
+              const muted = contacts.some(c => c.id === payload.conversation_id && c.isMuted);
+              if ((isHidden || mobileView !== 'chat') && !muted) {
+                try {
+                  tryPlayMessageSound().then(ok => { if (!ok) pushToast({ type: 'info', msg: 'انقر في الصفحة لتفعيل صوت الإشعارات' }); }).catch(()=>{});
+                } catch {}
+              }
             } else {
               setUnreadByConv(prev => ({ ...prev, [payload.conversation_id]: 0 }));
             }
@@ -1523,8 +1544,8 @@ export default function Home() {
             {(selectedConversationId != null && currentContact) && (
               <div className={(mobileView === 'chat' ? 'flex' : 'hidden') + ' md:flex flex-col h-full'}>
                         <div className="bg-chatPanel px-6 py-3 font-bold border-b border-chatDivider text-sm flex items-center gap-6 flex-wrap">
-              {/* شريط أرصدة سريع من منظور هذه المحادثة فقط (موجب = لنا، سالب = لكم) — مخفي عند الدردشة مع admin أو عند كون المستخدم الحالي أدمن */}
-              {((profile?.username?.toLowerCase() !== 'admin') && (currentContact?.otherUsername?.toLowerCase() !== 'admin')) && (
+              {/* شريط أرصدة سريع من منظور هذه المحادثة فقط (موجب = لنا، سالب = لكم) — مخفي عند الدردشة مع admin (أو حسابات إدارية مشابهة) أو عند كون المستخدم الحالي أدمن */}
+              {(!isAdminLike(profile?.username) && !isAdminLike(currentContact?.otherUsername)) && (
                 <div className="flex gap-4 text-xs md:text-sm order-2 md:order-1 w-full md:w-auto justify-between md:justify-start">
                   {currencyCodes().map(code => {
                     const pair = getPairWallet(selectedConversationId);
@@ -1695,7 +1716,7 @@ export default function Home() {
             </div>
             {/* شريط سفلي موحد (معاملات + رسالة) */}
             <div className="border-t border-chatDivider bg-chatPanel sticky bottom-0 z-10 flex flex-col gap-2 p-3">
-              {((profile?.username?.toLowerCase() !== 'admin') && (currentContact?.otherUsername?.toLowerCase() !== 'admin')) && (
+              {(!isAdminLike(profile?.username) && !isAdminLike(currentContact?.otherUsername)) && (
                 <div className="flex flex-wrap items-center gap-2 text-xs md:text-sm">
                   <button onClick={()=>setTxPanelCollapsed(c=>!c)} className="bg-gray-700 hover:bg-gray-600 text-white rounded px-2 py-1" title={txPanelCollapsed? 'إظهار المعاملات':'إخفاء المعاملات'}>
                     {txPanelCollapsed? '▼' : '▲'}
