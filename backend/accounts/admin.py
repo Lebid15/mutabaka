@@ -30,6 +30,8 @@ class CustomUserAdmin(UserAdmin):
     )
     readonly_fields = ("last_password_change",)
     actions = ["reset_totp"]
+    # Control section order for Jazzmin tabs to avoid any re-ordering quirks
+    jazzmin_section_order = ("General", "Personal info", "Permissions", "Important dates")
 
     # Add view fieldsets (displayed when creating a new user)
     # Use password1/password2 here and DO NOT repeat fields across tabs.
