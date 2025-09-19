@@ -30,13 +30,18 @@ SECRET_KEY = 'django-insecure-ng4-da2*l&g*kz(gf=ytjyts5x-@6bu%=op-i+xxhobkv(w*2y
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = [
-    "127.0.0.1",
-    "localhost",
-    "testserver",
-    "mutabaka.com",
-    "www.mutabaka.com",
-]
+def _env_list(name: str, sep: str = ","):
+    v = os.getenv(name)
+    if not v:
+        return None
+    return [x.strip() for x in v.split(sep) if x.strip()]
+
+_DEFAULT_HOSTS = ["127.0.0.1", "localhost", "testserver"]
+
+# Prefer env; otherwise default to local + our domains
+ALLOWED_HOSTS = _env_list("ALLOWED_HOSTS") or (
+    _DEFAULT_HOSTS + ["mutabaka.com", "www.mutabaka.com"]
+)
 
 
 # Application definition
@@ -222,12 +227,11 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3002",
     "http://127.0.0.1:3002",
 ]
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:3001",
-    "http://127.0.0.1:3001",
-    "http://localhost:3002",
-    "http://127.0.0.1:3002",
+CSRF_TRUSTED_ORIGINS = _env_list("CSRF_TRUSTED_ORIGINS") or [
+    "https://mutabaka.com",
+    "https://www.mutabaka.com",
 ]
 CORS_ALLOW_CREDENTIALS = True
+
+# Behind Nginx/Cloudflare - trust X-Forwarded-Proto for HTTPS detection
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

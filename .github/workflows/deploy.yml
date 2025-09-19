@@ -60,14 +60,18 @@ jobs:
       - name: Add host to known_hosts
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -p ${SSH_PORT} ${HOST} >> ~/.ssh/known_hosts
+          PORT_FLAG=""
+          if [ -n "${SSH_PORT}" ] && [[ "${SSH_PORT}" =~ ^[0-9]+$ ]]; then PORT_FLAG="-p ${SSH_PORT}"; fi
+          ssh-keyscan ${PORT_FLAG} ${HOST} >> ~/.ssh/known_hosts
         env:
           HOST: ${{ secrets.HOST }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
 
       - name: Upload deploy artifacts (compose, nginx, env example)
         run: |
-          rsync -avz -e "ssh -p ${SSH_PORT}" ./deploy/ ${USER}@${HOST}:${SERVER_PATH}/
+          SSH_CMD="ssh"
+          if [ -n "${SSH_PORT}" ] && [[ "${SSH_PORT}" =~ ^[0-9]+$ ]]; then SSH_CMD="ssh -p ${SSH_PORT}"; fi
+          rsync -avz -e "$SSH_CMD" ./deploy/ ${USER}@${HOST}:${SERVER_PATH}/
         env:
           HOST: ${{ secrets.HOST }}
           USER: ${{ secrets.USER }}
@@ -76,7 +80,9 @@ jobs:
 
       - name: Deploy on server
         run: |
-          ssh -p ${SSH_PORT} ${USER}@${HOST} << EOF
+          PORT_FLAG=""
+          if [ -n "${SSH_PORT}" ] && [[ "${SSH_PORT}" =~ ^[0-9]+$ ]]; then PORT_FLAG="-p ${SSH_PORT}"; fi
+          ssh ${PORT_FLAG} ${USER}@${HOST} << EOF
           set -e
           cd ${SERVER_PATH}
           mkdir -p media static data
