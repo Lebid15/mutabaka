@@ -1682,8 +1682,8 @@ export default function Home() {
                         ref={(el)=>{ messageRefs.current[key] = el; }}
                         className={
                           m.sender === 'current'
-                            ? 'self-start bg-bubbleSent text-gray-100 px-3 py-2 rounded-2xl rounded-bl-sm max-w-[60%] text-xs shadow whitespace-pre-line break-words overflow-hidden'
-                            : 'self-end bg-bubbleReceived text-white px-3 py-2 rounded-2xl rounded-br-sm max-w-[60%] text-xs shadow whitespace-pre-line break-words overflow-hidden'
+                            ? 'self-start bg-bubbleSent text-gray-100 px-3 py-2 rounded-2xl rounded-bl-sm max-w-[60%] text-xs shadow whitespace-pre-line'
+                            : 'self-end bg-bubbleReceived text-white px-3 py-2 rounded-2xl rounded-br-sm max-w-[60%] text-xs shadow whitespace-pre-line'
                         }
                       >
                         {/* Attachment preview if present */}
@@ -1706,7 +1706,7 @@ export default function Home() {
                         )}
                         {/* Text content */}
                         {content && (
-                          <div className="text-[13px] leading-6">
+                          <div className="text-sm leading-6 break-words">
                             {showHighlight ? highlightText(content, searchQuery) : content}
                           </div>
                         )}
