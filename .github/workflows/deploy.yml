@@ -11,6 +11,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      REGISTRY: ghcr.io/lebid15
+      IMAGE_NAME: mutabaka
 
     steps:
       - name: Checkout
@@ -36,8 +39,8 @@ jobs:
           file: ./backend/Dockerfile
           push: true
           tags: |
-            ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAME }}-backend:latest
-            ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAME }}-backend:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}
 
       - name: Build & push frontend image
         uses: docker/build-push-action@v5
@@ -46,8 +49,8 @@ jobs:
           file: ./frontend/Dockerfile
           push: true
           tags: |
-            ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAME }}-frontend:latest
-            ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAME }}-frontend:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}
 
       - name: Configure SSH
         uses: webfactory/ssh-agent@v0.9.0
@@ -73,12 +76,23 @@ jobs:
 
       - name: Deploy on server
         run: |
-          ssh -p ${SSH_PORT} ${USER}@${HOST} << 'EOF'
+          ssh -p ${SSH_PORT} ${USER}@${HOST} << EOF
           set -e
           cd ${SERVER_PATH}
           mkdir -p media static data
           # Preserve existing .env; create from example if missing
           if [ ! -f .env ]; then cp .env.example .env; fi
+          # Ensure REGISTRY and IMAGE_NAME are set correctly
+          if grep -q '^REGISTRY=' .env; then
+            sed -i 's|^REGISTRY=.*|REGISTRY=${REGISTRY}|' .env
+          else
+            echo "REGISTRY=${REGISTRY}" >> .env
+          fi
+          if grep -q '^IMAGE_NAME=' .env; then
+            sed -i 's|^IMAGE_NAME=.*|IMAGE_NAME=${IMAGE_NAME}|' .env
+          else
+            echo "IMAGE_NAME=${IMAGE_NAME}" >> .env
+          fi
           # Login to registry in case it is private
           echo ${REGISTRY_TOKEN} | docker login ghcr.io -u ${REGISTRY_USERNAME} --password-stdin
           docker compose pull
@@ -90,6 +104,7 @@ jobs:
           USER: ${{ secrets.USER }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
           SERVER_PATH: ${{ secrets.SERVER_PATH }}
-          REGISTRY: ${{ secrets.REGISTRY }}
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
           REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
           REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
