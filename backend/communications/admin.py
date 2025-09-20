@@ -4,7 +4,7 @@ from django.urls import reverse
 from django import forms
 from django.http import HttpRequest
 from django.db import models
-from .models import ContactRelation, Conversation, ConversationInbox, Message, Transaction, PushSubscription, NotificationSetting
+from .models import ContactRelation, Conversation, ConversationInbox, Message, Transaction, PushSubscription, NotificationSetting, TeamMember, ConversationMember
 
 @admin.register(ContactRelation)
 class ContactRelationAdmin(admin.ModelAdmin):
@@ -152,3 +152,13 @@ class PushSubscriptionAdmin(admin.ModelAdmin):
 class NotificationSettingAdmin(admin.ModelAdmin):
     list_display = ("id", "active", "updated_at")
     list_filter = ("active",)
+
+@admin.register(TeamMember)
+class TeamMemberAdmin(admin.ModelAdmin):
+    list_display = ("id", "owner", "member", "display_name", "phone", "created_at")
+    search_fields = ("owner__username", "member__username", "display_name", "phone")
+
+@admin.register(ConversationMember)
+class ConversationMemberAdmin(admin.ModelAdmin):
+    list_display = ("id", "conversation", "member", "added_by", "created_at")
+    search_fields = ("conversation__id", "member__username", "added_by__username")

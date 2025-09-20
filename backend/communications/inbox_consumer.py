@@ -11,7 +11,7 @@ class InboxConsumer(AsyncWebsocketConsumer):
             await self.close(code=4001)
             return
         self.user_id = user.id
-        self.group_name = f"user_{self.user_id}"
+        self.group_name = f"user_{self.user_id}"  # Ensure group name is set correctly
         try:
             print(f"[WS] inbox connect user={self.user_id} join group={self.group_name}")
         except Exception:

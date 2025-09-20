@@ -4,7 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     UserSearchViewSet, ContactRelationViewSet, ConversationViewSet,
     MessageViewSet, TransactionViewSet, PushSubscribeView, PushUnsubscribeView,
-    NotificationSoundView, EnsureAdminConversationView
+    NotificationSoundView, EnsureAdminConversationView, TeamMemberViewSet
 )
 from finance.views import WalletViewSet, CurrencyViewSet
 
@@ -12,6 +12,7 @@ router = DefaultRouter()
 router.register(r'users', UserSearchViewSet, basename='user-search')
 router.register(r'contacts', ContactRelationViewSet, basename='contacts')
 router.register(r'conversations', ConversationViewSet, basename='conversations')
+router.register(r'team', TeamMemberViewSet, basename='team')
 router.register(r'messages', MessageViewSet, basename='messages')
 router.register(r'transactions', TransactionViewSet, basename='transactions')
 router.register(r'wallets', WalletViewSet, basename='wallets')

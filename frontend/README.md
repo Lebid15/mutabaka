@@ -28,6 +28,12 @@ Next.js (App Router) + Tailwind starter.
 - Service Worker is at `/public/sw.js`.
 - Settings page has a toggle to enable/disable notifications which calls backend `/api/push/subscribe` and `/api/push/unsubscribe`.
 
+### Team Feature
+- Manage team at route `/team` (simple CRUD for members).
+- Chat can fetch `/api/conversations/{id}/members/` to show current participants and added team.
+- To add a member into the open chat, call `/api/conversations/{id}/add_team_member/` with `{ team_member_id }` from your team list.
+- Extra members only see chats they were added to and can send messages and transactions there.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

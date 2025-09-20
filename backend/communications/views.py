@@ -7,10 +7,11 @@ import mimetypes
 from django.core.files.storage import default_storage
 from django.db.models import Q
 from django.contrib.auth import get_user_model
-from .models import ContactRelation, Conversation, Message, Transaction, PushSubscription, ConversationMute
+from .models import ContactRelation, Conversation, Message, Transaction, PushSubscription, ConversationMute, TeamMember, ConversationMember, get_conversation_viewer_ids
 from .serializers import (
     PublicUserSerializer, ContactRelationSerializer, ConversationSerializer,
-    MessageSerializer, TransactionSerializer, PushSubscriptionSerializer
+    MessageSerializer, TransactionSerializer, PushSubscriptionSerializer,
+    TeamMemberSerializer, ConversationMemberSerializer,
 )
 from .permissions import IsParticipant
 from django.conf import settings
@@ -185,13 +186,28 @@ class ContactRelationViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return ContactRelation.objects.filter(owner=self.request.user)
 
+
+class TeamMemberViewSet(viewsets.ModelViewSet):
+    """CRUD for the current user's team."""
+    serializer_class = TeamMemberSerializer
+
+    def get_queryset(self):
+        return TeamMember.objects.select_related('owner', 'member').filter(owner=self.request.user).order_by('-id')
+
+    def get_serializer(self, *args, **kwargs):
+        kwargs.setdefault('context', {})
+        kwargs['context']['request'] = self.request
+        return super().get_serializer(*args, **kwargs)
+
 class ConversationViewSet(viewsets.ModelViewSet):
     serializer_class = ConversationSerializer
     permission_classes = [IsParticipant]
 
     def get_queryset(self):
         user = self.request.user
-        return Conversation.objects.select_related('user_a', 'user_b').filter(Q(user_a=user) | Q(user_b=user))
+        return Conversation.objects.select_related('user_a', 'user_b').filter(
+            Q(user_a=user) | Q(user_b=user) | Q(extra_members__member=user)
+        ).distinct()
 
     def create(self, request, *args, **kwargs):
         user = request.user
@@ -354,11 +370,15 @@ class ConversationViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def send(self, request, pk=None):
         conv = self.get_object()
-        # منع الإرسال عند انتهاء الاشتراك إلا إلى admin
-        try:
-            _ensure_can_message_or_contact(request.user, conversation=conv)
-        except ValidationError as ve:
-            return Response({'detail': ve.message_dict.get('detail') if hasattr(ve, 'message_dict') else 'غير مسموح'}, status=403)
+        # منع الإرسال عند انتهاء الاشتراك إلا إلى admin — إلا إذا كان المستخدم عضواً مضافاً فقط
+        if request.user not in [conv.user_a, conv.user_b]:
+            if not ConversationMember.objects.filter(conversation=conv, member=request.user).exists():
+                return Response({'detail': 'غير مسموح'}, status=403)
+        else:
+            try:
+                _ensure_can_message_or_contact(request.user, conversation=conv)
+            except ValidationError as ve:
+                return Response({'detail': ve.message_dict.get('detail') if hasattr(ve, 'message_dict') else 'غير مسموح'}, status=403)
         # Enforce OTP for sensitive action if user enabled TOTP
         try:
             from django.contrib.auth import get_user_model  # noqa: F401
@@ -395,18 +415,20 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'seq': msg.id,
                 }
                 async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': payload})
-                # notify recipient inbox
-                recipient_id = conv.user_b_id if request.user.id == conv.user_a_id else conv.user_a_id
-                async_to_sync(channel_layer.group_send)(f"user_{recipient_id}", {
-                    'type': 'broadcast.message',
-                    'data': {
-                        'type': 'inbox.update',
-                        'conversation_id': conv.id,
-                        'last_message_preview': msg.body[:80],
-                        'last_message_at': msg.created_at.isoformat(),
-                        'unread_count': 1,
-                    }
-                })
+                # notify all viewers' inboxes (except sender)
+                for uid in get_conversation_viewer_ids(conv):
+                    if uid == request.user.id:
+                        continue
+                    async_to_sync(channel_layer.group_send)(f"user_{uid}", {
+                        'type': 'broadcast.message',
+                        'data': {
+                            'type': 'inbox.update',
+                            'conversation_id': conv.id,
+                            'last_message_preview': msg.body[:80],
+                            'last_message_at': msg.created_at.isoformat(),
+                            'unread_count': 1,
+                        }
+                    })
         except Exception:
             pass
         # Also trigger Pusher 'message' event for unified realtime on the frontend
@@ -419,20 +441,21 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'message': msg.body,
                     'conversation_id': conv.id,
                 })
-                # notify recipient on their user channel for inbox updates
-                recipient_id = conv.user_b_id if request.user.id == conv.user_a_id else conv.user_a_id
-                pusher_client.trigger(f"user_{recipient_id}", 'notify', {
-                    'type': 'message',
-                    'conversation_id': conv.id,
-                    'from': getattr(request.user, 'display_name', '') or request.user.username,
-                    'preview': msg.body[:80],
-                    'last_message_at': msg.created_at.isoformat(),
-                })
+                # notify all viewers
+                for uid in get_conversation_viewer_ids(conv):
+                    if uid == request.user.id:
+                        continue
+                    pusher_client.trigger(f"user_{uid}", 'notify', {
+                        'type': 'message',
+                        'conversation_id': conv.id,
+                        'from': getattr(request.user, 'display_name', '') or request.user.username,
+                        'preview': msg.body[:80],
+                        'last_message_at': msg.created_at.isoformat(),
+                    })
         except Exception:
             pass
         # Web Push notification to recipient
         try:
-            recipient = conv.user_b if request.user.id == conv.user_a_id else conv.user_a
             display = getattr(request.user, 'display_name', '') or request.user.username
             preview = (msg.body or '').replace('\n', ' ')[:60]
             try:
@@ -449,7 +472,15 @@ class ConversationViewSet(viewsets.ModelViewSet):
                 "title": display,
                 "body": preview,
             }
-            send_web_push_to_user(recipient, payload)
+            # push to all viewers except sender
+            for uid in get_conversation_viewer_ids(conv):
+                if uid == request.user.id:
+                    continue
+                try:
+                    user_obj = get_user_model().objects.get(id=uid)
+                    send_web_push_to_user(user_obj, payload)
+                except Exception:
+                    pass
         except Exception:
             pass
         return Response(MessageSerializer(msg, context={'request': request}).data)
@@ -486,11 +517,15 @@ class ConversationViewSet(viewsets.ModelViewSet):
         Fields: file (required), body (optional text)
         """
         conv = self.get_object()
-        # منع الإرسال عند انتهاء الاشتراك إلا إلى admin
-        try:
-            _ensure_can_message_or_contact(request.user, conversation=conv)
-        except ValidationError as ve:
-            return Response({'detail': ve.message_dict.get('detail') if hasattr(ve, 'message_dict') else 'غير مسموح'}, status=403)
+        # منع الإرسال عند انتهاء الاشتراك إلا إلى admin — إلا إذا كان المستخدم عضواً مضافاً فقط
+        if request.user not in [conv.user_a, conv.user_b]:
+            if not ConversationMember.objects.filter(conversation=conv, member=request.user).exists():
+                return Response({'detail': 'غير مسموح'}, status=403)
+        else:
+            try:
+                _ensure_can_message_or_contact(request.user, conversation=conv)
+            except ValidationError as ve:
+                return Response({'detail': ve.message_dict.get('detail') if hasattr(ve, 'message_dict') else 'غير مسموح'}, status=403)
         # Enforce OTP for sensitive action if user enabled TOTP
         try:
             import pyotp as _pyotp
@@ -543,17 +578,19 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     }
                 }
                 async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': payload})
-                recipient_id = conv.user_b_id if request.user.id == conv.user_a_id else conv.user_a_id
-                async_to_sync(channel_layer.group_send)(f"user_{recipient_id}", {
-                    'type': 'broadcast.message',
-                    'data': {
-                        'type': 'inbox.update',
-                        'conversation_id': conv.id,
-                        'last_message_preview': (caption or msg.attachment_name or 'مرفق')[:80],
-                        'last_message_at': msg.created_at.isoformat(),
-                        'unread_count': 1,
-                    }
-                })
+                for uid in get_conversation_viewer_ids(conv):
+                    if uid == request.user.id:
+                        continue
+                    async_to_sync(channel_layer.group_send)(f"user_{uid}", {
+                        'type': 'broadcast.message',
+                        'data': {
+                            'type': 'inbox.update',
+                            'conversation_id': conv.id,
+                            'last_message_preview': (caption or msg.attachment_name or 'مرفق')[:80],
+                            'last_message_at': msg.created_at.isoformat(),
+                            'unread_count': 1,
+                        }
+                    })
         except Exception:
             pass
         # Pusher trigger for unified realtime
@@ -566,19 +603,20 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'message': caption or (msg.attachment_name or 'مرفق'),
                     'conversation_id': conv.id,
                 })
-                recipient_id = conv.user_b_id if request.user.id == conv.user_a_id else conv.user_a_id
-                pusher_client.trigger(f"user_{recipient_id}", 'notify', {
-                    'type': 'message',
-                    'conversation_id': conv.id,
-                    'from': getattr(request.user, 'display_name', '') or request.user.username,
-                    'preview': (caption or msg.attachment_name or 'مرفق')[:80],
-                    'last_message_at': msg.created_at.isoformat(),
-                })
+                for uid in get_conversation_viewer_ids(conv):
+                    if uid == request.user.id:
+                        continue
+                    pusher_client.trigger(f"user_{uid}", 'notify', {
+                        'type': 'message',
+                        'conversation_id': conv.id,
+                        'from': getattr(request.user, 'display_name', '') or request.user.username,
+                        'preview': (caption or msg.attachment_name or 'مرفق')[:80],
+                        'last_message_at': msg.created_at.isoformat(),
+                    })
         except Exception:
             pass
         # Web Push notification
         try:
-            recipient = conv.user_b if request.user.id == conv.user_a_id else conv.user_a
             display = getattr(request.user, 'display_name', '') or request.user.username
             preview = (caption or msg.attachment_name or 'مرفق')[:60]
             try:
@@ -595,7 +633,14 @@ class ConversationViewSet(viewsets.ModelViewSet):
                 "title": display,
                 "body": preview,
             }
-            send_web_push_to_user(recipient, payload)
+            for uid in get_conversation_viewer_ids(conv):
+                if uid == request.user.id:
+                    continue
+                try:
+                    user_obj = get_user_model().objects.get(id=uid)
+                    send_web_push_to_user(user_obj, payload)
+                except Exception:
+                    pass
         except Exception:
             pass
         return Response(MessageSerializer(msg, context={'request': request}).data)
@@ -759,6 +804,53 @@ class ConversationViewSet(viewsets.ModelViewSet):
             b['net_from_user_a_perspective'] = str(b['net_from_user_a_perspective'])
         return Response({'conversation': conv.id, 'net': list(aggregates.values())})
 
+    # ----- Team-based membership management -----
+    def _require_participant(self, user, conv: Conversation):
+        if user not in [conv.user_a, conv.user_b]:
+            raise ValidationError({'detail': 'فقط طرفا المحادثة يمكنهما إدارة الأعضاء'})
+
+    @action(detail=True, methods=['get'])
+    def members(self, request, pk=None):
+        conv = self.get_object()
+        base = [conv.user_a, conv.user_b]
+        extras = User.objects.filter(conversation_memberships__conversation=conv).distinct()
+        data = []
+        for u in base:
+            data.append({
+                'id': u.id,
+                'username': u.username,
+                'display_name': getattr(u, 'display_name', '') or u.username,
+                'role': 'participant',
+            })
+        for u in extras:
+            data.append({
+                'id': u.id,
+                'username': u.username,
+                'display_name': getattr(u, 'display_name', '') or u.username,
+                'role': 'team',
+            })
+        return Response({'members': data})
+
+    @action(detail=True, methods=['post'])
+    def add_team_member(self, request, pk=None):
+        conv = self.get_object()
+        self._require_participant(request.user, conv)
+        serializer = ConversationMemberSerializer(data=request.data, context={'request': request, 'conversation': conv})
+        serializer.is_valid(raise_exception=True)
+        cm = serializer.save()
+        return Response(ConversationMemberSerializer(cm, context={'request': request, 'conversation': conv}).data, status=201)
+
+    @action(detail=True, methods=['post'])
+    def remove_member(self, request, pk=None):
+        conv = self.get_object()
+        self._require_participant(request.user, conv)
+        member_id = request.data.get('member_id')
+        try:
+            ConversationMember.objects.filter(conversation=conv, member_id=int(member_id)).delete()
+            return Response({'status': 'ok'})
+        except Exception:
+            return Response({'detail': 'member_id required'}, status=400)
+
 class MessageViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = MessageSerializer
     permission_classes = [IsParticipant]
@@ -766,8 +858,8 @@ class MessageViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         user = self.request.user
         return Message.objects.select_related('conversation', 'sender').filter(
-            Q(conversation__user_a=user) | Q(conversation__user_b=user)
-        )
+            Q(conversation__user_a=user) | Q(conversation__user_b=user) | Q(conversation__extra_members__member=user)
+        ).distinct()
 
 class TransactionViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, viewsets.GenericViewSet):
     serializer_class = TransactionSerializer
@@ -777,8 +869,8 @@ class TransactionViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, viewset
     def get_queryset(self):
         user = self.request.user
         return Transaction.objects.select_related('conversation', 'currency', 'from_user', 'to_user').filter(
-            Q(conversation__user_a=user) | Q(conversation__user_b=user)
-        )
+            Q(conversation__user_a=user) | Q(conversation__user_b=user) | Q(conversation__extra_members__member=user)
+        ).distinct()
 
 
 from rest_framework.views import APIView

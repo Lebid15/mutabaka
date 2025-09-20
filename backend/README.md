@@ -43,6 +43,21 @@ python manage.py seed_currencies
 | المحافظ | GET | /api/wallets/ |
 | JWT توكن | POST | /api/auth/token/ |
 
+### Team Members
+- `GET /api/team/` — list your team members
+- `POST /api/team/` — create or upsert a member: `{ "username": "nader", "display_name": "نادر", "phone": "0555..." }`
+- `PATCH /api/team/{id}/` — update `display_name` or `phone`
+- `DELETE /api/team/{id}/`
+
+### Conversation Team Access
+- `GET /api/conversations/{id}/members/` — list all conversation members (participants + added team)
+- `POST /api/conversations/{id}/add_team_member/` — body: `{ "team_member_id": 123 }`
+- `POST /api/conversations/{id}/remove_member/` — body: `{ "member_id": 456 }`
+
+Notes
+- Extra members can read/write messages and create transactions in that conversation only.
+- Extra members do not see other conversations unless added to them.
+
 ## نقاط مضافة حديثاً
 ### 1. نقطة صافي الحركة (Net Balance)
 `GET /api/conversations/{id}/net_balance/` تحسب الصافي المعتمد فقط على سجل المعاملات (وليس أرصدة المحافظ الحالية). الحقل `net_from_user_a_perspective`:

@@ -233,17 +233,20 @@ class Transaction(models.Model):
                             'kind': 'transaction',
                         }
                     })
-                    recipient_id = conversation.user_b_id if actor.id == conversation.user_a_id else conversation.user_a_id
-                    async_to_sync(channel_layer.group_send)(f"user_{recipient_id}", {
-                        'type': 'broadcast.message',
-                        'data': {
-                            'type': 'inbox.update',
-                            'conversation_id': conversation.id,
-                            'last_message_preview': preview_body[:80],
-                            'last_message_at': timezone.now().isoformat(),
-                            'unread_count': 1,
-                        }
-                    })
+                    from .models import get_conversation_viewer_ids  # local import
+                    for uid in get_conversation_viewer_ids(conversation):
+                        if uid == actor.id:
+                            continue
+                        async_to_sync(channel_layer.group_send)(f"user_{uid}", {
+                            'type': 'broadcast.message',
+                            'data': {
+                                'type': 'inbox.update',
+                                'conversation_id': conversation.id,
+                                'last_message_preview': preview_body[:80],
+                                'last_message_at': timezone.now().isoformat(),
+                                'unread_count': 1,
+                            }
+                        })
             except Exception:
                 # Don't fail transaction due to optional broadcasting
                 pass
@@ -259,14 +262,17 @@ class Transaction(models.Model):
                         'message': preview_body,
                         'conversation_id': conversation.id,
                     })
-                    recipient_id = conversation.user_b_id if actor.id == conversation.user_a_id else conversation.user_a_id
-                    pusher_client.trigger(f"user_{recipient_id}", 'notify', {
-                        'type': 'transaction',
-                        'conversation_id': conversation.id,
-                        'from': getattr(actor, 'display_name', '') or actor.username,
-                        'preview': preview_body[:80],
-                        'last_message_at': timezone.now().isoformat(),
-                    })
+                    from .models import get_conversation_viewer_ids  # local import
+                    for uid in get_conversation_viewer_ids(conversation):
+                        if uid == actor.id:
+                            continue
+                        pusher_client.trigger(f"user_{uid}", 'notify', {
+                            'type': 'transaction',
+                            'conversation_id': conversation.id,
+                            'from': getattr(actor, 'display_name', '') or actor.username,
+                            'preview': preview_body[:80],
+                            'last_message_at': timezone.now().isoformat(),
+                        })
             except Exception:
                 pass
 
@@ -320,3 +326,70 @@ class PushSubscription(models.Model):
 
     def __str__(self):  # pragma: no cover
         return f"PushSub({self.user_id}) {self.endpoint[:32]}..."
+
+
+class TeamMember(models.Model):
+    """A user-managed team member list.
+
+    Each user (owner) can curate a private team of other platform users (member).
+    Extra fields allow overriding display info (display_name/phone) for quick access
+    in the UI. The actual login identity is the `member` user.
+    """
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='team_members')
+    member = models.ForeignKey(User, on_delete=models.CASCADE, related_name='member_of_teams')
+    display_name = models.CharField(max_length=150, blank=True)
+    phone = models.CharField(max_length=32, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("owner", "member")
+        indexes = [
+            models.Index(fields=["owner", "member"]),
+        ]
+
+    def __str__(self):  # pragma: no cover
+        return f"TeamMember(owner={self.owner_id}, member={self.member_id})"
+
+
+class ConversationMember(models.Model):
+    """Grants access to a conversation to a team member.
+
+    - `member` is a real system user that can join the conversation.
+    - `added_by` must be one of the two original participants (user_a/user_b).
+    Access is scoped per conversation.
+    """
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='extra_members')
+    member = models.ForeignKey(User, on_delete=models.CASCADE, related_name='conversation_memberships')
+    added_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='added_conversation_members')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("conversation", "member")
+        indexes = [
+            models.Index(fields=["conversation", "member"]),
+        ]
+
+    def __str__(self):  # pragma: no cover
+        return f"ConvMember(conv={self.conversation_id}, member={self.member_id})"
+
+
+def get_conversation_viewer_ids(conv: Conversation) -> list[int]:
+    """Return all user IDs that should be notified/authorized for a conversation.
+
+    Includes the two primary participants and any additional team members.
+    """
+    try:
+        base = [conv.user_a_id, conv.user_b_id]
+        extras = list(ConversationMember.objects.filter(conversation_id=conv.id).values_list('member_id', flat=True))
+        # Ensure uniqueness while preserving order
+        seen = set()
+        out: list[int] = []
+        for uid in base + extras:
+            if uid and uid not in seen:
+                seen.add(uid)
+                out.append(uid)
+        return out
+    except Exception:
+        # Fallback to participants only on any error
+        return [conv.user_a_id, conv.user_b_id]

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import ContactRelation, Conversation, Message, Transaction, PushSubscription, ConversationMute
+from .models import ContactRelation, Conversation, Message, Transaction, PushSubscription, ConversationMute, TeamMember, ConversationMember
 from finance.models import Currency
 from django.core.exceptions import ValidationError
 
@@ -88,6 +88,68 @@ class ConversationSerializer(serializers.ModelSerializer):
         except Exception:
             return False
 
+
+class TeamMemberSerializer(serializers.ModelSerializer):
+    owner = PublicUserSerializer(read_only=True)
+    member = PublicUserSerializer(read_only=True)
+    username = serializers.CharField(write_only=True)
+
+    class Meta:
+        model = TeamMember
+        fields = ["id", "owner", "member", "username", "display_name", "phone", "created_at", "updated_at"]
+        read_only_fields = ["id", "owner", "member", "created_at", "updated_at"]
+
+    def create(self, validated_data):
+        request = self.context['request']
+        username = (validated_data.pop('username', '') or '').strip()
+        if not username:
+            raise serializers.ValidationError({'username': 'required'})
+        try:
+            target = User.objects.get(username__iexact=username)
+        except User.DoesNotExist:
+            raise serializers.ValidationError({'username': 'user not found'})
+        tm, _ = TeamMember.objects.update_or_create(
+            owner=request.user, member=target,
+            defaults={
+                'display_name': validated_data.get('display_name', '') or getattr(target, 'display_name', '') or target.username,
+                'phone': validated_data.get('phone', '') or getattr(target, 'phone', ''),
+            }
+        )
+        return tm
+
+    def update(self, instance, validated_data):
+        instance.display_name = validated_data.get('display_name', instance.display_name)
+        instance.phone = validated_data.get('phone', instance.phone)
+        instance.save(update_fields=["display_name", "phone", "updated_at"])
+        return instance
+
+
+class ConversationMemberSerializer(serializers.ModelSerializer):
+    member = PublicUserSerializer(read_only=True)
+    team_member_id = serializers.IntegerField(write_only=True, required=True)
+
+    class Meta:
+        model = ConversationMember
+        fields = ["id", "conversation", "member", "team_member_id", "added_by", "created_at"]
+        read_only_fields = ["id", "member", "added_by", "created_at", "conversation"]
+
+    def create(self, validated_data):
+        request = self.context['request']
+        conv = self.context.get('conversation')
+        if not conv:
+            raise serializers.ValidationError({'detail': 'conversation required'})
+        team_member_id = validated_data.get('team_member_id')
+        try:
+            tm = TeamMember.objects.get(id=team_member_id, owner=request.user)
+        except TeamMember.DoesNotExist:
+            raise serializers.ValidationError({'team_member_id': 'not found'})
+        cm, _ = ConversationMember.objects.get_or_create(
+            conversation=conv,
+            member=tm.member,
+            defaults={'added_by': request.user}
+        )
+        return cm
+
 class MessageSerializer(serializers.ModelSerializer):
     sender = PublicUserSerializer(read_only=True)
     attachment_url = serializers.SerializerMethodField()
@@ -131,9 +193,11 @@ class TransactionSerializer(serializers.ModelSerializer):
         request = self.context['request']
         conv = attrs['conversation']
         if request.user not in [conv.user_a, conv.user_b]:
-            raise serializers.ValidationError("Not a participant in this conversation")
+            # allow if added as extra member
+            if not ConversationMember.objects.filter(conversation=conv, member=request.user).exists():
+                raise serializers.ValidationError("Not allowed for this conversation")
         # قيود الاشتراك: لا معاملات إذا لم يُسمح بالمراسلة (باستثناء admin)
-        if _ensure_can_message_or_contact is not None:
+        if _ensure_can_message_or_contact is not None and request.user in [conv.user_a, conv.user_b]:
             try:
                 _ensure_can_message_or_contact(request.user, conversation=conv)
             except ValidationError as ve:

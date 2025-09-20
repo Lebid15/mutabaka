@@ -1,7 +1,7 @@
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.contrib.auth.models import AnonymousUser
-from .models import Conversation, Message
+from .models import Conversation, Message, ConversationMember, get_conversation_viewer_ids
 from decimal import Decimal
 from .group_registry import add_channel, remove_channel, get_count
 
@@ -19,7 +19,12 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                 reason = 'not_found'
             else:
                 if user.id not in [conv.user_a_id, conv.user_b_id]:
-                    reason = 'forbidden'
+                    try:
+                        allowed = await self._is_extra_member(user.id, conv.id)
+                    except Exception:
+                        allowed = False
+                    if not allowed:
+                        reason = 'forbidden'
         if reason:
             # RFC: subprotocol close codes are limited; use policy violation 1008
             await self.close(code=4001)
@@ -124,22 +129,20 @@ class ConversationConsumer(AsyncWebsocketConsumer):
         try:
             from asgiref.sync import sync_to_async
             conv = await self.get_conversation()
-            recipient_id = conv.user_b_id if user.id == conv.user_a_id else conv.user_a_id
-            inbox_group = f"user_{recipient_id}"
-            await self.channel_layer.group_send(inbox_group, {
-                'type': 'broadcast.message',
-                'data': {
-                    'type': 'inbox.update',
-                    'conversation_id': int(self.conversation_id),
-                    'last_message_preview': msg.body[:80],
-                    'last_message_at': msg.created_at.isoformat(),
-                    'unread_count': 1,
-                }
-            })
-            try:
-                print(f"[WS] inbox.update -> {inbox_group} conv_id={self.conversation_id}")
-            except Exception:
-                pass
+            for uid in get_conversation_viewer_ids(conv):
+                if uid == user.id:
+                    continue
+                inbox_group = f"user_{uid}"
+                await self.channel_layer.group_send(inbox_group, {
+                    'type': 'broadcast.message',
+                    'data': {
+                        'type': 'inbox.update',
+                        'conversation_id': int(self.conversation_id),
+                        'last_message_preview': msg.body[:80],
+                        'last_message_at': msg.created_at.isoformat(),
+                        'unread_count': 1,
+                    }
+                })
         except Exception:
             pass
 
@@ -149,3 +152,8 @@ class ConversationConsumer(AsyncWebsocketConsumer):
     async def get_conversation(self):
         from asgiref.sync import sync_to_async
         return await sync_to_async(Conversation.objects.get)(pk=self.conversation_id)
+
+    async def _is_extra_member(self, user_id: int, conversation_id: int) -> bool:
+        from asgiref.sync import sync_to_async
+        exists = await sync_to_async(ConversationMember.objects.filter(conversation_id=conversation_id, member_id=user_id).exists)()
+        return bool(exists)
