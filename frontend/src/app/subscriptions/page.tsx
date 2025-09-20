@@ -41,6 +41,9 @@ export default function SubscriptionsPage() {
   const [selectedPlan, setSelectedPlan] = useState<PlanCode>('silver');
   const [busy, setBusy] = useState(false);
 
+  // Currently selected plan info (to read yearly discount, etc.)
+  const selectedPlanInfo = useMemo(() => plans.find(p => p.code === selectedPlan), [plans, selectedPlan]);
+
   // Infer current subscription period (monthly/yearly) from duration between start and end
   const periodLabel = useMemo(() => {
     if (!sub?.start_at || !sub?.end_at) return '—';
@@ -109,9 +112,9 @@ export default function SubscriptionsPage() {
           <div className="rounded-lg overflow-hidden border border-chatDivider bg-[#0e1b22]/70 backdrop-blur-sm">
             {/* Row 1: plan names */}
             <div className="grid grid-cols-3 text-center bg-white/10 border-b border-chatDivider text-[13px]">
-              <div className="px-2 py-1.5 font-semibold">silver</div>
-              <div className="px-2 py-1.5 font-semibold">golden</div>
-              <div className="px-2 py-1.5 font-semibold">king</div>
+              <div className="px-2 py-1.5 font-semibold">فضي</div>
+              <div className="px-2 py-1.5 font-semibold">ذهبي</div>
+              <div className="px-2 py-1.5 font-semibold">ملكي</div>
             </div>
             {/* Row 2: contacts */}
             <div className="grid grid-cols-3 text-center border-b border-chatDivider text-xs divide-x divide-chatDivider/60">
@@ -169,9 +172,11 @@ export default function SubscriptionsPage() {
                   className={(!!pending||busy? 'bg-blue-600/60':'bg-blue-600 hover:bg-blue-700')+" px-3 py-1 rounded text-sm inline-flex items-center gap-2"}
                 >
                   <span>تجديد سنوي</span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-300 text-yellow-900 shadow-sm">
-                    خصم 15 %
-                  </span>
+                  {!!selectedPlanInfo?.yearly_discount_percent && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-300 text-yellow-900 shadow-sm">
+                      خصم {selectedPlanInfo.yearly_discount_percent} %
+                    </span>
+                  )}
                 </button>
               </div>
             </div>
