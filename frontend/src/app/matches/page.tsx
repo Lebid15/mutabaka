@@ -15,6 +15,12 @@ const fmt = (n: number) => {
   return sign + s;
 };
 
+// Treat special admin-like usernames as admin accounts to be hidden
+function isAdminLike(u?: string | null) {
+  const n = (u || '').toLowerCase();
+  return n === 'admin' || n === 'madmin' || n === 'a_admin' || n === 'l_admin';
+}
+
 export default function MatchesPage() {
   // Avoid hydration mismatch: don't branch on client-only state until mounted
   const [mounted, setMounted] = useState(false);
@@ -45,8 +51,10 @@ export default function MatchesPage() {
           const amUserA = me && userA && me.id === userA.id;
           const other = amUserA ? userB : userA;
           if (!other) continue;
-          const otherName = other.username || other.email || 'مستخدم';
-          const otherAvatar = other.logo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(otherName)}&background=0D8ABC&color=fff`;
+          // Skip admin-like accounts entirely
+          if (isAdminLike(other.username) || isAdminLike(other.display_name)) continue;
+          const otherName = other.display_name || other.username || other.email || 'مستخدم';
+          const otherAvatar = other.logo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(other.display_name || other.username || 'U')}&background=0D8ABC&color=fff`;
           const nb = await apiClient.getNetBalance(c.id).catch(()=>null);
           if (!nb || !nb.net) continue;
           let row = acc[c.id];
@@ -158,7 +166,9 @@ export default function MatchesPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r, idx) => (
+                {rows
+                  .filter(r => !isAdminLike(r.name))
+                  .map((r, idx) => (
                   <tr key={idx} className="border-b border-chatDivider/50 hover:bg-white/5">
                     <td className="px-3 py-2 text-left first:border-l-0 rtl:first:border-r-0 border-l rtl:border-r border-chatDivider/40">
                       <div className="flex items-center justify-start gap-2">
