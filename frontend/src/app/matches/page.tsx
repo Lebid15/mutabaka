@@ -123,7 +123,7 @@ export default function MatchesPage() {
             <svg xmlns='http://www.w3.org/2000/svg' className='h-5 w-5' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M15 19l-7-7 7-7'/></svg>
           </a>
           <div className="font-bold">مطابقاتي</div>
-          <div className="ml-auto text-xs text-gray-400">{profile?.username}</div>
+          <div className="ml-auto text-xs text-gray-400">{profile?.display_name || profile?.username}</div>
         </div>
 
         <div className="p-4 md:p-6">
