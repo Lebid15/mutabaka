@@ -14,6 +14,7 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 from urllib.parse import urlparse
+from django.core.exceptions import ImproperlyConfigured
 
 # Load .env for local development (safe no-op in production if file missing)
 load_dotenv()
@@ -25,11 +26,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-ng4-da2*l&g*kz(gf=ytjyts5x-@6bu%=op-i+xxhobkv(w*2y'
+def _to_bool(v: str | None, default: bool = False) -> bool:
+    if v is None:
+        return default
+    return v.strip().lower() in {"1", "true", "yes", "on"}
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# SECURITY: Keep secret in environment for production
+SECRET_KEY = os.getenv("SECRET_KEY") or "dev-insecure-key"
+
+# DEBUG from env (DJANGO_DEBUG preferred)
+DEBUG = _to_bool(os.getenv("DJANGO_DEBUG"), default=True)
 
 def _env_list(name: str, sep: str = ","):
     v = os.getenv(name)
@@ -39,10 +45,16 @@ def _env_list(name: str, sep: str = ","):
 
 _DEFAULT_HOSTS = ["127.0.0.1", "localhost", "testserver"]
 
-# Prefer env; otherwise default to local + our domains
-ALLOWED_HOSTS = _env_list("ALLOWED_HOSTS") or (
-    _DEFAULT_HOSTS + ["mutabaka.com", "www.mutabaka.com"]
+# Prefer DJANGO_ALLOWED_HOSTS, fallback to legacy ALLOWED_HOSTS
+_env_allowed = _env_list("DJANGO_ALLOWED_HOSTS") or _env_list("ALLOWED_HOSTS")
+# Default to local + our domains and server IP if not provided
+ALLOWED_HOSTS = _env_allowed or (
+    _DEFAULT_HOSTS + ["mutabaka.com", "www.mutabaka.com", "91.98.95.210"]
 )
+
+# In production, refuse to start without a proper SECRET_KEY
+if not DEBUG and (not SECRET_KEY or SECRET_KEY == "dev-insecure-key"):
+    raise ImproperlyConfigured("SECRET_KEY must be set via environment in production")
 
 
 # Application definition
@@ -245,7 +257,7 @@ JAZZMIN_UI_TWEAKS = {
 }
 
 # CORS (allow local frontend ports)
-CORS_ALLOWED_ORIGINS = [
+_DEFAULT_CORS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:3001",
@@ -253,11 +265,30 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3002",
     "http://127.0.0.1:3002",
 ]
-CSRF_TRUSTED_ORIGINS = _env_list("CSRF_TRUSTED_ORIGINS") or [
-    "https://mutabaka.com",
-    "https://www.mutabaka.com",
-]
+# Allow adding production origins via env (DJANGO_CORS_ALLOWED_ORIGINS)
+_env_cors = _env_list("DJANGO_CORS_ALLOWED_ORIGINS") or _env_list("CORS_ALLOWED_ORIGINS") or []
+CORS_ALLOWED_ORIGINS = _DEFAULT_CORS + _env_cors
+
+# CSRF trusted origins from env (DJANGO_* preferred)
+CSRF_TRUSTED_ORIGINS = (
+    _env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
+    or _env_list("CSRF_TRUSTED_ORIGINS")
+    or [
+        "https://mutabaka.com",
+        "https://www.mutabaka.com",
+    ]
+)
 CORS_ALLOW_CREDENTIALS = True
 
-# Behind Nginx/Cloudflare - trust X-Forwarded-Proto for HTTPS detection
+# Cookies security (secure in production, SameSite Lax minimum)
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+# Optional: enable for subdomains via env (e.g., .mutabaka.com)
+_csrf_cookie_domain = os.getenv("CSRF_COOKIE_DOMAIN") or os.getenv("DJANGO_CSRF_COOKIE_DOMAIN")
+if _csrf_cookie_domain:
+    CSRF_COOKIE_DOMAIN = _csrf_cookie_domain
+
+# Behind Nginx/Proxy/SSL termination - trust X-Forwarded-Proto for HTTPS detection
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

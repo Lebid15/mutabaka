@@ -25,6 +25,7 @@ from accounts.auth_serializers import EmailOrUsernameTokenObtainPairView
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from django.http import JsonResponse
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.contrib.auth import get_user_model
@@ -99,6 +100,8 @@ class MeView(APIView):
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    # Health check endpoint
+    path('health', lambda request: JsonResponse({"status": "ok"})),
     path('api/', include('communications.urls')),
     path('api/subscriptions/', include('subscriptions.urls')),
     path('api/auth/token/', EmailOrUsernameTokenObtainPairView.as_view(), name='token_obtain_pair'),
