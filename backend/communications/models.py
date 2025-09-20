@@ -138,16 +138,17 @@ class Transaction(models.Model):
     def __str__(self):
         return f"Txn {self.amount} {self.currency.code} {self.direction}"
 
-# ---- Admin-facing proxy models (no DB changes) ----
-class ConversationInbox(Conversation):
-    class Meta:
-        proxy = True
-        verbose_name = "Admin inbox"
-        verbose_name_plural = "Admin inbox"
-
     @classmethod
     def create_transaction(cls, conversation, actor, currency, amount, direction, note=""):
-        # توحيد النوع وتحجيم العدد إلى 5 مراتب عشرية (Round Half Up)
+        """Create a financial transaction between conversation participants.
+
+        - direction:
+            - 'lna' => actor received (credit us) -> actor balance +amount, other -amount
+            - 'lkm' => actor paid (debit us)    -> actor balance -amount, other +amount
+        - amount is rounded Half Up to 5 decimal places for storage and balance math.
+        - Creates a transaction message in the conversation and updates last activity.
+        """
+        # Normalize and round amount to 5 dp
         def round_amount(val):
             try:
                 if not isinstance(val, Decimal):
@@ -156,10 +157,9 @@ class ConversationInbox(Conversation):
             except (InvalidOperation, TypeError, ValueError):
                 raise ValueError("Invalid amount")
 
-        # تنسيق العرض: على الأقل رقمين عشريين، حتى 5 عند الحاجة (بعد التقريب)
+        # Format amount for message display: at least 2 dp, up to 5
         def format_display_amount(dec: Decimal) -> str:
-            # dec هنا مفترض 5 منازل كحد أقصى
-            s = f"{dec:.5f}"  # دائماً 5 منازل ثم نقصّ الزائد
+            s = f"{dec:.5f}"
             if '.' not in s:
                 return s + '.00'
             integer, frac = s.split('.')
@@ -169,31 +169,34 @@ class ConversationInbox(Conversation):
             return integer + '.' + frac
 
         amount = round_amount(amount)
-        # تحديد الطرفين
+
+        # Validate participants
         if actor not in conversation.participants():
             raise ValueError("Actor not in conversation")
         other = conversation.user_b if actor == conversation.user_a else conversation.user_a
-        from_user, to_user = (actor, other) if direction == 'lna' else (actor, other)
-        # المنطق: إذا direction = لنا => تزداد محفظة actor وتقل محفظة الآخر.
-        # إذا direction = لكم => تقل محفظة actor وتزداد محفظة الآخر.
+
+        # Compute balance signs
         sign_actor = 1 if direction == 'lna' else -1
         sign_other = -sign_actor
+
         with transaction.atomic():
-            # إنشاء المحافظ تلقائياً إذا غير موجودة لضمان تجربة "كل شيء تلقائي"
-            # نستخدم get_or_create أولاً بدون قفل، ثم نعيد جلبها مع select_for_update لضمان القفل والتناسق.
+            # Ensure wallets exist then lock for update
+            from finance.models import Wallet  # local import to avoid potential cycles
             Wallet.objects.get_or_create(user=actor, currency=currency, defaults={"balance": 0})
             Wallet.objects.get_or_create(user=other, currency=currency, defaults={"balance": 0})
+
             w_actor = Wallet.objects.select_for_update().get(user=actor, currency=currency)
             w_other = Wallet.objects.select_for_update().get(user=other, currency=currency)
-            # تحديث الأرصدة ثم تقليمها لنفس الدقة (5) للحفاظ على الاتساق في العرض والحساب
+
             w_actor.balance = (w_actor.balance + (sign_actor * amount)).quantize(Decimal('0.00001'), rounding=ROUND_HALF_UP)
             w_other.balance = (w_other.balance + (sign_other * amount)).quantize(Decimal('0.00001'), rounding=ROUND_HALF_UP)
             w_actor.save(update_fields=["balance", "updated_at"])
             w_other.save(update_fields=["balance", "updated_at"])
+
             txn = cls.objects.create(
                 conversation=conversation,
-                from_user=from_user,
-                to_user=to_user,
+                from_user=actor,
+                to_user=other,
                 currency=currency,
                 amount=amount,
                 direction=direction,
@@ -201,14 +204,17 @@ class ConversationInbox(Conversation):
                 balance_after_from=w_actor.balance,
                 balance_after_to=w_other.balance,
             )
+
             display_amount = format_display_amount(amount)
+            # Create a chat message reflecting the transaction
             Message.objects.create(
                 conversation=conversation,
                 sender=actor,
                 type='transaction',
                 body=f"معاملة: {( 'لنا' if direction=='lna' else 'لكم')} {display_amount} {currency.symbol or currency.code}{(' - ' + note) if note else ''}".strip()
             )
-            # بث فوري عبر WebSocket (إن وُجد مستمع)
+
+            # Optional realtime broadcast via Channels
             try:
                 from channels.layers import get_channel_layer
                 from asgiref.sync import async_to_sync
@@ -220,14 +226,13 @@ class ConversationInbox(Conversation):
                         'type': 'broadcast.message',
                         'data': {
                             'type': 'chat.message',
-                            'id': txn.id,  # using txn id for reference (message id not fetched here)
+                            'id': txn.id,
                             'sender': actor.username,
                             'body': preview_body,
                             'created_at': timezone.now().isoformat(),
                             'kind': 'transaction',
                         }
                     })
-                    # أبلغ صندوق الوارد للطرف الآخر لتحديث المعاينة وترتيب المحادثة
                     recipient_id = conversation.user_b_id if actor.id == conversation.user_a_id else conversation.user_a_id
                     async_to_sync(channel_layer.group_send)(f"user_{recipient_id}", {
                         'type': 'broadcast.message',
@@ -240,9 +245,10 @@ class ConversationInbox(Conversation):
                         }
                     })
             except Exception:
-                # صامت: لا نفشل المعاملة المالية بسبب بث اختياري
+                # Don't fail transaction due to optional broadcasting
                 pass
-            # بث عبر Pusher لضمان وصول فوري على الواجهة (نفس شكل الرسائل النصية)
+
+            # Pusher fallback (optional)
             try:
                 from .pusher_client import pusher_client
                 if pusher_client:
@@ -253,7 +259,6 @@ class ConversationInbox(Conversation):
                         'message': preview_body,
                         'conversation_id': conversation.id,
                     })
-                    # notify recipient for inbox badge update
                     recipient_id = conversation.user_b_id if actor.id == conversation.user_a_id else conversation.user_a_id
                     pusher_client.trigger(f"user_{recipient_id}", 'notify', {
                         'type': 'transaction',
@@ -264,9 +269,17 @@ class ConversationInbox(Conversation):
                     })
             except Exception:
                 pass
-            # تحديث بيانات المحادثة (آخر نشاط) خارج إنشاء رسالة النص أعلاه (المكالمة أعلاه ستحدّث أيضاً)
+
+            # Update conversation activity timestamp
             Conversation.objects.filter(pk=conversation.pk).update(last_activity_at=timezone.now())
             return txn
+
+# ---- Admin-facing proxy models (no DB changes) ----
+class ConversationInbox(Conversation):
+    class Meta:
+        proxy = True
+        verbose_name = "Admin inbox"
+        verbose_name_plural = "Admin inbox"
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
