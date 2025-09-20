@@ -41,7 +41,7 @@ export default function SubscriptionsPage() {
   const [selectedPlan, setSelectedPlan] = useState<PlanCode>('silver');
   const [busy, setBusy] = useState(false);
 
-  // Currently selected plan info (to read yearly discount, etc.)
+  // Currently selected plan info (to read yearly discount, etc.).
   const selectedPlanInfo = useMemo(() => plans.find(p => p.code === selectedPlan), [plans, selectedPlan]);
 
   // Infer current subscription period (monthly/yearly) from duration between start and end
