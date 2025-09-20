@@ -1,7 +1,7 @@
 "use client";
 // أزلنا CSS module (page.module.css) لأن التصميم الآن يعتمد كلياً على Tailwind
 
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '../lib/api';
 import { attachPrimingListeners, tryPlayMessageSound, setRuntimeSoundUrl } from '../lib/sound';
@@ -308,6 +308,42 @@ export default function Home() {
   const typingTimeoutRef = useRef<any>(null);
   const lastTypingSentRef = useRef<number>(0);
   const lastMessageIdRef = useRef<number>(0);
+
+  // Helper: Refresh summary, net balance, and pair wallet for a conversation
+  const refreshConvAggregates = useCallback(async (convId: number) => {
+    try {
+      const [s, n] = await Promise.all([
+        apiClient.getSummary(convId),
+        apiClient.getNetBalance(convId),
+      ]);
+      setSummary(s.summary || []);
+      setNetBalance(n.net || []);
+      // ensure meta (user_a/user_b) exists
+      let metaForConv = convMetaById[convId];
+      if (!metaForConv) {
+        try {
+          const conv = await apiClient.getConversation(convId);
+          if (conv && conv.user_a && conv.user_b) {
+            metaForConv = { user_a_id: conv.user_a.id, user_b_id: conv.user_b.id };
+            setConvMetaById(prev => ({ ...prev, [convId]: metaForConv! }));
+          }
+        } catch {}
+      }
+      // rebuild pair wallet from net rows from the perspective of current user
+      const pair: Record<string, number> = { ...initialWallet };
+      const rows = Array.isArray((n as any)?.net) ? (n as any).net : [];
+      const flip = (metaForConv && profile?.id)
+        ? (profile.id === metaForConv.user_a_id ? 1 : -1)
+        : 1;
+      for (const row of rows) {
+        const code = row?.currency?.code;
+        const valRaw = row?.net_from_user_a_perspective;
+        const val = typeof valRaw === 'number' ? valRaw : parseFloat(String(valRaw));
+        if (code) pair[code] = isNaN(val) ? 0 : Number((flip * val).toFixed(5));
+      }
+      setPairWalletByConv(prev => ({ ...prev, [convId]: pair }));
+    } catch {}
+  }, [apiClient, convMetaById, profile?.id]);
 
   // Toasts
   type Toast = { id: string; type: 'success'|'error'|'info'; msg: string };
@@ -934,7 +970,7 @@ export default function Home() {
     let channel: any = null;
     const channelName = `chat_${selectedConversationId}`;
     let soundPromptShown = false;
-    const onMessage = (data: any) => {
+  const onMessage = (data: any) => {
       try {
         if (data?.type === 'delete.request' && data?.conversation_id) {
           setPendingDeleteByConv(prev => ({ ...prev, [data.conversation_id]: { from: data.username || 'unknown', at: new Date().toISOString() } }));
@@ -999,6 +1035,10 @@ export default function Home() {
               status: 'delivered',
             } as any,
           ]));
+          // If it is a transaction, refresh aggregates so wallet updates live for recipient
+          if (tx && selectedConversationId) {
+            refreshConvAggregates(selectedConversationId);
+          }
           // Clear unread counter for this conversation if we are currently viewing it
           setUnreadByConv(prev => ({ ...prev, [selectedConversationId]: 0 }));
           // Play a soft sound if tab is hidden OR user is not viewing chat panel (mobile list view)
@@ -1207,6 +1247,10 @@ export default function Home() {
                 } : undefined,
               } as any,
             ]));
+            // For recipient, ensure wallet aggregates refresh on incoming transaction
+            if (tx && selectedConversationId) {
+              refreshConvAggregates(selectedConversationId);
+            }
             // If the incoming message has an attachment without a URL yet, fetch it immediately and patch in place
             if (payload.attachment && !payload.attachment.url && typeof payload.id === 'number') {
               (async () => {
