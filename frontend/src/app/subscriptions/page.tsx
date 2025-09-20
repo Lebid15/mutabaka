@@ -5,6 +5,23 @@ import { apiClient } from '@/lib/api';
 
 type PlanCode = 'silver'|'golden'|'king';
 
+// Arabic labels for plan codes
+const PLAN_AR: Record<PlanCode, string> = {
+  silver: 'فضي',
+  golden: 'ذهبي',
+  king: 'ملكي',
+};
+
+const planLabel = (code?: string) => {
+  if (!code) return '—';
+  const c = code as PlanCode;
+  return (PLAN_AR as any)[c] || code;
+}
+// Prefer plan.name (from backend/admin), fallback to Arabic label by code
+const planNameOrLabel = (plan?: { name?: string; code?: string }) => {
+  return plan?.name?.trim() || planLabel(plan?.code);
+}
+
 // Render status with Arabic labels; "active" shown as green "نشط"
 const statusLabel = (s?: string) => {
   if (!s) return <span className="text-gray-300">غير معروف</span>;
@@ -146,7 +163,7 @@ export default function SubscriptionsPage() {
               )}
               {/* Single-column layout on all screen sizes (match mobile design) */}
               <div className="grid grid-cols-1 gap-2 text-sm">
-                <div className="flex justify-between"><span className="text-gray-400">الباقة الحالية</span><span className="font-semibold">{sub?.plan?.code || '—'}</span></div>
+                <div className="flex justify-between"><span className="text-gray-400">الباقة الحالية</span><span className="font-semibold">{planNameOrLabel(sub?.plan)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-400">نوع الاشتراك</span><span className="font-semibold">{periodLabel}</span></div>
                 <div className="flex justify-between"><span className="text-gray-400">تاريخ آخر اشتراك</span><span>{formatDateTimeEn(sub?.start_at)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-400">تاريخ الانتهاء</span><span>{formatDateTimeEn(sub?.end_at)}</span></div>
@@ -160,7 +177,7 @@ export default function SubscriptionsPage() {
                 <div className="text-sm text-gray-300">ترقية الباقة</div>
                 <select disabled={!!pending || busy} value={selectedPlan} onChange={e=>setSelectedPlan(e.target.value as PlanCode)} className="bg-chatBg border border-chatDivider rounded px-2 py-1 text-sm">
                   {plans.map(p => (
-                    <option key={p.code} value={p.code}>{p.name || p.code}</option>
+                    <option key={p.code} value={p.code}>{planNameOrLabel(p)}</option>
                   ))}
                 </select>
               </div>
