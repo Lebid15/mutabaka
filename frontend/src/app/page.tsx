@@ -425,7 +425,7 @@ export default function Home() {
       // أضف فقاعة تفاؤلية للمرفق
       const clientId = `attach_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
       const previewText = caption || f.name;
-      setMessages(prev => [...prev, { sender: 'current', text: previewText, client_id: clientId, status: 'sending', kind: 'text', attachment: { name: f.name, mime: f.type, size: f.size } }]);
+  setMessages(prev => [...prev, { sender: 'current', text: previewText, client_id: clientId, status: 'sending', kind: 'text', senderDisplay: (profile?.display_name || profile?.username) || undefined, attachment: { name: f.name, mime: f.type, size: f.size } }]);
       const doUpload = async (maybeOtp?: string) => {
         try {
           const res = await apiClient.uploadConversationAttachment(selectedConversationId, f, caption || undefined, maybeOtp);
@@ -467,7 +467,7 @@ export default function Home() {
     const text = outgoingText.trim();
     setOutgoingText('');
     const clientId = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
-    setMessages(prev => [...prev, { sender: 'current', text, client_id: clientId, status: 'sending', kind: 'text' }]);
+  setMessages(prev => [...prev, { sender: 'current', text, client_id: clientId, status: 'sending', kind: 'text', senderDisplay: (profile?.display_name || profile?.username) || undefined }]);
     try {
       try {
         await apiClient.sendMessage(selectedConversationId, text);
@@ -1217,6 +1217,7 @@ export default function Home() {
                     created_at: m.created_at || payload.created_at || new Date().toISOString(),
                     kind: tx ? 'transaction' : 'text',
                     tx: tx || undefined,
+                    senderDisplay: m.senderDisplay || (profile?.display_name || profile?.username) || undefined,
                     attachment: payload.attachment ? {
                       name: payload.attachment.name,
                       mime: payload.attachment.mime,
@@ -1237,6 +1238,7 @@ export default function Home() {
                   tx: tx || undefined,
                   status: 'delivered',
                   id: typeof payload.id === 'number' ? payload.id : undefined,
+                  senderDisplay: (profile?.display_name || profile?.username) || undefined,
                   attachment: payload.attachment ? {
                     name: payload.attachment.name,
                     mime: payload.attachment.mime,
@@ -1257,6 +1259,7 @@ export default function Home() {
                 tx: tx || undefined,
                 status: 'delivered',
                 id: typeof payload.id === 'number' ? payload.id : undefined,
+                senderDisplay: (payload.senderDisplay || payload.display_name) || undefined,
                 attachment: payload.attachment ? {
                   name: payload.attachment.name,
                   mime: payload.attachment.mime,
