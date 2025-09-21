@@ -108,7 +108,7 @@ function TransactionBubble({ sender, tx, createdAt }: { sender: 'current'|'other
 }
 
 // مكون رأس القائمة الجانبية مع نافذة بحث ديناميكي عن المستخدمين + إنشاء محادثة
-function SidebarHeaderAddContact({ onAdded, existingUsernames, currentUsername, onRefreshContacts, onSubscriptionGate }: { onAdded: (conv:any)=>void, existingUsernames: string[], currentUsername?: string, onRefreshContacts?: () => void, onSubscriptionGate?: (reason?: string) => void }) {
+function SidebarHeaderAddContact({ onAdded, existingUsernames, currentUsername, onRefreshContacts, onSubscriptionGate, isTeamActor }: { onAdded: (conv:any)=>void, existingUsernames: string[], currentUsername?: string, onRefreshContacts?: () => void, onSubscriptionGate?: (reason?: string) => void, isTeamActor?: boolean }) {
   const [open, setOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -201,10 +201,10 @@ function SidebarHeaderAddContact({ onAdded, existingUsernames, currentUsername, 
           {menuOpen && (
             <div className="absolute left-0 top-full mt-2 min-w-[160px] bg-chatBg border border-chatDivider rounded-lg shadow-xl overflow-hidden z-40">
               <a href="/profile" className="block px-3 py-2 text-xs text-gray-100 hover:bg-white/5">بروفايلي</a>
-              <a href="/matches" className="block px-3 py-2 text-xs text-gray-100 hover:bg-white/5">مطابقاتي</a>
+              {!isTeamActor && <a href="/matches" className="block px-3 py-2 text-xs text-gray-100 hover:bg-white/5">مطابقاتي</a>}
               <a href="/settings" className="block px-3 py-2 text-xs text-gray-100 hover:bg-white/5">الإعدادات</a>
-              <a href="/subscriptions" className="block px-3 py-2 text-xs text-gray-100 hover:bg-white/5">الاشتراك</a>
-              <a href="/team" className="block px-3 py-2 text-xs text-gray-100 hover:bg-white/5">فريق العمل</a>
+              {!isTeamActor && <a href="/subscriptions" className="block px-3 py-2 text-xs text-gray-100 hover:bg-white/5">الاشتراك</a>}
+              {!isTeamActor && <a href="/team" className="block px-3 py-2 text-xs text-gray-100 hover:bg-white/5">فريق العمل</a>}
               <button onClick={() => { onRefreshContacts && onRefreshContacts(); setMenuOpen(false); }} className="w-full text-right px-3 py-2 text-xs text-gray-100 hover:bg-white/5">تحديث جهات الاتصال</button>
               <button onClick={logout} className="w-full text-right px-3 py-2 text-xs text-red-300 hover:bg-red-500/10">خروج</button>
             </div>
@@ -356,6 +356,14 @@ export default function Home() {
     }
     return fallback;
   }, [profile?.display_name, profile?.username, getJwtPayload, teamList]);
+
+  // هل الحساب الحالي هو عضو فريق؟ احسبها في كل رندر لضمان التزامن مع تغيّر التوكن
+  const isTeamActor = (() => {
+    try {
+      const payload = getJwtPayload();
+      return !!(payload && payload.actor === 'team_member');
+    } catch { return false; }
+  })();
 
   // Ensure team list is available when acting as team member (for display names)
   useEffect(() => {
@@ -1543,7 +1551,7 @@ export default function Home() {
         <div className="flex flex-1 w-full h-full bg-chatBg isolate">
           {/* Sidebar (شاشات كبيرة فقط) */}
           <aside className="hidden md:flex w-80 md:w-96 bg-chatPanel border-l border-chatDivider flex-col relative z-20">
-            <SidebarHeaderAddContact onAdded={async (newConv:any)=>{
+            <SidebarHeaderAddContact isTeamActor={isTeamActor} onAdded={async (newConv:any)=>{
               const convs = await apiClient.listConversations();
               const convArr = Array.isArray(convs) ? convs : [];
               setConversations(convArr);
@@ -1663,7 +1671,7 @@ export default function Home() {
             {mobileView === 'list' && (
               <div className="flex flex-col md:hidden h-full">
                 <div className="border-b border-chatDivider bg-chatPanel">
-                  <SidebarHeaderAddContact onAdded={async (newConv:any)=>{
+                  <SidebarHeaderAddContact isTeamActor={isTeamActor} onAdded={async (newConv:any)=>{
                     const convs = await apiClient.listConversations();
                     const convArr = Array.isArray(convs) ? convs : [];
                     setConversations(convArr);
