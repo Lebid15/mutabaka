@@ -280,7 +280,10 @@ export default function Home() {
   const [authStatus, setAuthStatus] = useState<'checking'|'authed'|'anon'>('checking');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
-  const [useTeamLogin, setUseTeamLogin] = useState(false);
+  const [useTeamLogin, setUseTeamLogin] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try { return localStorage.getItem('useTeamLogin') === '1'; } catch { return false; }
+  });
   const [ownerUsername, setOwnerUsername] = useState('');
   const [teamUsername, setTeamUsername] = useState('');
   const [error, setError] = useState<string|null>(null);
@@ -1346,6 +1349,12 @@ export default function Home() {
             const code = typeof window !== 'undefined' ? window.prompt('أدخل رمز التحقق (OTP) من تطبيق المصادقة') : '';
             if (!code) throw e;
             await apiClient.login(identifier, password, code);
+          } else if ((e?.message || '').toLowerCase().includes('no active account')) {
+            // UX: اقترح وضع عضو فريق تلقائياً إذا لم نجد حساب أساسي
+            setUseTeamLogin(true);
+            setTeamUsername(identifier);
+            setError('لم يتم العثور على حساب أساسي بهذا الاسم. جرّب تسجيل دخول عضو فريق: أدخل اسم مستخدم المالك واسم عضو الفريق وكلمة المرور.');
+            return; // لا تكمل إعادة التوجيه
           } else {
             throw e;
           }
@@ -1386,7 +1395,12 @@ export default function Home() {
           {error && <div className="text-red-400 text-xs text-center">{error}</div>}
             <div className="flex items-center justify-between text-xs">
               <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input type="checkbox" className="accent-green-600" checked={useTeamLogin} onChange={e=>setUseTeamLogin(e.target.checked)} />
+              <input
+                type="checkbox"
+                className="accent-green-600"
+                checked={useTeamLogin}
+                onChange={e=>{ setUseTeamLogin(e.target.checked); try { localStorage.setItem('useTeamLogin', e.target.checked ? '1' : '0'); } catch {} }}
+              />
                 <span>تسجيل دخول عضو فريق</span>
               </label>
             </div>
