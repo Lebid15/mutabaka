@@ -3,6 +3,8 @@ import { ChangeEvent, useEffect, useState } from "react";
 import { createTeamMember, deleteTeamMember, listTeam, updateTeamMember, TeamMember } from "@/lib/api-team";
 
 export default function TeamPage() {
+  const [mounted, setMounted] = useState(false);
+  const [blocked, setBlocked] = useState(false);
   const [token, setToken] = useState<string>("");
   const [items, setItems] = useState<TeamMember[]>([]);
   const [form, setForm] = useState({ username: "", display_name: "", phone: "", password: "" });
@@ -11,17 +13,31 @@ export default function TeamPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<{ display_name: string; phone: string }>({ display_name: "", phone: "" });
 
+  useEffect(() => { setMounted(true); }, []);
+
+  // Redirect team-member accounts away from this page
   useEffect(() => {
+    if (!mounted) return;
     try {
       const raw = typeof window !== 'undefined' ? localStorage.getItem('auth_tokens_v1') : null;
       if (!raw) return;
       const parsed = JSON.parse(raw);
       const access = parsed?.access as string | undefined;
       if (!access) return;
+      const base64 = access.split('.')[1];
+      if (base64) {
+        const json = atob(base64.replace(/-/g, '+').replace(/_/g, '/'));
+        const payload = JSON.parse(json);
+        if (payload && payload.actor === 'team_member') {
+          setBlocked(true);
+          if (typeof window !== 'undefined') window.location.replace('/');
+          return;
+        }
+      }
       setToken(access);
       listTeam(access).then(setItems).catch((e) => { try { console.error(e); } catch {} });
     } catch (e) { /* ignore */ }
-  }, []);
+  }, [mounted]);
 
   const add = async () => {
     setError(null);
@@ -70,6 +86,19 @@ export default function TeamPage() {
     await deleteTeamMember(token, id);
     setItems(items.filter((it: TeamMember) => it.id !== id));
   };
+
+  if (!token || blocked) {
+    return (
+      <div className="p-6">
+        <div className="mx-auto max-w-5xl mb-4">
+          <div className="bg-chatPanel border border-chatDivider rounded-lg p-4 text-center">
+            <div className="font-bold mb-1">{blocked ? 'هذه الصفحة متاحة فقط للمالك' : 'الرجاء تسجيل الدخول أولاً'}</div>
+            <a href="/" className="text-sm text-green-400 hover:underline">الانتقال للصفحة الرئيسية</a>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6">

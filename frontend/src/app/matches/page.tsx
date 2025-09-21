@@ -24,6 +24,7 @@ function isAdminLike(u?: string | null) {
 export default function MatchesPage() {
   // Avoid hydration mismatch: don't branch on client-only state until mounted
   const [mounted, setMounted] = useState(false);
+  const [blocked, setBlocked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string|null>(null);
   const [rows, setRows] = useState<Row[]>([]);
@@ -31,8 +32,29 @@ export default function MatchesPage() {
 
   useEffect(() => { setMounted(true); }, []);
 
+  // Redirect team-member accounts away from this page
+  useEffect(() => {
+    if (!mounted) return;
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('auth_tokens_v1') : null;
+      const access = raw ? (JSON.parse(raw).access as string) : '';
+      if (access) {
+        const base64 = access.split('.')[1];
+        if (base64) {
+          const json = atob(base64.replace(/-/g, '+').replace(/_/g, '/'));
+          const payload = JSON.parse(json);
+          if (payload && payload.actor === 'team_member') {
+            setBlocked(true);
+            if (typeof window !== 'undefined') window.location.replace('/');
+          }
+        }
+      }
+    } catch {}
+  }, [mounted]);
+
   useEffect(() => {
     if (!mounted) return; // run only on client after mount
+    if (blocked) return; // do not load for team members
     if (!apiClient.access) { // if not authenticated, skip fetching
       setLoading(false);
       return;
@@ -104,11 +126,11 @@ export default function MatchesPage() {
     );
   }
 
-  if (!apiClient.access) {
+  if (!apiClient.access || blocked) {
     return (
       <div className="min-h-screen bg-chatBg text-gray-100 flex items-center justify-center p-6">
         <div className="bg-chatPanel border border-chatDivider rounded-lg p-6 max-w-md w-full text-center">
-          <div className="font-bold mb-2">الرجاء تسجيل الدخول أولاً</div>
+          <div className="font-bold mb-2">{blocked ? 'هذه الصفحة متاحة فقط للمالك' : 'الرجاء تسجيل الدخول أولاً'}</div>
           <a href="/" className="text-sm text-green-400 hover:underline">الانتقال للصفحة الرئيسية</a>
         </div>
       </div>

@@ -50,6 +50,8 @@ const formatDateTimeEn = (iso?: string) => {
 }
 
 export default function SubscriptionsPage() {
+  const [mounted, setMounted] = useState(false);
+  const [blocked, setBlocked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string|null>(null);
   const [sub, setSub] = useState<any|null>(null);
@@ -98,8 +100,34 @@ export default function SubscriptionsPage() {
       setError(e?.message || 'تعذر تحميل البيانات');
     } finally { setLoading(false); }
   };
+  useEffect(() => { setMounted(true); }, []);
 
-  useEffect(() => { load(); }, []);
+  // Redirect team-member accounts away from this page
+  useEffect(() => {
+    if (!mounted) return;
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('auth_tokens_v1') : null;
+      const access = raw ? (JSON.parse(raw).access as string) : '';
+      if (access) {
+        const base64 = access.split('.')[1];
+        if (base64) {
+          const json = atob(base64.replace(/-/g, '+').replace(/_/g, '/'));
+          const payload = JSON.parse(json);
+          if (payload && payload.actor === 'team_member') {
+            setBlocked(true);
+            if (typeof window !== 'undefined') window.location.replace('/');
+          }
+        }
+      }
+    } catch {}
+  }, [mounted]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    if (blocked) return;
+    if (!apiClient.access) { setLoading(false); return; }
+    load();
+  }, [mounted, blocked]);
 
   const renew = async (period: 'monthly'|'yearly') => {
     setBusy(true);
@@ -111,6 +139,17 @@ export default function SubscriptionsPage() {
       alert(e?.message || 'تعذر إنشاء الطلب');
     } finally { setBusy(false); }
   };
+
+  if (!apiClient.access || blocked) {
+    return (
+      <div className="min-h-screen bg-chatBg text-gray-100 flex items-center justify-center p-6">
+        <div className="bg-chatPanel border border-chatDivider rounded-lg p-6 max-w-md w-full text-center">
+          <div className="font-bold mb-2">{blocked ? 'هذه الصفحة متاحة فقط للمالك' : 'الرجاء تسجيل الدخول أولاً'}</div>
+          <a href="/" className="text-sm text-green-400 hover:underline">الانتقال للصفحة الرئيسية</a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-chatBg text-gray-100 p-4">
