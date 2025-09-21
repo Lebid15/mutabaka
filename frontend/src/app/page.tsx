@@ -196,6 +196,7 @@ function SidebarHeaderAddContact({ onAdded, existingUsernames, currentUsername, 
               <a href="/matches" className="block px-3 py-2 text-xs text-gray-100 hover:bg-white/5">مطابقاتي</a>
               <a href="/settings" className="block px-3 py-2 text-xs text-gray-100 hover:bg-white/5">الإعدادات</a>
               <a href="/subscriptions" className="block px-3 py-2 text-xs text-gray-100 hover:bg-white/5">الاشتراك</a>
+              <a href="/team" className="block px-3 py-2 text-xs text-gray-100 hover:bg-white/5">فريق العمل</a>
               <button onClick={() => { onRefreshContacts && onRefreshContacts(); setMenuOpen(false); }} className="w-full text-right px-3 py-2 text-xs text-gray-100 hover:bg-white/5">تحديث جهات الاتصال</button>
               <button onClick={logout} className="w-full text-right px-3 py-2 text-xs text-red-300 hover:bg-red-500/10">خروج</button>
             </div>
