@@ -1008,8 +1008,9 @@ export default function Home() {
           pushToast({ type: 'info', msg: 'رفض الطرف الآخر طلب الحذف' });
           return;
         }
-        const isCurrent = !!(profile?.username && data?.username === profile.username);
-        const txt = (data?.message ?? '').toString();
+  const isCurrent = !!(profile?.username && data?.username === profile.username);
+  const txt = (data?.message ?? '').toString();
+  const senderDisplay = (data?.senderDisplay || data?.display_name || '').toString();
         const tx = parseTransaction(txt);
         if (isCurrent) {
           // Reconcile with optimistic 'sending' bubble instead of appending a duplicate
@@ -1029,9 +1030,10 @@ export default function Home() {
                 sender: 'current',
                 text: txt,
                 created_at: new Date().toISOString(),
-                kind: tx ? 'transaction' : 'text',
+                kind: tx ? 'transaction' : (data?.kind === 'system' ? 'system' : 'text'),
                 tx: tx || undefined,
                 status: 'delivered',
+                senderDisplay: senderDisplay || undefined,
               } as any,
             ];
           });
@@ -1043,9 +1045,10 @@ export default function Home() {
               sender: 'other',
               text: txt,
               created_at: new Date().toISOString(),
-              kind: tx ? 'transaction' : 'text',
+              kind: tx ? 'transaction' : (data?.kind === 'system' ? 'system' : 'text'),
               tx: tx || undefined,
               status: 'delivered',
+              senderDisplay: senderDisplay || undefined,
             } as any,
           ]));
           // If it is a transaction, refresh aggregates so wallet updates live for recipient
@@ -1107,12 +1110,14 @@ export default function Home() {
             sender: m.sender && profile && m.sender.id === profile.id ? 'current' : 'other',
             text: (m.body ?? '').toString(),
                 created_at: m.created_at,
-                attachment: (m.attachment_url || m.attachment_name) ? { url: m.attachment_url || null, name: m.attachment_name || undefined, mime: m.attachment_mime || undefined, size: typeof m.attachment_size === 'number' ? m.attachment_size : undefined } : undefined
+                attachment: (m.attachment_url || m.attachment_name) ? { url: m.attachment_url || null, name: m.attachment_name || undefined, mime: m.attachment_mime || undefined, size: typeof m.attachment_size === 'number' ? m.attachment_size : undefined } : undefined,
+                senderDisplay: (m.senderDisplay || (m.sender && (m.sender.display_name || m.sender.username))) || undefined,
           };
           if (m.type === 'transaction') {
             const tx = parseTransaction(base.text);
             if (tx) return { ...base, kind: 'transaction', tx };
           }
+          if (m.type === 'system') return { ...base, kind: 'system' };
           return { ...base, kind: 'text' };
         });
         const chrono = mapped.reverse();
@@ -1944,10 +1949,20 @@ export default function Home() {
                     const key = String(m.id ?? `tx_${i}`);
                     parts.push(
                       <div key={key} ref={(el)=>{ messageRefs.current[key] = el; }} className={m.sender === 'current' ? 'self-start' : 'self-end'}>
+                        {m.senderDisplay && (
+                          <div className="text-[10px] text-gray-400 mb-1">{m.senderDisplay}</div>
+                        )}
                         <TransactionBubble sender={m.sender} tx={m.tx} createdAt={m.created_at} />
                         {searchQuery && m.tx.note && (
                           <div className="sr-only">{m.tx.note}</div>
                         )}
+                      </div>
+                    );
+                  } else if (m.kind === 'system') {
+                    const key = String(m.id ?? `sys_${i}`);
+                    parts.push(
+                      <div key={key} ref={(el)=>{ messageRefs.current[key] = el; }} className="self-center bg-gray-700/60 text-gray-100 px-3 py-1.5 rounded-full text-[11px] border border-white/10">
+                        {m.text}
                       </div>
                     );
                   } else {
@@ -1964,6 +1979,9 @@ export default function Home() {
                             : 'self-end bg-bubbleReceived text-white px-3 py-2 rounded-2xl rounded-br-sm max-w-[60%] text-xs shadow whitespace-pre-line'
                         }
                       >
+                        {m.senderDisplay && (
+                          <div className="text-[10px] text-gray-300 mb-1">{m.senderDisplay}</div>
+                        )}
                         {/* Attachment preview if present */}
                         {m.attachment && (m.attachment.url || m.attachment.name) && (
                           <div className="mb-1">

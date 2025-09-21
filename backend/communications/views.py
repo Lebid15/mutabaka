@@ -301,6 +301,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'type': 'delete.request',
                     'conversation_id': conv.id,
                     'username': user.username,
+                    'display_name': getattr(user, 'display_name', '') or user.username,
                 })
         except Exception:
             pass
@@ -324,6 +325,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'type': 'delete.approved',
                     'conversation_id': cid,
                     'username': user.username,
+                    'display_name': getattr(user, 'display_name', '') or user.username,
                 })
         except Exception:
             pass
@@ -346,6 +348,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'type': 'delete.declined',
                     'conversation_id': conv.id,
                     'username': user.username,
+                    'display_name': getattr(user, 'display_name', '') or user.username,
                 })
         except Exception:
             pass
@@ -435,11 +438,21 @@ class ConversationViewSet(viewsets.ModelViewSet):
             channel_layer = get_channel_layer()
             if channel_layer is not None:
                 group = f"conv_{conv.id}"
+                sender_display = ''
+                try:
+                    tm = getattr(msg, 'sender_team_member', None)
+                    if tm:
+                        sender_display = tm.display_name or tm.username
+                    else:
+                        sender_display = getattr(request.user, 'display_name', '') or request.user.username
+                except Exception:
+                    sender_display = getattr(request.user, 'display_name', '') or request.user.username
                 payload = {
                     'type': 'chat.message',
                     'id': msg.id,
                     'conversation_id': conv.id,
                     'sender': request.user.username,
+                    'senderDisplay': sender_display,
                     'body': msg.body,
                     'created_at': msg.created_at.isoformat(),
                     'kind': 'text',
@@ -466,9 +479,19 @@ class ConversationViewSet(viewsets.ModelViewSet):
         try:
             from .pusher_client import pusher_client
             if pusher_client:
+                sender_display = ''
+                try:
+                    tm = getattr(msg, 'sender_team_member', None)
+                    if tm:
+                        sender_display = tm.display_name or tm.username
+                    else:
+                        sender_display = getattr(request.user, 'display_name', '') or request.user.username
+                except Exception:
+                    sender_display = getattr(request.user, 'display_name', '') or request.user.username
                 pusher_client.trigger(f"chat_{conv.id}", 'message', {
                     'username': request.user.username,
-                    'display_name': getattr(request.user, 'display_name', '') or request.user.username,
+                    'display_name': sender_display,
+                    'senderDisplay': sender_display,
                     'message': msg.body,
                     'conversation_id': conv.id,
                 })
@@ -601,7 +624,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                 msg_kwargs['sender_team_member'] = tm
             except Exception:
                 pass
-        msg = Message.objects.create(**msg_kwargs)
+    msg = Message.objects.create(**msg_kwargs)
         # Realtime broadcast via channels (if configured)
         try:
             from channels.layers import get_channel_layer
@@ -609,11 +632,21 @@ class ConversationViewSet(viewsets.ModelViewSet):
             channel_layer = get_channel_layer()
             if channel_layer is not None:
                 group = f"conv_{conv.id}"
+                sender_display = ''
+                try:
+                    tm = getattr(msg, 'sender_team_member', None)
+                    if tm:
+                        sender_display = tm.display_name or tm.username
+                    else:
+                        sender_display = getattr(request.user, 'display_name', '') or request.user.username
+                except Exception:
+                    sender_display = getattr(request.user, 'display_name', '') or request.user.username
                 payload = {
                     'type': 'chat.message',
                     'id': msg.id,
                     'conversation_id': conv.id,
                     'sender': request.user.username,
+                    'senderDisplay': sender_display,
                     'body': msg.body,
                     'created_at': msg.created_at.isoformat(),
                     'kind': 'text',
@@ -644,9 +677,19 @@ class ConversationViewSet(viewsets.ModelViewSet):
         try:
             from .pusher_client import pusher_client
             if pusher_client:
+                sender_display = ''
+                try:
+                    tm = getattr(msg, 'sender_team_member', None)
+                    if tm:
+                        sender_display = tm.display_name or tm.username
+                    else:
+                        sender_display = getattr(request.user, 'display_name', '') or request.user.username
+                except Exception:
+                    sender_display = getattr(request.user, 'display_name', '') or request.user.username
                 pusher_client.trigger(f"chat_{conv.id}", 'message', {
                     'username': request.user.username,
-                    'display_name': getattr(request.user, 'display_name', '') or request.user.username,
+                    'display_name': sender_display,
+                    'senderDisplay': sender_display,
                     'message': caption or (msg.attachment_name or 'مرفق'),
                     'conversation_id': conv.id,
                 })
@@ -893,6 +936,67 @@ class ConversationViewSet(viewsets.ModelViewSet):
         serializer = ConversationMemberSerializer(data=request.data, context={'request': request, 'conversation': conv})
         serializer.is_valid(raise_exception=True)
         cm = serializer.save()
+        # Create a system message noting the addition
+        try:
+            owner_display = getattr(request.user, 'display_name', '') or request.user.username
+            tm = getattr(cm, 'member_team', None)
+            added_display = (tm.display_name or tm.username) if tm else 'عضو'
+            sys_msg = Message.objects.create(
+                conversation=conv,
+                sender=request.user,
+                type='system',
+                body=f"قام {owner_display} بإضافة عضو الفريق {added_display}"
+            )
+            # Realtime broadcast (Channels)
+            try:
+                from channels.layers import get_channel_layer
+                from asgiref.sync import async_to_sync
+                channel_layer = get_channel_layer()
+                if channel_layer is not None:
+                    group = f"conv_{conv.id}"
+                    payload = {
+                        'type': 'chat.message',
+                        'id': sys_msg.id,
+                        'conversation_id': conv.id,
+                        'sender': request.user.username,
+                        'senderDisplay': owner_display,
+                        'body': sys_msg.body,
+                        'created_at': sys_msg.created_at.isoformat(),
+                        'kind': 'system',
+                        'seq': sys_msg.id,
+                    }
+                    async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': payload})
+                    for uid in get_conversation_viewer_ids(conv):
+                        if uid == request.user.id:
+                            continue
+                        async_to_sync(channel_layer.group_send)(f"user_{uid}", {
+                            'type': 'broadcast.message',
+                            'data': {
+                                'type': 'inbox.update',
+                                'conversation_id': conv.id,
+                                'last_message_preview': sys_msg.body[:80],
+                                'last_message_at': sys_msg.created_at.isoformat(),
+                                'unread_count': 1,
+                            }
+                        })
+            except Exception:
+                pass
+            # Pusher broadcast
+            try:
+                from .pusher_client import pusher_client
+                if pusher_client:
+                    pusher_client.trigger(f"chat_{conv.id}", 'message', {
+                        'username': request.user.username,
+                        'display_name': owner_display,
+                        'message': sys_msg.body,
+                        'conversation_id': conv.id,
+                        'senderDisplay': owner_display,
+                        'kind': 'system',
+                    })
+            except Exception:
+                pass
+        except Exception:
+            pass
         return Response(ConversationMemberSerializer(cm, context={'request': request, 'conversation': conv}).data, status=201)
 
     @action(detail=True, methods=['post'])
@@ -905,10 +1009,80 @@ class ConversationViewSet(viewsets.ModelViewSet):
             member_id = int(member_id)
         except Exception:
             return Response({'detail': 'member_id required'}, status=400)
+        removed_display = ''
         if member_type == 'team_member':
+            try:
+                tm = TeamMember.objects.get(id=member_id)
+                removed_display = tm.display_name or tm.username
+            except TeamMember.DoesNotExist:
+                removed_display = 'عضو فريق'
             ConversationMember.objects.filter(conversation=conv, member_team_id=member_id).delete()
         else:
+            try:
+                u = get_user_model().objects.get(id=member_id)
+                removed_display = getattr(u, 'display_name', '') or u.username
+            except Exception:
+                removed_display = 'مستخدم'
             ConversationMember.objects.filter(conversation=conv, member_user_id=member_id).delete()
+        # Create a system message noting the removal
+        try:
+            owner_display = getattr(request.user, 'display_name', '') or request.user.username
+            sys_msg = Message.objects.create(
+                conversation=conv,
+                sender=request.user,
+                type='system',
+                body=f"قام {owner_display} بإزالة {removed_display} من المحادثة"
+            )
+            # Channels broadcast
+            try:
+                from channels.layers import get_channel_layer
+                from asgiref.sync import async_to_sync
+                channel_layer = get_channel_layer()
+                if channel_layer is not None:
+                    group = f"conv_{conv.id}"
+                    payload = {
+                        'type': 'chat.message',
+                        'id': sys_msg.id,
+                        'conversation_id': conv.id,
+                        'sender': request.user.username,
+                        'senderDisplay': owner_display,
+                        'body': sys_msg.body,
+                        'created_at': sys_msg.created_at.isoformat(),
+                        'kind': 'system',
+                        'seq': sys_msg.id,
+                    }
+                    async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': payload})
+                    for uid in get_conversation_viewer_ids(conv):
+                        if uid == request.user.id:
+                            continue
+                        async_to_sync(channel_layer.group_send)(f"user_{uid}", {
+                            'type': 'broadcast.message',
+                            'data': {
+                                'type': 'inbox.update',
+                                'conversation_id': conv.id,
+                                'last_message_preview': sys_msg.body[:80],
+                                'last_message_at': sys_msg.created_at.isoformat(),
+                                'unread_count': 1,
+                            }
+                        })
+            except Exception:
+                pass
+            # Pusher broadcast
+            try:
+                from .pusher_client import pusher_client
+                if pusher_client:
+                    pusher_client.trigger(f"chat_{conv.id}", 'message', {
+                        'username': request.user.username,
+                        'display_name': owner_display,
+                        'message': sys_msg.body,
+                        'conversation_id': conv.id,
+                        'senderDisplay': owner_display,
+                        'kind': 'system',
+                    })
+            except Exception:
+                pass
+        except Exception:
+            pass
         return Response({'status': 'ok'})
 
 class MessageViewSet(viewsets.ReadOnlyModelViewSet):

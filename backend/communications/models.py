@@ -231,6 +231,7 @@ class Transaction(models.Model):
                             'type': 'chat.message',
                             'id': txn.id,
                             'sender': actor.username,
+                            'senderDisplay': getattr(actor, 'display_name', '') or actor.username,
                             'body': preview_body,
                             'created_at': timezone.now().isoformat(),
                             'kind': 'transaction',
