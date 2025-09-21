@@ -14,6 +14,13 @@ const fallbackCurrencies = [
   { name: "تركي", code: "TRY", symbol: "₺" },
   { name: "سوري", code: "SYP", symbol: "SP" },
 ];
+// خريطة أسماء عربية بحسب كود العملة لضمان ثبات التسمية حتى لو رجعت أسماء إنجليزية من الخادم
+const AR_NAME_BY_CODE: Record<string, string> = {
+  USD: "دولار",
+  EUR: "يورو",
+  TRY: "تركي",
+  SYP: "سوري",
+};
 // تنسيق وقت قصير مثل واتساب (ساعة:دقيقة)
 const formatTimeShort = (iso?: string) => {
   try {
@@ -999,7 +1006,10 @@ export default function Home() {
     }
   };
 
-  const effectiveCurrencies = serverCurrencies.length ? serverCurrencies.map(c=>({ name: c.name || c.code, code: c.code, symbol: c.symbol })) : fallbackCurrencies;
+  // نُفضّل الاسم العربي المحلي حسب الكود؛ وإن لم يتوفر نستخدم الاسم القادم من الخادم ثم الكود
+  const effectiveCurrencies = serverCurrencies.length
+    ? serverCurrencies.map((c:any)=>({ name: AR_NAME_BY_CODE[c.code] || c.name || c.code, code: c.code, symbol: c.symbol }))
+    : fallbackCurrencies;
   const symbolFor = (code:string) => effectiveCurrencies.find(c=>c.code===code)?.symbol || code;
   const formatMoneyValue = (num:number) => {
     if (isNaN(num)) return '0.00';
