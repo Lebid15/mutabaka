@@ -1343,10 +1343,25 @@ export default function Home() {
     try {
       setLoading(true);
       if (useTeamLogin) {
-        if (!ownerUsername.trim() || !teamUsername.trim() || !password.trim()) {
+        const owner = ownerUsername.trim();
+        const team = teamUsername.trim();
+        if (!owner || !team || !password.trim()) {
           throw new Error('يرجى إدخال اسم المالك واسم عضو الفريق وكلمة المرور');
         }
-        await apiClient.teamLogin(ownerUsername.trim(), teamUsername.trim(), password);
+        // Latin-only usernames to match backend rule
+        const latinRe = /^[A-Za-z]+$/;
+        if (!latinRe.test(owner) || !latinRe.test(team)) {
+          throw new Error('أسماء المستخدمين (المالك وعضو الفريق) يجب أن تكون أحرف لاتينية فقط (A-Z)');
+        }
+        try {
+          await apiClient.teamLogin(owner, team, password);
+        } catch (e:any) {
+          // Normalize backend message
+          if ((e?.message || '').toLowerCase().includes('invalid credentials')) {
+            throw new Error('بيانات تسجيل الدخول غير صحيحة. تأكد من اسم المالك وعضو الفريق وكلمة المرور');
+          }
+          throw e;
+        }
       } else {
         try {
           await apiClient.login(identifier, password);

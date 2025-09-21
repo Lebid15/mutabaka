@@ -27,6 +27,11 @@ export default function TeamPage() {
     setError(null);
     if (!token) { setError('لم يتم العثور على صلاحية الدخول. حاول تسجيل الدخول مجدداً.'); return; }
     if (!form.username.trim()) { setError('يرجى إدخال اسم المستخدم'); return; }
+    // Latin-only validation (A-Z/a-z)
+    if (!/^[A-Za-z]+$/.test(form.username.trim())) {
+      setError('اسم المستخدم يجب أن يتكون من أحرف لاتينية فقط (A-Z) دون أرقام أو مسافات');
+      return;
+    }
     if (!form.password.trim()) { setError('يرجى إدخال كلمة المرور'); return; }
     try {
       setLoading(true);

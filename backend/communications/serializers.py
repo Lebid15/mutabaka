@@ -1,4 +1,5 @@
 from rest_framework import serializers
+import re
 from django.contrib.auth import get_user_model
 from .models import ContactRelation, Conversation, Message, Transaction, PushSubscription, ConversationMute, TeamMember, ConversationMember
 from finance.models import Currency
@@ -105,6 +106,10 @@ class TeamMemberSerializer(serializers.ModelSerializer):
         username = (validated_data.get('username') or '').strip()
         if not username:
             raise serializers.ValidationError({'username': 'required'})
+        # Enforce Latin letters only for team usernames
+        # Accept only A-Z or a-z characters to avoid Arabic or other scripts
+        if not re.fullmatch(r"[A-Za-z]+", username):
+            raise serializers.ValidationError({'username': 'اسم المستخدم يجب أن يتكون من أحرف لاتينية فقط (A-Z) دون أرقام أو مسافات'})
         tm = TeamMember.objects.create(
             owner=request.user,
             username=username,
@@ -119,7 +124,10 @@ class TeamMemberSerializer(serializers.ModelSerializer):
         from django.contrib.auth.hashers import make_password
         pwd = validated_data.pop('password', None)
         if 'username' in validated_data:
-            instance.username = validated_data['username']
+            new_username = (validated_data['username'] or '').strip()
+            if not re.fullmatch(r"[A-Za-z]+", new_username):
+                raise serializers.ValidationError({'username': 'اسم المستخدم يجب أن يتكون من أحرف لاتينية فقط (A-Z) دون أرقام أو مسافات'})
+            instance.username = new_username
         if 'display_name' in validated_data:
             instance.display_name = validated_data['display_name'] or instance.username
         if 'phone' in validated_data:
