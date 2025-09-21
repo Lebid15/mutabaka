@@ -624,7 +624,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                 msg_kwargs['sender_team_member'] = tm
             except Exception:
                 pass
-    msg = Message.objects.create(**msg_kwargs)
+        msg = Message.objects.create(**msg_kwargs)
         # Realtime broadcast via channels (if configured)
         try:
             from channels.layers import get_channel_layer
