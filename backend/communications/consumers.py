@@ -1,7 +1,7 @@
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.contrib.auth.models import AnonymousUser
-from .models import Conversation, Message, ConversationMember, get_conversation_viewer_ids
+from .models import Conversation, Message, ConversationMember, TeamMember, get_conversation_viewer_ids
 from decimal import Decimal
 from .group_registry import add_channel, remove_channel, get_count
 
@@ -107,7 +107,18 @@ class ConversationConsumer(AsyncWebsocketConsumer):
             body = body[:MAX_LEN]
         from asgiref.sync import sync_to_async
         async_create = sync_to_async(Message.objects.create)
-        msg = await async_create(conversation_id=self.conversation_id, sender_id=user.id, body=body, type=msg_type)
+        # Try to attach team member from token in query (if present in scope['token_payload'])
+        kwargs = { 'conversation_id': self.conversation_id, 'sender_id': user.id, 'body': body, 'type': msg_type }
+        try:
+            token_payload = self.scope.get('token_payload') if hasattr(self.scope, 'get') else None
+            acting_team_id = (token_payload or {}).get('team_member_id') if isinstance(token_payload, dict) else None
+            if acting_team_id:
+                tm = await sync_to_async(TeamMember.objects.filter(id=acting_team_id, owner_id=user.id, is_active=True).first)()
+                if tm:
+                    kwargs['sender_team_member_id'] = tm.id
+        except Exception:
+            pass
+        msg = await async_create(**kwargs)
         payload = {
             'type': 'chat.message',
             'id': msg.id,
@@ -155,5 +166,16 @@ class ConversationConsumer(AsyncWebsocketConsumer):
 
     async def _is_extra_member(self, user_id: int, conversation_id: int) -> bool:
         from asgiref.sync import sync_to_async
-        exists = await sync_to_async(ConversationMember.objects.filter(conversation_id=conversation_id, member_id=user_id).exists)()
-        return bool(exists)
+        # Allow if added by user_id or acting team member
+        exists_user = await sync_to_async(ConversationMember.objects.filter(conversation_id=conversation_id, member_user_id=user_id).exists)()
+        if exists_user:
+            return True
+        try:
+            token_payload = self.scope.get('token_payload') if hasattr(self.scope, 'get') else None
+            acting_team_id = (token_payload or {}).get('team_member_id') if isinstance(token_payload, dict) else None
+            if acting_team_id:
+                exists_team = await sync_to_async(ConversationMember.objects.filter(conversation_id=conversation_id, member_team_id=acting_team_id).exists)()
+                return bool(exists_team)
+        except Exception:
+            pass
+        return False

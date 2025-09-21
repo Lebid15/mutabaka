@@ -91,47 +91,68 @@ class ConversationSerializer(serializers.ModelSerializer):
 
 class TeamMemberSerializer(serializers.ModelSerializer):
     owner = PublicUserSerializer(read_only=True)
-    member = PublicUserSerializer(read_only=True)
-    username = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True, required=True)
 
     class Meta:
         model = TeamMember
-        fields = ["id", "owner", "member", "username", "display_name", "phone", "created_at", "updated_at"]
-        read_only_fields = ["id", "owner", "member", "created_at", "updated_at"]
+        fields = ["id", "owner", "username", "display_name", "phone", "password", "is_active", "created_at", "updated_at"]
+        read_only_fields = ["id", "owner", "created_at", "updated_at"]
 
     def create(self, validated_data):
+        from django.contrib.auth.hashers import make_password
         request = self.context['request']
-        username = (validated_data.pop('username', '') or '').strip()
+        password = validated_data.pop('password')
+        username = (validated_data.get('username') or '').strip()
         if not username:
             raise serializers.ValidationError({'username': 'required'})
-        try:
-            target = User.objects.get(username__iexact=username)
-        except User.DoesNotExist:
-            raise serializers.ValidationError({'username': 'user not found'})
-        tm, _ = TeamMember.objects.update_or_create(
-            owner=request.user, member=target,
-            defaults={
-                'display_name': validated_data.get('display_name', '') or getattr(target, 'display_name', '') or target.username,
-                'phone': validated_data.get('phone', '') or getattr(target, 'phone', ''),
-            }
+        tm = TeamMember.objects.create(
+            owner=request.user,
+            username=username,
+            display_name=validated_data.get('display_name', '') or username,
+            phone=validated_data.get('phone', '') or '',
+            password_hash=make_password(password),
+            is_active=True,
         )
         return tm
 
     def update(self, instance, validated_data):
-        instance.display_name = validated_data.get('display_name', instance.display_name)
-        instance.phone = validated_data.get('phone', instance.phone)
-        instance.save(update_fields=["display_name", "phone", "updated_at"])
+        from django.contrib.auth.hashers import make_password
+        pwd = validated_data.pop('password', None)
+        if 'username' in validated_data:
+            instance.username = validated_data['username']
+        if 'display_name' in validated_data:
+            instance.display_name = validated_data['display_name'] or instance.username
+        if 'phone' in validated_data:
+            instance.phone = validated_data['phone'] or ''
+        if 'is_active' in validated_data:
+            instance.is_active = bool(validated_data['is_active'])
+        if pwd:
+            instance.password_hash = make_password(pwd)
+        instance.save()
         return instance
 
 
 class ConversationMemberSerializer(serializers.ModelSerializer):
+    type = serializers.SerializerMethodField()
+    display_name = serializers.SerializerMethodField()
+    team_member_id = serializers.IntegerField(write_only=True, required=False)
     member = PublicUserSerializer(read_only=True)
-    team_member_id = serializers.IntegerField(write_only=True, required=True)
 
     class Meta:
         model = ConversationMember
-        fields = ["id", "conversation", "member", "team_member_id", "added_by", "created_at"]
-        read_only_fields = ["id", "member", "added_by", "created_at", "conversation"]
+        fields = ["id", "conversation", "member", "team_member_id", "added_by", "created_at", "type", "display_name"]
+        read_only_fields = ["id", "member", "added_by", "created_at", "conversation", "type", "display_name"]
+
+    def get_type(self, obj):
+        return 'team_member' if obj.member_team_id else 'user'
+
+    def get_display_name(self, obj):
+        if obj.member_team_id:
+            return obj.member_team.display_name or obj.member_team.username
+        if obj.member_user_id:
+            u = obj.member_user
+            return getattr(u, 'display_name', '') or u.username
+        return ''
 
     def create(self, validated_data):
         request = self.context['request']
@@ -139,28 +160,32 @@ class ConversationMemberSerializer(serializers.ModelSerializer):
         if not conv:
             raise serializers.ValidationError({'detail': 'conversation required'})
         team_member_id = validated_data.get('team_member_id')
+        if not team_member_id:
+            raise serializers.ValidationError({'team_member_id': 'required'})
         try:
             tm = TeamMember.objects.get(id=team_member_id, owner=request.user)
         except TeamMember.DoesNotExist:
             raise serializers.ValidationError({'team_member_id': 'not found'})
         cm, _ = ConversationMember.objects.get_or_create(
             conversation=conv,
-            member=tm.member,
+            member_team=tm,
             defaults={'added_by': request.user}
         )
         return cm
 
 class MessageSerializer(serializers.ModelSerializer):
     sender = PublicUserSerializer(read_only=True)
+    senderType = serializers.SerializerMethodField()
+    senderDisplay = serializers.SerializerMethodField()
     attachment_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
         fields = [
-            "id", "conversation", "sender", "type", "body", "created_at",
+            "id", "conversation", "sender", "senderType", "senderDisplay", "type", "body", "created_at",
             "attachment_url", "attachment_name", "attachment_mime", "attachment_size"
         ]
-        read_only_fields = ["id", "sender", "type", "created_at", "attachment_url"]
+        read_only_fields = ["id", "sender", "senderType", "senderDisplay", "type", "created_at", "attachment_url"]
 
     def get_attachment_url(self, obj):  # pragma: no cover - simple URL builder
         try:
@@ -173,13 +198,36 @@ class MessageSerializer(serializers.ModelSerializer):
             return None
         return None
 
+    def get_senderType(self, obj):
+        return 'team_member' if getattr(obj, 'sender_team_member_id', None) else 'user'
+
+    def get_senderDisplay(self, obj):
+        tm = getattr(obj, 'sender_team_member', None)
+        if tm:
+            return tm.display_name or tm.username
+        u = getattr(obj, 'sender', None)
+        if u:
+            return getattr(u, 'display_name', '') or getattr(u, 'username', '')
+        return ''
+
     def create(self, validated_data):
-        validated_data['sender'] = self.context['request'].user
+        request = self.context['request']
+        validated_data['sender'] = request.user
+        # Attach team member if token carries it
+        acting_team_id = getattr(getattr(request, 'auth', None), 'payload', {}).get('team_member_id') if getattr(request, 'auth', None) else None
+        if acting_team_id:
+            try:
+                tm = TeamMember.objects.get(id=acting_team_id, owner=request.user, is_active=True)
+                validated_data['sender_team_member'] = tm
+            except Exception:
+                pass
         return super().create(validated_data)
 
 class TransactionSerializer(serializers.ModelSerializer):
     currency = CurrencySerializer(read_only=True)
     currency_id = serializers.PrimaryKeyRelatedField(queryset=Currency.objects.all(), source='currency', write_only=True)
+    # Accept any decimal string input; model rounding will enforce 5 dp
+    amount = serializers.CharField(write_only=True)
 
     class Meta:
         model = Transaction
@@ -193,9 +241,14 @@ class TransactionSerializer(serializers.ModelSerializer):
         request = self.context['request']
         conv = attrs['conversation']
         if request.user not in [conv.user_a, conv.user_b]:
-            # allow if added as extra member
-            if not ConversationMember.objects.filter(conversation=conv, member=request.user).exists():
-                raise serializers.ValidationError("Not allowed for this conversation")
+            # allow if added as extra member (user or team-member)
+            acting_team_id = getattr(getattr(request, 'auth', None), 'payload', {}).get('team_member_id') if getattr(request, 'auth', None) else None
+            if acting_team_id:
+                if not ConversationMember.objects.filter(conversation=conv, member_team_id=acting_team_id).exists():
+                    raise serializers.ValidationError("Not allowed for this conversation")
+            else:
+                if not ConversationMember.objects.filter(conversation=conv, member_user=request.user).exists():
+                    raise serializers.ValidationError("Not allowed for this conversation")
         # قيود الاشتراك: لا معاملات إذا لم يُسمح بالمراسلة (باستثناء admin)
         if _ensure_can_message_or_contact is not None and request.user in [conv.user_a, conv.user_b]:
             try:
@@ -212,15 +265,33 @@ class TransactionSerializer(serializers.ModelSerializer):
         amount = validated_data['amount']
         currency = validated_data['currency']
         note = validated_data.get('note', '')
+        # If acting as team member, record message display under team member while wallet impact applies to owner
+        acting_team_id = getattr(getattr(request, 'auth', None), 'payload', {}).get('team_member_id') if getattr(request, 'auth', None) else None
+        tm = None
+        if acting_team_id:
+            try:
+                tm = TeamMember.objects.get(id=acting_team_id, owner=request.user, is_active=True)
+            except Exception:
+                tm = None
+
         txn = Transaction.create_transaction(
             conversation=conv,
             actor=request.user,
             currency=currency,
             amount=amount,
             direction=direction,
-            note=note
+            note=note,
+            sender_team_member=tm
         )
         return txn
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        try:
+            data['amount'] = str(instance.amount)
+        except Exception:
+            pass
+        return data
 
 
 class PushSubscriptionSerializer(serializers.ModelSerializer):

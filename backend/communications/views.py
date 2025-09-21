@@ -192,7 +192,7 @@ class TeamMemberViewSet(viewsets.ModelViewSet):
     serializer_class = TeamMemberSerializer
 
     def get_queryset(self):
-        return TeamMember.objects.select_related('owner', 'member').filter(owner=self.request.user).order_by('-id')
+        return TeamMember.objects.select_related('owner').filter(owner=self.request.user).order_by('-id')
 
     def get_serializer(self, *args, **kwargs):
         kwargs.setdefault('context', {})
@@ -206,7 +206,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         return Conversation.objects.select_related('user_a', 'user_b').filter(
-            Q(user_a=user) | Q(user_b=user) | Q(extra_members__member=user)
+            Q(user_a=user) | Q(user_b=user) | Q(extra_members__member_user=user) | Q(extra_members__member_team__owner=user)
         ).distinct()
 
     def create(self, request, *args, **kwargs):
@@ -372,7 +372,12 @@ class ConversationViewSet(viewsets.ModelViewSet):
         conv = self.get_object()
         # منع الإرسال عند انتهاء الاشتراك إلا إلى admin — إلا إذا كان المستخدم عضواً مضافاً فقط
         if request.user not in [conv.user_a, conv.user_b]:
-            if not ConversationMember.objects.filter(conversation=conv, member=request.user).exists():
+            # allow if added as member_user or acting as team member added to conv
+            acting_team_id = getattr(getattr(request, 'auth', None), 'payload', {}).get('team_member_id') if getattr(request, 'auth', None) else None
+            allowed = ConversationMember.objects.filter(conversation=conv, member_user=request.user).exists()
+            if not allowed and acting_team_id:
+                allowed = ConversationMember.objects.filter(conversation=conv, member_team_id=acting_team_id).exists()
+            if not allowed:
                 return Response({'detail': 'غير مسموح'}, status=403)
         else:
             try:
@@ -396,7 +401,16 @@ class ConversationViewSet(viewsets.ModelViewSet):
         body = request.data.get('body', '').strip()
         if not body:
             return Response({'detail': 'Empty body'}, status=400)
-        msg = Message.objects.create(conversation=conv, sender=request.user, body=body, type='text')
+        # If acting as team member, set on message
+        acting_team_id = getattr(getattr(request, 'auth', None), 'payload', {}).get('team_member_id') if getattr(request, 'auth', None) else None
+        msg_kwargs = { 'conversation': conv, 'sender': request.user, 'body': body, 'type': 'text' }
+        if acting_team_id:
+            try:
+                tm = TeamMember.objects.get(id=acting_team_id, owner=request.user, is_active=True)
+                msg_kwargs['sender_team_member'] = tm
+            except Exception:
+                pass
+        msg = Message.objects.create(**msg_kwargs)
         # broadcast via WS for realtime delivery
         try:
             from channels.layers import get_channel_layer
@@ -519,7 +533,11 @@ class ConversationViewSet(viewsets.ModelViewSet):
         conv = self.get_object()
         # منع الإرسال عند انتهاء الاشتراك إلا إلى admin — إلا إذا كان المستخدم عضواً مضافاً فقط
         if request.user not in [conv.user_a, conv.user_b]:
-            if not ConversationMember.objects.filter(conversation=conv, member=request.user).exists():
+            acting_team_id = getattr(getattr(request, 'auth', None), 'payload', {}).get('team_member_id') if getattr(request, 'auth', None) else None
+            allowed = ConversationMember.objects.filter(conversation=conv, member_user=request.user).exists()
+            if not allowed and acting_team_id:
+                allowed = ConversationMember.objects.filter(conversation=conv, member_team_id=acting_team_id).exists()
+            if not allowed:
                 return Response({'detail': 'غير مسموح'}, status=403)
         else:
             try:
@@ -545,16 +563,24 @@ class ConversationViewSet(viewsets.ModelViewSet):
         except ValidationError as ve:
             return Response({'detail': ve.message_dict.get('detail') if hasattr(ve, 'message_dict') else 'Invalid file'}, status=400)
         caption = (request.data.get('body') or '').strip()
-        msg = Message.objects.create(
-            conversation=conv,
-            sender=request.user,
-            body=caption,
-            type='text',  # keep as text type; attachment fields indicate presence
-            attachment=file_obj,
-            attachment_name=getattr(file_obj, 'name', ''),
-            attachment_mime=mime or '',
-            attachment_size=size,
-        )
+        msg_kwargs = {
+            'conversation': conv,
+            'sender': request.user,
+            'body': caption,
+            'type': 'text',  # keep as text type; attachment fields indicate presence
+            'attachment': file_obj,
+            'attachment_name': getattr(file_obj, 'name', ''),
+            'attachment_mime': mime or '',
+            'attachment_size': size,
+        }
+        acting_team_id = getattr(getattr(request, 'auth', None), 'payload', {}).get('team_member_id') if getattr(request, 'auth', None) else None
+        if acting_team_id:
+            try:
+                tm = TeamMember.objects.get(id=acting_team_id, owner=request.user, is_active=True)
+                msg_kwargs['sender_team_member'] = tm
+            except Exception:
+                pass
+        msg = Message.objects.create(**msg_kwargs)
         # Realtime broadcast via channels (if configured)
         try:
             from channels.layers import get_channel_layer
@@ -813,7 +839,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
     def members(self, request, pk=None):
         conv = self.get_object()
         base = [conv.user_a, conv.user_b]
-        extras = User.objects.filter(conversation_memberships__conversation=conv).distinct()
+        extras_users = User.objects.filter(conversation_memberships__conversation=conv).distinct()
+        team_members = TeamMember.objects.filter(conversation_team_memberships__conversation=conv).select_related('owner').distinct()
         data = []
         for u in base:
             data.append({
@@ -822,12 +849,19 @@ class ConversationViewSet(viewsets.ModelViewSet):
                 'display_name': getattr(u, 'display_name', '') or u.username,
                 'role': 'participant',
             })
-        for u in extras:
+        for u in extras_users:
             data.append({
                 'id': u.id,
                 'username': u.username,
                 'display_name': getattr(u, 'display_name', '') or u.username,
                 'role': 'team',
+            })
+        for tm in team_members:
+            data.append({
+                'id': tm.id,
+                'username': tm.username,
+                'display_name': tm.display_name or tm.username,
+                'role': 'team_member',
             })
         return Response({'members': data})
 
@@ -845,11 +879,16 @@ class ConversationViewSet(viewsets.ModelViewSet):
         conv = self.get_object()
         self._require_participant(request.user, conv)
         member_id = request.data.get('member_id')
+        member_type = request.data.get('member_type')  # 'user' or 'team_member'
         try:
-            ConversationMember.objects.filter(conversation=conv, member_id=int(member_id)).delete()
-            return Response({'status': 'ok'})
+            member_id = int(member_id)
         except Exception:
             return Response({'detail': 'member_id required'}, status=400)
+        if member_type == 'team_member':
+            ConversationMember.objects.filter(conversation=conv, member_team_id=member_id).delete()
+        else:
+            ConversationMember.objects.filter(conversation=conv, member_user_id=member_id).delete()
+        return Response({'status': 'ok'})
 
 class MessageViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = MessageSerializer
@@ -858,7 +897,7 @@ class MessageViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         user = self.request.user
         return Message.objects.select_related('conversation', 'sender').filter(
-            Q(conversation__user_a=user) | Q(conversation__user_b=user) | Q(conversation__extra_members__member=user)
+            Q(conversation__user_a=user) | Q(conversation__user_b=user) | Q(conversation__extra_members__member_user=user) | Q(conversation__extra_members__member_team__owner=user)
         ).distinct()
 
 class TransactionViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, viewsets.GenericViewSet):
@@ -869,7 +908,7 @@ class TransactionViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, viewset
     def get_queryset(self):
         user = self.request.user
         return Transaction.objects.select_related('conversation', 'currency', 'from_user', 'to_user').filter(
-            Q(conversation__user_a=user) | Q(conversation__user_b=user) | Q(conversation__extra_members__member=user)
+            Q(conversation__user_a=user) | Q(conversation__user_b=user) | Q(conversation__extra_members__member_user=user) | Q(conversation__extra_members__member_team__owner=user)
         ).distinct()
 
 
@@ -877,6 +916,8 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from django.urls import reverse
 from .models import NotificationSetting
+from django.contrib.auth.hashers import check_password
+from rest_framework_simplejwt.tokens import RefreshToken
 
 
 class PushSubscribeView(APIView):
@@ -912,6 +953,36 @@ class NotificationSoundView(APIView):
             except Exception:
                 url = None
         return Response({ 'sound_url': url })
+
+
+class TeamLoginView(APIView):
+    permission_classes = []  # public
+
+    def post(self, request):
+        owner_username = (request.data.get('owner_username') or '').strip()
+        team_username = (request.data.get('team_username') or '').strip()
+        password = request.data.get('password') or ''
+        if not owner_username or not team_username or not password:
+            return Response({'detail': 'owner_username, team_username, password are required'}, status=400)
+        try:
+            owner = get_user_model().objects.get(username__iexact=owner_username)
+        except get_user_model().DoesNotExist:
+            return Response({'detail': 'invalid credentials'}, status=401)
+        try:
+            tm = TeamMember.objects.get(owner=owner, username__iexact=team_username, is_active=True)
+        except TeamMember.DoesNotExist:
+            return Response({'detail': 'invalid credentials'}, status=401)
+        try:
+            if not check_password(password, tm.password_hash):
+                return Response({'detail': 'invalid credentials'}, status=401)
+        except Exception:
+            return Response({'detail': 'invalid credentials'}, status=401)
+        refresh = RefreshToken.for_user(owner)
+        refresh['actor'] = 'team_member'
+        refresh['team_member_id'] = tm.id
+        refresh['owner_id'] = owner.id
+        access = refresh.access_token
+        return Response({'access': str(access), 'refresh': str(refresh), 'actor': 'team_member', 'team_member_id': tm.id, 'owner_id': owner.id})
 
 
 class EnsureAdminConversationView(APIView):

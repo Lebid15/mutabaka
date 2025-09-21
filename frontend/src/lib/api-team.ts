@@ -1,5 +1,5 @@
 export type PublicUser = { id: number; username: string; display_name?: string | null };
-export type TeamMember = { id: number; owner?: PublicUser; member: PublicUser; display_name: string; phone: string };
+export type TeamMember = { id: number; owner?: PublicUser; username: string; display_name: string; phone: string; is_active?: boolean };
 
 function extractErrorMessage(data: any, fallback: string) {
   try {
@@ -26,7 +26,7 @@ export async function listTeam(token: string): Promise<TeamMember[]> {
   return [];
 }
 
-export async function createTeamMember(token: string, payload: { username: string; display_name?: string; phone?: string }) {
+export async function createTeamMember(token: string, payload: { username: string; display_name?: string; phone?: string; password: string }) {
   const res = await fetch('/api/team/', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },

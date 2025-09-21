@@ -5,7 +5,7 @@ import { createTeamMember, deleteTeamMember, listTeam, updateTeamMember, TeamMem
 export default function TeamPage() {
   const [token, setToken] = useState<string>("");
   const [items, setItems] = useState<TeamMember[]>([]);
-  const [form, setForm] = useState({ username: "", display_name: "", phone: "" });
+  const [form, setForm] = useState({ username: "", display_name: "", phone: "", password: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,9 +27,10 @@ export default function TeamPage() {
     if (!form.username.trim()) { setError('يرجى إدخال اسم المستخدم'); return; }
     try {
       setLoading(true);
-      const created = await createTeamMember(token, form);
-      setItems([created, ...items]);
-      setForm({ username: "", display_name: "", phone: "" });
+  if (!form.password.trim()) { setError('يرجى إدخال كلمة المرور'); setLoading(false); return; }
+  const created = await createTeamMember(token, form);
+  setItems([created, ...items]);
+  setForm({ username: "", display_name: "", phone: "", password: "" });
     } catch (e: any) {
       setError(e?.message || 'تعذر إضافة العضو');
     } finally { setLoading(false); }
@@ -81,6 +82,16 @@ export default function TeamPage() {
                 onChange={(e: ChangeEvent<HTMLInputElement>) => setForm({ ...form, phone: e.target.value })}
               />
             </div>
+            <div className="md:col-span-3">
+              <label className="block text-xs text-gray-300 mb-1">كلمة المرور</label>
+              <input
+                type="password"
+                placeholder="••••••••"
+                className="w-full bg-chatBg border border-chatDivider rounded px-3 py-2 text-xs text-gray-100 placeholder:text-gray-400"
+                value={form.password}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setForm({ ...form, password: e.target.value })}
+              />
+            </div>
             <div className="md:col-span-1">
               <button type="submit" onClick={add} disabled={loading} className="w-full px-3 py-2 rounded bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white text-xs">أضف عضو</button>
               {error && <div className="text-[11px] text-red-300 mt-2">{error}</div>}
@@ -102,7 +113,7 @@ export default function TeamPage() {
             <tbody className="divide-y divide-chatDivider/50">
               {items.map((it: TeamMember) => (
                 <tr key={it.id} className="text-xs text-gray-100">
-                  <td className="px-3 py-2">{it.member?.username}</td>
+                  <td className="px-3 py-2">{it.username}</td>
                   <td className="px-3 py-2">
                     <input className="w-full bg-chatBg border border-chatDivider rounded px-2 py-1 text-xs text-gray-100"
                       defaultValue={it.display_name}

@@ -91,7 +91,9 @@ class Message(models.Model):
         ("transaction", "Transaction"),
     ]
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='messages')
+    # Either sent by a real user (owner) or a team sub-user acting on behalf of owner
     sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_messages')
+    sender_team_member = models.ForeignKey('TeamMember', on_delete=models.SET_NULL, null=True, blank=True, related_name='sent_messages')
     type = models.CharField(max_length=16, choices=TYPE_CHOICES, default='text')
     body = models.TextField(blank=True)
     # Optional attachment (image or PDF)
@@ -139,7 +141,7 @@ class Transaction(models.Model):
         return f"Txn {self.amount} {self.currency.code} {self.direction}"
 
     @classmethod
-    def create_transaction(cls, conversation, actor, currency, amount, direction, note=""):
+    def create_transaction(cls, conversation, actor, currency, amount, direction, note="", sender_team_member=None):
         """Create a financial transaction between conversation participants.
 
         - direction:
@@ -210,6 +212,7 @@ class Transaction(models.Model):
             Message.objects.create(
                 conversation=conversation,
                 sender=actor,
+                sender_team_member=sender_team_member,
                 type='transaction',
                 body=f"معاملة: {( 'لنا' if direction=='lna' else 'لكم')} {display_amount} {currency.symbol or currency.code}{(' - ' + note) if note else ''}".strip()
             )
@@ -329,49 +332,62 @@ class PushSubscription(models.Model):
 
 
 class TeamMember(models.Model):
-    """A user-managed team member list.
+    """Owner-managed sub-user.
 
-    Each user (owner) can curate a private team of other platform users (member).
-    Extra fields allow overriding display info (display_name/phone) for quick access
-    in the UI. The actual login identity is the `member` user.
+    Not a platform-wide account. Acts on behalf of the owner inside selected conversations.
     """
     owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='team_members')
-    member = models.ForeignKey(User, on_delete=models.CASCADE, related_name='member_of_teams')
+    username = models.CharField(max_length=150, default="")
     display_name = models.CharField(max_length=150, blank=True)
     phone = models.CharField(max_length=32, blank=True)
+    password_hash = models.CharField(max_length=255, default="")
+    is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ("owner", "member")
+        unique_together = ("owner", "username")
         indexes = [
-            models.Index(fields=["owner", "member"]),
+            models.Index(fields=["owner", "username"]),
         ]
 
     def __str__(self):  # pragma: no cover
-        return f"TeamMember(owner={self.owner_id}, member={self.member_id})"
+        return f"TeamMember(owner={self.owner_id}, username={self.username})"
 
 
 class ConversationMember(models.Model):
-    """Grants access to a conversation to a team member.
+    """Grants access to a conversation to extra viewers (user or team member).
 
-    - `member` is a real system user that can join the conversation.
-    - `added_by` must be one of the two original participants (user_a/user_b).
+    Exactly one of member_user or member_team must be set.
     Access is scoped per conversation.
     """
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='extra_members')
-    member = models.ForeignKey(User, on_delete=models.CASCADE, related_name='conversation_memberships')
+    member_user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name='conversation_memberships')
+    member_team = models.ForeignKey(TeamMember, on_delete=models.CASCADE, null=True, blank=True, related_name='conversation_team_memberships')
     added_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='added_conversation_members')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ("conversation", "member")
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    (models.Q(member_user__isnull=False) & models.Q(member_team__isnull=True)) |
+                    (models.Q(member_user__isnull=True) & models.Q(member_team__isnull=False))
+                ),
+                name='conv_member_exactly_one'
+            ),
+        ]
+        unique_together = (
+            ("conversation", "member_user"),
+            ("conversation", "member_team"),
+        )
         indexes = [
-            models.Index(fields=["conversation", "member"]),
+            models.Index(fields=["conversation", "member_user"]),
+            models.Index(fields=["conversation", "member_team"]),
         ]
 
     def __str__(self):  # pragma: no cover
-        return f"ConvMember(conv={self.conversation_id}, member={self.member_id})"
+        return f"ConvMember(conv={self.conversation_id}, user={self.member_user_id}, team={self.member_team_id})"
 
 
 def get_conversation_viewer_ids(conv: Conversation) -> list[int]:
@@ -381,11 +397,16 @@ def get_conversation_viewer_ids(conv: Conversation) -> list[int]:
     """
     try:
         base = [conv.user_a_id, conv.user_b_id]
-        extras = list(ConversationMember.objects.filter(conversation_id=conv.id).values_list('member_id', flat=True))
+        extras_users = list(ConversationMember.objects.filter(conversation_id=conv.id, member_user__isnull=False).values_list('member_user_id', flat=True))
+        # Team members act on behalf of owners, so include their owners for inbox previews
+        team_owner_ids = list(
+            ConversationMember.objects.filter(conversation_id=conv.id, member_team__isnull=False)
+            .values_list('member_team__owner_id', flat=True)
+        )
         # Ensure uniqueness while preserving order
         seen = set()
         out: list[int] = []
-        for uid in base + extras:
+        for uid in base + extras_users + team_owner_ids:
             if uid and uid not in seen:
                 seen.add(uid)
                 out.append(uid)

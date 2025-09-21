@@ -26,6 +26,8 @@ class JWTQueryAuthMiddleware(BaseMiddleware):
                 if user_id:
                     user = await sync_to_async(User.objects.get)(id=user_id)
                     scope['user'] = user
+                # Expose token payload so consumers can read team_member_id
+                scope['token_payload'] = data
             except (InvalidToken, TokenError, User.DoesNotExist, jwt.PyJWTError):
                 # On invalid token we override user to Anonymous to prevent leakage
                 from django.contrib.auth.models import AnonymousUser

@@ -155,10 +155,21 @@ class NotificationSettingAdmin(admin.ModelAdmin):
 
 @admin.register(TeamMember)
 class TeamMemberAdmin(admin.ModelAdmin):
-    list_display = ("id", "owner", "member", "display_name", "phone", "created_at")
-    search_fields = ("owner__username", "member__username", "display_name", "phone")
+    list_display = ("id", "owner", "username", "display_name", "phone", "is_active", "created_at")
+    search_fields = ("owner__username", "username", "display_name", "phone")
 
 @admin.register(ConversationMember)
 class ConversationMemberAdmin(admin.ModelAdmin):
-    list_display = ("id", "conversation", "member", "added_by", "created_at")
-    search_fields = ("conversation__id", "member__username", "added_by__username")
+    list_display = ("id", "conversation", "member_display", "added_by", "created_at")
+    search_fields = ("conversation__id", "member_user__username", "member_team__username", "added_by__username")
+
+    def member_display(self, obj):
+        try:
+            if obj.member_user_id:
+                return getattr(obj.member_user, 'username', obj.member_user_id)
+            if obj.member_team_id:
+                return getattr(obj.member_team, 'username', obj.member_team_id)
+        except Exception:
+            pass
+        return "-"
+    member_display.short_description = "Member"

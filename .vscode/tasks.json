@@ -24,6 +24,18 @@
 				"-Command",
 				"cd \"c:\\Users\\LABED HAJ ALAYA\\Desktop\\mutabaka\\backend\" ; python manage.py makemigrations subscriptions"
 			]
+		},
+		{
+			"label": "Django makemigrations communications",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"cd \"c:\\Users\\Abdulrahman\\Desktop\\mutabaka\\backend\" ; C:/Users/Abdulrahman/AppData/Local/Programs/Python/Python312/python.exe manage.py makemigrations communications"
+			]
 		}
 	]
 }
