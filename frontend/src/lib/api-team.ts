@@ -66,7 +66,8 @@ export async function deleteTeamMember(token: string, id: number) {
 export async function listConversationMembers(token: string, conversationId: number) {
   const res = await fetch(`/api/conversations/${conversationId}/members/`, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error('Failed to fetch conversation members');
-  return (await res.json()) as { members: Array<{ id: number; username: string; display_name: string; role: 'participant' | 'team' }>; };
+  // Backend roles can be: 'participant' | 'team' (extra user) | 'team_member'
+  return (await res.json()) as { members: Array<{ id: number; username: string; display_name: string; role: 'participant' | 'team' | 'team_member' }>; };
 }
 
 export async function addTeamMemberToConversation(token: string, conversationId: number, teamMemberId: number) {

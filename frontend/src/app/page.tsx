@@ -316,7 +316,7 @@ export default function Home() {
   // Members panel state
   const [membersPanelOpen, setMembersPanelOpen] = useState(false);
   const [teamList, setTeamList] = useState<TeamMember[]>([]);
-  const [convMembers, setConvMembers] = useState<Array<{ id: number; username: string; display_name: string; role: 'participant' | 'team'; member_type?: 'user'|'team_member' }>>([]);
+  const [convMembers, setConvMembers] = useState<Array<{ id: number; username: string; display_name: string; role: 'participant' | 'team' | 'team_member'; member_type?: 'user'|'team_member' }>>([]);
   const [membersBusy, setMembersBusy] = useState(false);
   const typingTimeoutRef = useRef<any>(null);
   const lastTypingSentRef = useRef<number>(0);
@@ -1748,7 +1748,7 @@ export default function Home() {
                         setTeamList(team || []);
                         // Map conversation members; backend returns role and polymorphic members
                         const mapped = (conv.members || []).map((m: any) => {
-                          const mt: 'user'|'team_member' = (m.role === 'team') ? 'team_member' : 'user';
+                          const mt: 'user'|'team_member' = (m.role === 'team_member') ? 'team_member' : 'user';
                           return { id: m.id, username: m.username, display_name: m.display_name || m.username, role: m.role, member_type: mt };
                         });
                         setConvMembers(mapped);
@@ -1793,7 +1793,7 @@ export default function Home() {
                           <div className="w-7 h-7 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[10px] text-gray-300">{(m.display_name||m.username||'?').slice(0,2)}</div>
                           <div className="truncate">
                             <div className="text-gray-100 truncate">{m.display_name || m.username}</div>
-                            <div className="text-[10px] text-gray-400">{m.role === 'team' ? 'عضو فريق' : 'مشارك أساسي'}</div>
+                            <div className="text-[10px] text-gray-400">{(m.role === 'team' || m.role === 'team_member') ? 'عضو فريق' : 'مشارك أساسي'}</div>
                           </div>
                         </div>
                         <button
@@ -1840,7 +1840,7 @@ export default function Home() {
                                 const tokenRaw = typeof window !== 'undefined' ? localStorage.getItem('auth_tokens_v1') : null;
                                 const token = tokenRaw ? (JSON.parse(tokenRaw).access as string) : '';
                                 await addTeamMemberToConversation(token, selectedConversationId, tm.id);
-                                setConvMembers(prev => [...prev, { id: tm.id, username: tm.username, display_name: tm.display_name || tm.username, role: 'team', member_type: 'team_member' }]);
+                                setConvMembers(prev => [...prev, { id: tm.id, username: tm.username, display_name: tm.display_name || tm.username, role: 'team_member', member_type: 'team_member' }]);
                                 pushToast({ type: 'success', msg: 'تمت الإضافة للمحادثة' });
                               } catch(e:any) {
                                 pushToast({ type: 'error', msg: e?.message || 'تعذر الإضافة' });
