@@ -102,12 +102,14 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     # Health check endpoint
     path('health', lambda request: JsonResponse({"status": "ok"})),
-    path('api/', include('communications.urls')),
-    path('api/subscriptions/', include('subscriptions.urls')),
+    # Auth endpoints MUST come before the catch-all /api/ include
     path('api/auth/token/', EmailOrUsernameTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/auth/token/verify/', TokenVerifyView.as_view(), name='token_verify'),
     path('api/auth/me/', MeView.as_view(), name='auth_me'),
+    # App includes
+    path('api/', include('communications.urls')),
+    path('api/subscriptions/', include('subscriptions.urls')),
     # TOTP endpoints
     path('api/auth/totp/status', TOTPStatusView.as_view(), name='totp_status'),
     path('api/auth/totp/setup', TOTPSetupView.as_view(), name='totp_setup'),
