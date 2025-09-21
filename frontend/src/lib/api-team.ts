@@ -1,10 +1,13 @@
 export type PublicUser = { id: number; username: string; display_name?: string | null };
 export type TeamMember = { id: number; owner?: PublicUser; member: PublicUser; display_name: string; phone: string };
 
-export async function listTeam(token: string) {
+export async function listTeam(token: string): Promise<TeamMember[]> {
   const res = await fetch('/api/team/', { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error('Failed to list team');
-  return (await res.json()) as TeamMember[];
+  const data = await res.json();
+  if (Array.isArray(data)) return data as TeamMember[];
+  if (data && Array.isArray(data.results)) return data.results as TeamMember[];
+  return [];
 }
 
 export async function createTeamMember(token: string, payload: { username: string; display_name?: string; phone?: string }) {
