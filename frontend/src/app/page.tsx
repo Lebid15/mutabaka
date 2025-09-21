@@ -322,6 +322,49 @@ export default function Home() {
   const lastTypingSentRef = useRef<number>(0);
   const lastMessageIdRef = useRef<number>(0);
 
+  // Decode JWT access payload
+  const getJwtPayload = useCallback((): any | null => {
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('auth_tokens_v1') : null;
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      const access: string | undefined = parsed?.access;
+      if (!access) return null;
+      const parts = access.split('.');
+      if (parts.length < 2) return null;
+      const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      const padded = base64 + '==='.slice((base64.length + 3) % 4);
+      const json = typeof atob === 'function' ? atob(padded) : Buffer.from(padded, 'base64').toString('utf8');
+      return JSON.parse(json);
+    } catch { return null; }
+  }, []);
+
+  // Current sender display: prefer team member name if acting as team member
+  const currentSenderDisplay = useMemo(() => {
+    const fallback = (profile?.display_name || profile?.username) || undefined;
+    const payload = getJwtPayload();
+    if (payload && payload.actor === 'team_member' && typeof payload.team_member_id === 'number') {
+      const tm = teamList.find(t => t && t.id === payload.team_member_id);
+      if (tm) return (tm.display_name || tm.username) || fallback;
+    }
+    return fallback;
+  }, [profile?.display_name, profile?.username, getJwtPayload, teamList]);
+
+  // Ensure team list is available when acting as team member (for display names)
+  useEffect(() => {
+    if (!isAuthed) return;
+    const payload = getJwtPayload();
+    if (payload && payload.actor === 'team_member' && (!teamList || teamList.length === 0)) {
+      try {
+        const raw = typeof window !== 'undefined' ? localStorage.getItem('auth_tokens_v1') : null;
+        const access = raw ? (JSON.parse(raw)?.access as string) : '';
+        if (access) {
+          listTeam(access).then(list => setTeamList(Array.isArray(list) ? list : [])).catch(()=>{});
+        }
+      } catch {}
+    }
+  }, [isAuthed, getJwtPayload]);
+
   // Helper: Refresh summary, net balance, and pair wallet for a conversation
   const refreshConvAggregates = useCallback(async (convId: number) => {
     try {
@@ -425,7 +468,7 @@ export default function Home() {
       // أضف فقاعة تفاؤلية للمرفق
       const clientId = `attach_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
       const previewText = caption || f.name;
-  setMessages(prev => [...prev, { sender: 'current', text: previewText, client_id: clientId, status: 'sending', kind: 'text', senderDisplay: (profile?.display_name || profile?.username) || undefined, attachment: { name: f.name, mime: f.type, size: f.size } }]);
+  setMessages(prev => [...prev, { sender: 'current', text: previewText, client_id: clientId, status: 'sending', kind: 'text', senderDisplay: currentSenderDisplay, attachment: { name: f.name, mime: f.type, size: f.size } }]);
       const doUpload = async (maybeOtp?: string) => {
         try {
           const res = await apiClient.uploadConversationAttachment(selectedConversationId, f, caption || undefined, maybeOtp);
@@ -467,7 +510,7 @@ export default function Home() {
     const text = outgoingText.trim();
     setOutgoingText('');
     const clientId = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
-  setMessages(prev => [...prev, { sender: 'current', text, client_id: clientId, status: 'sending', kind: 'text', senderDisplay: (profile?.display_name || profile?.username) || undefined }]);
+  setMessages(prev => [...prev, { sender: 'current', text, client_id: clientId, status: 'sending', kind: 'text', senderDisplay: currentSenderDisplay }]);
     try {
       try {
         await apiClient.sendMessage(selectedConversationId, text);
@@ -1217,7 +1260,7 @@ export default function Home() {
                     created_at: m.created_at || payload.created_at || new Date().toISOString(),
                     kind: tx ? 'transaction' : 'text',
                     tx: tx || undefined,
-                    senderDisplay: m.senderDisplay || (profile?.display_name || profile?.username) || undefined,
+                    senderDisplay: (payload.senderDisplay || payload.display_name || m.senderDisplay || profile?.display_name || profile?.username) || undefined,
                     attachment: payload.attachment ? {
                       name: payload.attachment.name,
                       mime: payload.attachment.mime,
@@ -1306,7 +1349,7 @@ export default function Home() {
               setUnreadByConv(prev => ({ ...prev, [payload.conversation_id]: (prev[payload.conversation_id] || 0) + 1 }));
               // Play sound if tab hidden or not in chat view
               const isHidden = typeof document !== 'undefined' && document.hidden;
-              const muted = contacts.some(c => c.id === payload.conversation_id && c.isMuted);
+        const muted = contacts.some(c => c.id === payload.conversation_id && c.isMuted);
               if ((isHidden || mobileView !== 'chat') && !muted) {
                 try {
                   tryPlayMessageSound().then(ok => { if (!ok) pushToast({ type: 'info', msg: 'انقر في الصفحة لتفعيل صوت الإشعارات' }); }).catch(()=>{});
