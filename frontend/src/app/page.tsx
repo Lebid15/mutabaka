@@ -280,6 +280,9 @@ export default function Home() {
   const [authStatus, setAuthStatus] = useState<'checking'|'authed'|'anon'>('checking');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [useTeamLogin, setUseTeamLogin] = useState(false);
+  const [ownerUsername, setOwnerUsername] = useState('');
+  const [teamUsername, setTeamUsername] = useState('');
   const [error, setError] = useState<string|null>(null);
   const [loading, setLoading] = useState(false);
   const [profile, setProfile] = useState<any|null>(null);
@@ -1330,15 +1333,22 @@ export default function Home() {
     setError(null);
     try {
       setLoading(true);
-      try {
-        await apiClient.login(identifier, password);
-      } catch (e:any) {
-        if (e && e.otp_required) {
-          const code = typeof window !== 'undefined' ? window.prompt('أدخل رمز التحقق (OTP) من تطبيق المصادقة') : '';
-          if (!code) throw e;
-          await apiClient.login(identifier, password, code);
-        } else {
-          throw e;
+      if (useTeamLogin) {
+        if (!ownerUsername.trim() || !teamUsername.trim() || !password.trim()) {
+          throw new Error('يرجى إدخال اسم المالك واسم عضو الفريق وكلمة المرور');
+        }
+        await apiClient.teamLogin(ownerUsername.trim(), teamUsername.trim(), password);
+      } else {
+        try {
+          await apiClient.login(identifier, password);
+        } catch (e:any) {
+          if (e && e.otp_required) {
+            const code = typeof window !== 'undefined' ? window.prompt('أدخل رمز التحقق (OTP) من تطبيق المصادقة') : '';
+            if (!code) throw e;
+            await apiClient.login(identifier, password, code);
+          } else {
+            throw e;
+          }
         }
       }
       const me = await apiClient.getProfile().catch(()=>null);
@@ -1374,17 +1384,51 @@ export default function Home() {
         <form onSubmit={handleLogin} className="w-full max-w-sm bg-chatPanel border border-chatDivider rounded-lg p-6 flex flex-col gap-4">
           <h1 className="font-bold text-lg text-center">تسجيل الدخول</h1>
           {error && <div className="text-red-400 text-xs text-center">{error}</div>}
-            {/* Username with icon */}
-            <div className="relative">
-              <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-                  <path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm0 2c-3.866 0-7 3.134-7 7h2a5 5 0 0 1 10 0h2c0-3.866-3.134-7-7-7z" />
-                </svg>
-              </span>
-              <input value={identifier} onChange={e=>setIdentifier(e.target.value)} placeholder="اسم المستخدم أو البريد" className="w-full pl-9 pr-3 bg-chatBg border border-chatDivider rounded py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-600" />
+            <div className="flex items-center justify-between text-xs">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" className="accent-green-600" checked={useTeamLogin} onChange={e=>setUseTeamLogin(e.target.checked)} />
+                <span>تسجيل دخول عضو فريق</span>
+              </label>
             </div>
-            {/* Password with eye toggle */}
-            <PasswordField value={password} onChange={setPassword} />
+
+            {useTeamLogin ? (
+              <>
+                {/* Owner username */}
+                <div className="relative">
+                  <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                      <path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm0 2c-3.866 0-7 3.134-7 7h2a5 5 0 0 1 10 0h2c0-3.866-3.134-7-7-7z" />
+                    </svg>
+                  </span>
+                  <input value={ownerUsername} onChange={e=>setOwnerUsername(e.target.value)} placeholder="اسم مستخدم المالك" className="w-full pl-9 pr-3 bg-chatBg border border-chatDivider rounded py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-600" />
+                </div>
+                {/* Team username */}
+                <div className="relative">
+                  <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                      <path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm0 2c-3.866 0-7 3.134-7 7h2a5 5 0 0 1 10 0h2c0-3.866-3.134-7-7-7z" />
+                    </svg>
+                  </span>
+                  <input value={teamUsername} onChange={e=>setTeamUsername(e.target.value)} placeholder="اسم مستخدم عضو الفريق" className="w-full pl-9 pr-3 bg-chatBg border border-chatDivider rounded py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-600" />
+                </div>
+                {/* Password with eye toggle */}
+                <PasswordField value={password} onChange={setPassword} />
+              </>
+            ) : (
+              <>
+                {/* Username with icon */}
+                <div className="relative">
+                  <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                      <path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm0 2c-3.866 0-7 3.134-7 7h2a5 5 0 0 1 10 0h2c0-3.866-3.134-7-7-7z" />
+                    </svg>
+                  </span>
+                  <input value={identifier} onChange={e=>setIdentifier(e.target.value)} placeholder="اسم المستخدم أو البريد" className="w-full pl-9 pr-3 bg-chatBg border border-chatDivider rounded py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-600" />
+                </div>
+                {/* Password with eye toggle */}
+                <PasswordField value={password} onChange={setPassword} />
+              </>
+            )}
             <button disabled={loading} className="bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded py-2 font-semibold text-sm">{loading ? '...' : 'دخول'}</button>
         </form>
       </div>

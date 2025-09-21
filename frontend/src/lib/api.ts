@@ -52,6 +52,25 @@ class APIClient {
     return data as Tokens;
   }
 
+  async teamLogin(owner_username: string, team_username: string, password: string) {
+    const res = await fetch(`${this.baseUrl}/api/auth/team/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ owner_username, team_username, password })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(()=>({}));
+      throw new Error(err?.detail || 'Team login failed');
+    }
+    const data = await res.json();
+    this.access = data.access;
+    this.refresh = data.refresh;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('auth_tokens_v1', JSON.stringify({ access: this.access, refresh: this.refresh }));
+    }
+    return data as Tokens;
+  }
+
   async refreshToken() {
     if (!this.refresh) throw new Error('No refresh token');
     const res = await fetch(`${this.baseUrl}/api/auth/token/refresh/`, {
