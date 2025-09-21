@@ -83,9 +83,10 @@ export default function TeamPage() {
             </div>
             <div className="md:col-span-1">
               <button type="submit" onClick={add} disabled={loading} className="w-full px-3 py-2 rounded bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white text-xs">أضف عضو</button>
+              {error && <div className="text-[11px] text-red-300 mt-2">{error}</div>}
             </div>
           </form>
-          {error && <div className="text-[11px] text-red-300 mt-2">{error}</div>}
+          
         </div>
 
         <div className="mt-4 bg-chatPanel border border-chatDivider rounded-lg overflow-hidden">

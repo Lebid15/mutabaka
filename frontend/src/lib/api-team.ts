@@ -1,6 +1,22 @@
 export type PublicUser = { id: number; username: string; display_name?: string | null };
 export type TeamMember = { id: number; owner?: PublicUser; member: PublicUser; display_name: string; phone: string };
 
+function extractErrorMessage(data: any, fallback: string) {
+  try {
+    if (!data) return fallback;
+    if (typeof data === 'string') return data;
+    if (data.detail) return String(data.detail);
+    if (data.non_field_errors) return String(data.non_field_errors?.[0] || fallback);
+    // Common field error shapes from DRF
+    for (const key of Object.keys(data)) {
+      const v = (data as any)[key];
+      if (Array.isArray(v) && v.length) return String(v[0]);
+      if (typeof v === 'string') return v;
+    }
+  } catch {}
+  return fallback;
+}
+
 export async function listTeam(token: string): Promise<TeamMember[]> {
   const res = await fetch('/api/team/', { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error('Failed to list team');
@@ -16,7 +32,11 @@ export async function createTeamMember(token: string, payload: { username: strin
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error('Failed to create team member');
+  if (!res.ok) {
+    let msg = 'Failed to create team member';
+    try { const data = await res.json(); msg = extractErrorMessage(data, msg); } catch {}
+    throw new Error(msg);
+  }
   return (await res.json()) as TeamMember;
 }
 
@@ -26,13 +46,21 @@ export async function updateTeamMember(token: string, id: number, payload: Parti
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error('Failed to update team member');
+  if (!res.ok) {
+    let msg = 'Failed to update team member';
+    try { const data = await res.json(); msg = extractErrorMessage(data, msg); } catch {}
+    throw new Error(msg);
+  }
   return (await res.json()) as TeamMember;
 }
 
 export async function deleteTeamMember(token: string, id: number) {
   const res = await fetch(`/api/team/${id}/`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) throw new Error('Failed to delete team member');
+  if (!res.ok) {
+    let msg = 'Failed to delete team member';
+    try { const data = await res.json(); msg = extractErrorMessage(data, msg); } catch {}
+    throw new Error(msg);
+  }
 }
 
 export async function listConversationMembers(token: string, conversationId: number) {
