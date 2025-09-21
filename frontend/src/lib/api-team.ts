@@ -79,11 +79,11 @@ export async function addTeamMemberToConversation(token: string, conversationId:
   return await res.json();
 }
 
-export async function removeMemberFromConversation(token: string, conversationId: number, memberId: number) {
+export async function removeMemberFromConversation(token: string, conversationId: number, memberId: number, memberType: 'user'|'team_member' = 'team_member') {
   const res = await fetch(`/api/conversations/${conversationId}/remove_member/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ member_id: memberId }),
+    body: JSON.stringify({ member_id: memberId, member_type: memberType }),
   });
   if (!res.ok) throw new Error('Failed to remove member');
   return await res.json();

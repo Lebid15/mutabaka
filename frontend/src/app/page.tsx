@@ -4,6 +4,7 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '../lib/api';
+import { listTeam, listConversationMembers, addTeamMemberToConversation, removeMemberFromConversation, TeamMember } from '../lib/api-team';
 import { attachPrimingListeners, tryPlayMessageSound, setRuntimeSoundUrl } from '../lib/sound';
 
 // قائمة احتياطية (fallback) في حال تأخر تحميل العملات من الخادم
@@ -312,6 +313,11 @@ export default function Home() {
   const [outgoingText, setOutgoingText] = useState('');
   const [pendingAttachment, setPendingAttachment] = useState<File|null>(null);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
+  // Members panel state
+  const [membersPanelOpen, setMembersPanelOpen] = useState(false);
+  const [teamList, setTeamList] = useState<TeamMember[]>([]);
+  const [convMembers, setConvMembers] = useState<Array<{ id: number; username: string; display_name: string; role: 'participant' | 'team'; member_type?: 'user'|'team_member' }>>([]);
+  const [membersBusy, setMembersBusy] = useState(false);
   const typingTimeoutRef = useRef<any>(null);
   const lastTypingSentRef = useRef<number>(0);
   const lastMessageIdRef = useRef<number>(0);
@@ -1680,7 +1686,7 @@ export default function Home() {
             {/* واجهة المحادثة */}
             {(selectedConversationId != null && currentContact) && (
               <div className={(mobileView === 'chat' ? 'flex' : 'hidden') + ' md:flex flex-col h-full'}>
-                        <div className="bg-chatPanel px-6 py-3 font-bold border-b border-chatDivider text-sm flex items-center gap-6 flex-wrap">
+                        <div className="bg-chatPanel px-6 py-3 font-bold border-b border-chatDivider text-sm flex items-center gap-6 flex-wrap relative">
               {/* شريط أرصدة سريع من منظور هذه المحادثة فقط (موجب = لنا، سالب = لكم) — مخفي عند الدردشة مع admin (أو حسابات إدارية مشابهة) أو عند كون المستخدم الحالي أدمن */}
               {(!isAdminLike(profile?.username) && !isAdminLike(currentContact?.otherUsername)) && (
                 <div className="flex gap-4 text-xs md:text-sm order-2 md:order-1 w-full md:w-auto justify-between md:justify-start">
@@ -1710,12 +1716,134 @@ export default function Home() {
                 )}
               </div>
               <div className="ml-auto flex items-center gap-3 text-gray-300">
+                {/* Members button */}
+                <button
+                  onClick={async()=>{
+                    if (!selectedConversationId) return;
+                    setMembersPanelOpen(o=>!o);
+                    if (!membersPanelOpen) {
+                      setMembersBusy(true);
+                      try {
+                        const tokenRaw = typeof window !== 'undefined' ? localStorage.getItem('auth_tokens_v1') : null;
+                        const token = tokenRaw ? (JSON.parse(tokenRaw).access as string) : '';
+                        const [team, conv] = await Promise.all([
+                          listTeam(token).catch(()=>[]),
+                          listConversationMembers(token, selectedConversationId).catch(()=>({ members: [] as any[] }))
+                        ]);
+                        setTeamList(team || []);
+                        // Map conversation members; backend returns role and polymorphic members
+                        const mapped = (conv.members || []).map((m: any) => {
+                          const mt: 'user'|'team_member' = (m.role === 'team') ? 'team_member' : 'user';
+                          return { id: m.id, username: m.username, display_name: m.display_name || m.username, role: m.role, member_type: mt };
+                        });
+                        setConvMembers(mapped);
+                      } finally {
+                        setMembersBusy(false);
+                      }
+                    }
+                  }}
+                  className="hover:text-white transition"
+                  title="أعضاء المحادثة"
+                >
+                  <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' className='h-4 w-4' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
+                    <path d='M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2' />
+                    <circle cx='9' cy='7' r='4' />
+                    <path d='M22 21v-2a4 4 0 00-3-3.87' />
+                    <path d='M16 3.13a4 4 0 010 7.75' />
+                  </svg>
+                </button>
                 <button onClick={()=>{ setSearchOpen(s=>!s); if (!searchOpen) setTimeout(()=>{ const el = document.getElementById('inchat_search_input'); el && (el as HTMLInputElement).focus(); }, 50); }} className="hover:text-white transition" title="بحث">
                   <svg xmlns='http://www.w3.org/2000/svg' className='h-4 w-4' viewBox='0 0 20 20' fill='currentColor'><path fillRule='evenodd' d='M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z' clipRule='evenodd'/></svg>
                 </button>
                 <button className="hover:text-white transition" title="معلومات"><svg xmlns='http://www.w3.org/2000/svg' className='h-4 w-4' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M13 16h-1v-4h-1m1-4h.01M12 20a8 8 0 100-16 8 8 0 000 16z'/></svg></button>
               </div>
             </div>
+            {/* Members side panel */}
+            {membersPanelOpen && (
+              <div className="absolute right-0 top-12 md:top-14 z-30 w-full md:w-[420px] max-h-[65vh] overflow-y-auto bg-chatBg border border-chatDivider rounded-lg shadow-2xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs font-bold text-gray-100">أعضاء المحادثة</div>
+                  <button onClick={()=> setMembersPanelOpen(false)} className="text-gray-300 hover:text-white text-xs">إغلاق ✕</button>
+                </div>
+                {/* Existing members */}
+                <div className="mb-3">
+                  <div className="text-[11px] text-gray-400 mb-1">المضافون حالياً</div>
+                  <ul className="divide-y divide-chatDivider/40 rounded border border-chatDivider/40 overflow-hidden">
+                    {convMembers.length === 0 && (
+                      <li className="px-3 py-2 text-[11px] text-gray-400">لا يوجد أعضاء بعد</li>
+                    )}
+                    {convMembers.map(m => (
+                      <li key={`m_${m.member_type}_${m.id}`} className="flex items-center justify-between px-3 py-2 text-xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-7 h-7 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[10px] text-gray-300">{(m.display_name||m.username||'?').slice(0,2)}</div>
+                          <div className="truncate">
+                            <div className="text-gray-100 truncate">{m.display_name || m.username}</div>
+                            <div className="text-[10px] text-gray-400">{m.role === 'team' ? 'عضو فريق' : 'مشارك أساسي'}</div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={async()=>{
+                            if (!selectedConversationId) return;
+                            setMembersBusy(true);
+                            try {
+                              const tokenRaw = typeof window !== 'undefined' ? localStorage.getItem('auth_tokens_v1') : null;
+                              const token = tokenRaw ? (JSON.parse(tokenRaw).access as string) : '';
+                              await removeMemberFromConversation(token, selectedConversationId, m.id, m.member_type || (m.role==='team'?'team_member':'user'));
+                              setConvMembers(prev => prev.filter(x => !(x.id === m.id && (x.member_type|| (x.role==='team'?'team_member':'user')) === (m.member_type|| (m.role==='team'?'team_member':'user')))));
+                              pushToast({ type: 'success', msg: 'تمت إزالة العضو' });
+                            } catch(e:any) {
+                              pushToast({ type: 'error', msg: e?.message || 'تعذر الإزالة' });
+                            } finally { setMembersBusy(false); }
+                          }}
+                          className="px-2 py-1 rounded bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 text-[11px]"
+                          disabled={membersBusy}
+                        >إزالة</button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                {/* Team list to add */}
+                <div>
+                  <div className="text-[11px] text-gray-400 mb-1">كل أعضاء الفريق</div>
+                  <ul className="divide-y divide-chatDivider/40 rounded border border-chatDivider/40 overflow-hidden">
+                    {(teamList||[]).map(tm => {
+                      const already = convMembers.some(m => m.member_type === 'team_member' && m.id === tm.id);
+                      return (
+                        <li key={`t_${tm.id}`} className="flex items-center justify-between px-3 py-2 text-xs">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="w-7 h-7 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[10px] text-gray-300">{(tm.display_name||tm.username||'?').slice(0,2)}</div>
+                            <div className="truncate">
+                              <div className="text-gray-100 truncate">{tm.display_name || tm.username}</div>
+                              <div className="text-[10px] text-gray-400">{tm.username}</div>
+                            </div>
+                          </div>
+                          <button
+                            onClick={async()=>{
+                              if (!selectedConversationId || already) return;
+                              setMembersBusy(true);
+                              try {
+                                const tokenRaw = typeof window !== 'undefined' ? localStorage.getItem('auth_tokens_v1') : null;
+                                const token = tokenRaw ? (JSON.parse(tokenRaw).access as string) : '';
+                                await addTeamMemberToConversation(token, selectedConversationId, tm.id);
+                                setConvMembers(prev => [...prev, { id: tm.id, username: tm.username, display_name: tm.display_name || tm.username, role: 'team', member_type: 'team_member' }]);
+                                pushToast({ type: 'success', msg: 'تمت الإضافة للمحادثة' });
+                              } catch(e:any) {
+                                pushToast({ type: 'error', msg: e?.message || 'تعذر الإضافة' });
+                              } finally { setMembersBusy(false); }
+                            }}
+                            className={"px-2 py-1 rounded border text-[11px] " + (already ? 'bg-white/5 border-white/10 text-gray-400 cursor-not-allowed' : 'bg-green-500/15 hover:bg-green-500/25 border-green-500/25 text-green-300')}
+                            disabled={already || membersBusy}
+                          >{already ? 'مضاف' : 'إضافة +'}</button>
+                        </li>
+                      );
+                    })}
+                    {(!teamList || teamList.length === 0) && (
+                      <li className="px-3 py-2 text-[11px] text-gray-400">لا يوجد أعضاء فريق. يمكنك إضافة أعضاء من صفحة الفريق.</li>
+                    )}
+                  </ul>
+                </div>
+              </div>
+            )}
             {/* إشعار طلب حذف المحادثة وجهة الاتصال */}
             {selectedConversationId && pendingDeleteByConv[selectedConversationId] && (
               <div className="bg-yellow-500/10 border-y border-yellow-400/40 text-yellow-200 px-6 py-2 text-xs flex items-center gap-3">
