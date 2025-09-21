@@ -205,7 +205,19 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        return Conversation.objects.select_related('user_a', 'user_b').filter(
+        # If acting as a team member, only list conversations the team member was explicitly added to,
+        # plus the owner's conversation with admin (support).
+        acting_team_id = getattr(getattr(self.request, 'auth', None), 'payload', {}).get('team_member_id') if getattr(self.request, 'auth', None) else None
+        base = Conversation.objects.select_related('user_a', 'user_b')
+        if acting_team_id:
+            admin_pair = (
+                (Q(user_a=user) & (Q(user_b__is_superuser=True) | Q(user_b__username__iexact='admin')))
+                | (Q(user_b=user) & (Q(user_a__is_superuser=True) | Q(user_a__username__iexact='admin')))
+            )
+            return base.filter(
+                Q(extra_members__member_team_id=acting_team_id) | admin_pair
+            ).distinct()
+        return base.filter(
             Q(user_a=user) | Q(user_b=user) | Q(extra_members__member_user=user) | Q(extra_members__member_team__owner=user)
         ).distinct()
 
@@ -370,20 +382,25 @@ class ConversationViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def send(self, request, pk=None):
         conv = self.get_object()
-        # منع الإرسال عند انتهاء الاشتراك إلا إلى admin — إلا إذا كان المستخدم عضواً مضافاً فقط
-        if request.user not in [conv.user_a, conv.user_b]:
-            # allow if added as member_user or acting as team member added to conv
-            acting_team_id = getattr(getattr(request, 'auth', None), 'payload', {}).get('team_member_id') if getattr(request, 'auth', None) else None
-            allowed = ConversationMember.objects.filter(conversation=conv, member_user=request.user).exists()
-            if not allowed and acting_team_id:
-                allowed = ConversationMember.objects.filter(conversation=conv, member_team_id=acting_team_id).exists()
-            if not allowed:
+        # Enforce team-member scoping: if token acts as team member, require membership for this conversation
+        acting_team_id = getattr(getattr(request, 'auth', None), 'payload', {}).get('team_member_id') if getattr(request, 'auth', None) else None
+        if acting_team_id:
+            # Allow if team member is added OR if this is owner's admin/support conversation (text only)
+            is_member = ConversationMember.objects.filter(conversation=conv, member_team_id=acting_team_id).exists()
+            is_admin_conv = (_is_admin_user(conv.user_a) or _is_admin_user(conv.user_b)) and (request.user in [conv.user_a, conv.user_b])
+            if not (is_member or is_admin_conv):
                 return Response({'detail': 'غير مسموح'}, status=403)
         else:
-            try:
-                _ensure_can_message_or_contact(request.user, conversation=conv)
-            except ValidationError as ve:
-                return Response({'detail': ve.message_dict.get('detail') if hasattr(ve, 'message_dict') else 'غير مسموح'}, status=403)
+            # منع الإرسال عند انتهاء الاشتراك إلا إلى admin — للمستخدم الأساسي فقط
+            if request.user not in [conv.user_a, conv.user_b]:
+                allowed = ConversationMember.objects.filter(conversation=conv, member_user=request.user).exists()
+                if not allowed:
+                    return Response({'detail': 'غير مسموح'}, status=403)
+            else:
+                try:
+                    _ensure_can_message_or_contact(request.user, conversation=conv)
+                except ValidationError as ve:
+                    return Response({'detail': ve.message_dict.get('detail') if hasattr(ve, 'message_dict') else 'غير مسموح'}, status=403)
         # Enforce OTP for sensitive action if user enabled TOTP
         try:
             from django.contrib.auth import get_user_model  # noqa: F401
@@ -531,19 +548,23 @@ class ConversationViewSet(viewsets.ModelViewSet):
         Fields: file (required), body (optional text)
         """
         conv = self.get_object()
-        # منع الإرسال عند انتهاء الاشتراك إلا إلى admin — إلا إذا كان المستخدم عضواً مضافاً فقط
-        if request.user not in [conv.user_a, conv.user_b]:
-            acting_team_id = getattr(getattr(request, 'auth', None), 'payload', {}).get('team_member_id') if getattr(request, 'auth', None) else None
-            allowed = ConversationMember.objects.filter(conversation=conv, member_user=request.user).exists()
-            if not allowed and acting_team_id:
-                allowed = ConversationMember.objects.filter(conversation=conv, member_team_id=acting_team_id).exists()
+        # Team-member tokens must be members of the conversation to upload attachments (admin chat not exempt)
+        acting_team_id = getattr(getattr(request, 'auth', None), 'payload', {}).get('team_member_id') if getattr(request, 'auth', None) else None
+        if acting_team_id:
+            allowed = ConversationMember.objects.filter(conversation=conv, member_team_id=acting_team_id).exists()
             if not allowed:
                 return Response({'detail': 'غير مسموح'}, status=403)
         else:
-            try:
-                _ensure_can_message_or_contact(request.user, conversation=conv)
-            except ValidationError as ve:
-                return Response({'detail': ve.message_dict.get('detail') if hasattr(ve, 'message_dict') else 'غير مسموح'}, status=403)
+            # منع الإرسال عند انتهاء الاشتراك إلا إلى admin — للمستخدم الأساسي فقط
+            if request.user not in [conv.user_a, conv.user_b]:
+                allowed = ConversationMember.objects.filter(conversation=conv, member_user=request.user).exists()
+                if not allowed:
+                    return Response({'detail': 'غير مسموح'}, status=403)
+            else:
+                try:
+                    _ensure_can_message_or_contact(request.user, conversation=conv)
+                except ValidationError as ve:
+                    return Response({'detail': ve.message_dict.get('detail') if hasattr(ve, 'message_dict') else 'غير مسموح'}, status=403)
         # Enforce OTP for sensitive action if user enabled TOTP
         try:
             import pyotp as _pyotp
@@ -896,7 +917,11 @@ class MessageViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        return Message.objects.select_related('conversation', 'sender').filter(
+        acting_team_id = getattr(getattr(self.request, 'auth', None), 'payload', {}).get('team_member_id') if getattr(self.request, 'auth', None) else None
+        base = Message.objects.select_related('conversation', 'sender')
+        if acting_team_id:
+            return base.filter(Q(conversation__extra_members__member_team_id=acting_team_id)).distinct()
+        return base.filter(
             Q(conversation__user_a=user) | Q(conversation__user_b=user) | Q(conversation__extra_members__member_user=user) | Q(conversation__extra_members__member_team__owner=user)
         ).distinct()
 
@@ -907,7 +932,11 @@ class TransactionViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, viewset
 
     def get_queryset(self):
         user = self.request.user
-        return Transaction.objects.select_related('conversation', 'currency', 'from_user', 'to_user').filter(
+        acting_team_id = getattr(getattr(self.request, 'auth', None), 'payload', {}).get('team_member_id') if getattr(self.request, 'auth', None) else None
+        base = Transaction.objects.select_related('conversation', 'currency', 'from_user', 'to_user')
+        if acting_team_id:
+            return base.filter(Q(conversation__extra_members__member_team_id=acting_team_id)).distinct()
+        return base.filter(
             Q(conversation__user_a=user) | Q(conversation__user_b=user) | Q(conversation__extra_members__member_user=user) | Q(conversation__extra_members__member_team__owner=user)
         ).distinct()
 
