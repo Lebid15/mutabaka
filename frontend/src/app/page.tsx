@@ -1052,7 +1052,7 @@ export default function Home() {
           return;
         }
   const incomingDisplay = (data?.senderDisplay || data?.display_name || '').toString();
-  const isCurrent = !!(profile?.username && data?.username === profile.username);
+  const isCurrent = !!(profile?.username && data?.username === profile.username && (!incomingDisplay || !currentSenderDisplay ? true : incomingDisplay === (currentSenderDisplay || '')));
   const txt = (data?.message ?? '').toString();
   const senderDisplay = incomingDisplay;
         const tx = parseTransaction(txt);
@@ -1245,7 +1245,8 @@ export default function Home() {
         }
         // Fallback: if Pusher is not configured, use WS chat.message to update the thread
         if (payload.type === 'chat.message' && !PUSHER_ENABLED) {
-          const isMine = !!(profile?.username && payload?.sender === profile.username);
+          const incDisplay = (payload?.senderDisplay || payload?.display_name || '').toString();
+          const isMine = !!(profile?.username && payload?.sender === profile.username && (!incDisplay || !currentSenderDisplay ? true : incDisplay === (currentSenderDisplay || '')));
           const txt = (payload?.body ?? '').toString();
           const tx = parseTransaction(txt);
           if (isMine) {
