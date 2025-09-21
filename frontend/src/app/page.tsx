@@ -1056,7 +1056,7 @@ export default function Home() {
   const txt = (data?.message ?? '').toString();
   const senderDisplay = incomingDisplay;
         const tx = parseTransaction(txt);
-        if (isCurrent) {
+  if (isCurrent) {
           // Reconcile with optimistic 'sending' bubble instead of appending a duplicate
           setMessages(prev => {
             const copy = [...prev];
@@ -1081,7 +1081,7 @@ export default function Home() {
               } as any,
             ];
           });
-        } else {
+  } else {
           // Receiver: append the incoming message
           setMessages(prev => ([
             ...prev,
@@ -1244,7 +1244,7 @@ export default function Home() {
           try { console.debug('[CHAT WS]', payload.type, { conversation_id: payload.conversation_id, id: payload.id, client_id: payload.client_id, created_at: payload.created_at }); } catch {}
         }
         // Fallback: if Pusher is not configured, use WS chat.message to update the thread
-        if (payload.type === 'chat.message' && !PUSHER_ENABLED) {
+  if (payload.type === 'chat.message' && !PUSHER_ENABLED) {
           const incDisplay = (payload?.senderDisplay || payload?.display_name || '').toString();
           const isMine = !!(profile?.username && payload?.sender === profile.username && (!incDisplay || !currentSenderDisplay ? true : incDisplay === (currentSenderDisplay || '')));
           const txt = (payload?.body ?? '').toString();
@@ -1313,6 +1313,9 @@ export default function Home() {
                 } : undefined,
               } as any,
             ]));
+            if (tx && selectedConversationId) {
+              refreshConvAggregates(selectedConversationId);
+            }
             // For recipient, ensure wallet aggregates refresh on incoming transaction
             if (tx && selectedConversationId) {
               refreshConvAggregates(selectedConversationId);

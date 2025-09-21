@@ -217,6 +217,9 @@ class Transaction(models.Model):
                 body=f"معاملة: {( 'لنا' if direction=='lna' else 'لكم')} {display_amount} {currency.symbol or currency.code}{(' - ' + note) if note else ''}".strip()
             )
 
+            # Compute display for realtime (prefer team member if present)
+            sender_display = (sender_team_member.display_name or sender_team_member.username) if sender_team_member else (getattr(actor, 'display_name', '') or actor.username)
+
             # Optional realtime broadcast via Channels
             try:
                 from channels.layers import get_channel_layer
@@ -231,7 +234,7 @@ class Transaction(models.Model):
                             'type': 'chat.message',
                             'id': txn.id,
                             'sender': actor.username,
-                            'senderDisplay': getattr(actor, 'display_name', '') or actor.username,
+                            'senderDisplay': sender_display,
                             'body': preview_body,
                             'created_at': timezone.now().isoformat(),
                             'kind': 'transaction',
@@ -262,7 +265,8 @@ class Transaction(models.Model):
                     preview_body = f"معاملة: {( 'لنا' if direction=='lna' else 'لكم')} {display_amount} {currency.symbol or currency.code}{(' - ' + note) if note else ''}".strip()
                     pusher_client.trigger(f"chat_{conversation.id}", 'message', {
                         'username': actor.username,
-                        'display_name': getattr(actor, 'display_name', '') or actor.username,
+                        'display_name': sender_display,
+                        'senderDisplay': sender_display,
                         'message': preview_body,
                         'conversation_id': conversation.id,
                     })
