@@ -38,7 +38,7 @@ class APIClient {
       // final attempt relative if first did not throw but returned undefined (edge)
       try { res = await doPost(path); } catch {}
     }
-    if (!res) throw new Error('Network error');
+  if (!res) throw new Error('Network error');
     let data: any = null;
     try { data = await res.json(); } catch { data = null; }
     return { ok: res.ok, status: res.status, json: data };
@@ -54,10 +54,22 @@ class APIClient {
       if (err && err.otp_required) {
         const e: any = new Error(err.detail || 'OTP required');
         e.otp_required = true;
+        (e as any).status = status;
+        (e as any).data = err;
         throw e;
       }
-      const msg = err?.detail || (status === 401 ? 'Invalid credentials' : status === 403 ? 'Forbidden' : 'Login failed');
-      throw new Error(msg);
+      let msg = err?.detail as string | undefined;
+      if (!msg) {
+        if (status === 401) msg = 'بيانات تسجيل الدخول غير صحيحة';
+        else if (status === 403) msg = 'تم الرفض (403)';
+        else if (status === 404) msg = 'المسار /api/auth/token/ غير موجود (404)';
+        else if (status === 429) msg = 'محاولات كثيرة جدًا. الرجاء المحاولة لاحقًا (429)';
+        else msg = `فشل تسجيل الدخول (HTTP ${status})`;
+      }
+      const e: any = new Error(msg);
+      e.status = status;
+      e.data = err;
+      throw e;
     }
     const data = json;
     this.access = data.access;
@@ -72,8 +84,17 @@ class APIClient {
     const { ok, json, status } = await this.postJsonWithFallback('/api/auth/team/login', { owner_username, team_username, password });
     if (!ok) {
       const err = json || {};
-      const msg = err?.detail || (status === 401 ? 'Invalid credentials' : 'Team login failed');
-      throw new Error(msg);
+      let msg = err?.detail as string | undefined;
+      if (!msg) {
+        if (status === 401) msg = 'بيانات تسجيل الدخول غير صحيحة';
+        else if (status === 404) msg = 'مسار تسجيل دخول الفريق غير موجود (404)';
+        else if (status === 429) msg = 'محاولات كثيرة جدًا. الرجاء المحاولة لاحقًا (429)';
+        else msg = `فشل تسجيل دخول الفريق (HTTP ${status})`;
+      }
+      const e: any = new Error(msg);
+      e.status = status;
+      e.data = err;
+      throw e;
     }
     const data = json;
     this.access = data.access;

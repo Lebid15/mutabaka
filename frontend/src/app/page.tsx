@@ -1483,7 +1483,16 @@ export default function Home() {
         router.replace('/');
       }
     } catch (err:any) {
-      setError(err?.message || 'فشل تسجيل الدخول');
+      const status = err?.status;
+      const backendDetail = err?.data?.detail;
+      let msg = err?.message || 'فشل تسجيل الدخول';
+      if (backendDetail && typeof backendDetail === 'string' && backendDetail.toLowerCase() !== msg.toLowerCase()) {
+        msg = `${msg} — ${backendDetail}`;
+      }
+      if (typeof status === 'number') {
+        msg = `${msg} (HTTP ${status})`;
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }
