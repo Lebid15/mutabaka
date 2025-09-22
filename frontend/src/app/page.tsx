@@ -308,6 +308,7 @@ export default function Home() {
   const [pinnedIds, setPinnedIds] = useState<number[]>([]);
   const [showSubBanner, setShowSubBanner] = useState(false);
   const [subBannerMsg, setSubBannerMsg] = useState<string|undefined>(undefined);
+  const [trialDaysLeft, setTrialDaysLeft] = useState<number|null>(null);
   const [convMetaById, setConvMetaById] = useState<Record<number, { user_a_id:number; user_b_id:number }>>({});
 
   // Chat state
@@ -689,6 +690,20 @@ export default function Home() {
     let active = true;
     (async () => {
       try {
+        // Fetch subscription to show trial banner (owners only)
+        try {
+          if (!isTeamActor) {
+            const sub = await apiClient.getMySubscription();
+            const days = sub?.subscription?.remaining_days ?? null;
+            const isTrial = sub?.subscription?.is_trial === true;
+            if (isTrial && typeof days === 'number' && days > 0) {
+              setTrialDaysLeft(days);
+              setShowSubBanner(true);
+              setSubBannerMsg(`أنت على النسخة التجريبية — متبقٍ ${days} يوم`);
+            }
+          }
+        } catch {}
+
         const convs = await apiClient.listConversations();
         if (!active) return;
         const convArr = Array.isArray(convs) ? convs : [];

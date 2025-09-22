@@ -34,7 +34,7 @@ class PlansListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        plans = SubscriptionPlan.objects.all().order_by("code")
+        plans = SubscriptionPlan.objects.exclude(code="trial").order_by("code")
         return Response(SubscriptionPlanSerializer(plans, many=True).data)
 
 

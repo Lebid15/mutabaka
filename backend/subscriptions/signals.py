@@ -2,7 +2,9 @@ from django.db.models.signals import pre_save, post_save
 from django.dispatch import receiver
 from django.utils import timezone
 
-from .models import RenewalRequest
+from django.contrib.auth import get_user_model
+
+from .models import RenewalRequest, SubscriptionPlan, UserSubscription
 
 
 @receiver(pre_save, sender=RenewalRequest)
@@ -52,3 +54,35 @@ def apply_extension_on_manual_approval(sender, instance: RenewalRequest, created
                 delattr(instance, "_apply_extension_after_save")
             except Exception:
                 pass
+
+
+# --- Trial subscription on new user creation ---
+@receiver(post_save, sender=get_user_model())
+def grant_trial_on_user_creation(sender, instance, created, **kwargs):
+    if not created:
+        return
+    user = instance
+    # Skip if any subscription already exists
+    if hasattr(user, "subscription") and user.subscription is not None:
+        return
+    try:
+        plan = SubscriptionPlan.objects.filter(code="trial").first()
+        # If no explicit trial plan exists, fallback to lowest tier available
+        if plan is None:
+            plan = SubscriptionPlan.objects.order_by("code").first()
+        if plan is None:
+            return  # no plans configured yet
+        now = timezone.now()
+        start = getattr(user, "date_joined", None) or now
+        end = start + timezone.timedelta(days=30)
+        UserSubscription.objects.create(
+            user=user,
+            plan=plan,
+            start_at=start,
+            end_at=end,
+            status=UserSubscription.STATUS_ACTIVE,
+            notes="Auto-granted 1-month trial",
+        )
+    except Exception:
+        # Avoid blocking user creation due to subscription issues
+        pass

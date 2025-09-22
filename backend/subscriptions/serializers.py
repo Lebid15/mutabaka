@@ -11,6 +11,8 @@ class SubscriptionPlanSerializer(serializers.ModelSerializer):
 
 class UserSubscriptionSerializer(serializers.ModelSerializer):
     plan = SubscriptionPlanSerializer()
+    is_trial = serializers.SerializerMethodField()
+    remaining_days = serializers.SerializerMethodField()
 
     class Meta:
         model = UserSubscription
@@ -21,7 +23,23 @@ class UserSubscriptionSerializer(serializers.ModelSerializer):
             "last_renewed_at",
             "status",
             "auto_renew",
+            "remaining_days",
+            "is_trial",
         ]
+
+    def get_remaining_days(self, obj):
+        from django.utils import timezone
+        now = timezone.now()
+        if obj.end_at and obj.end_at > now:
+            delta = obj.end_at - now
+            return max(0, delta.days)
+        return 0
+
+    def get_is_trial(self, obj):
+        try:
+            return (obj.plan and obj.plan.code == "trial")
+        except Exception:
+            return False
 
 
 class RenewalRequestSerializer(serializers.ModelSerializer):
@@ -40,7 +58,7 @@ class RenewalRequestSerializer(serializers.ModelSerializer):
 
 
 class CreateRenewalRequestSerializer(serializers.Serializer):
-    plan_code = serializers.ChoiceField(choices=[(c, c) for c, _ in SubscriptionPlan.CODE_CHOICES])
+    plan_code = serializers.ChoiceField(choices=[(c, c) for c, _ in SubscriptionPlan.CODE_CHOICES if c != 'trial'])
     period = serializers.ChoiceField(choices=[(RenewalRequest.PERIOD_MONTHLY, "monthly"), (RenewalRequest.PERIOD_YEARLY, "yearly")])
 
     def validate(self, attrs):
