@@ -2102,11 +2102,18 @@ export default function Home() {
                             })()}
                           </div>
                         )}
-                        {/* Text + Timestamp inline (WhatsApp-like) */}
+                        {/* Text with timestamp on its own line */}
                         {content && (
-                          <div className="inline-flex flex-wrap items-end break-words whitespace-normal text-sm leading-6" dir="auto">
-                            <bdi className="min-w-0 break-words" style={{unicodeBidi:'isolate'}}>{showHighlight ? highlightText(content, searchQuery) : (typeof content === 'string' ? content.replace(/\s+$/, '') : content)}</bdi><bdi className="whitespace-nowrap flex-shrink-0 text-[11px] opacity-70 self-end" style={{marginInlineStart:'0.25rem', unicodeBidi:'isolate'}}><span dir="ltr">{formatTimeShort(m.created_at)}</span></bdi>
-                          </div>
+                          <>
+                            <div className="text-sm leading-6 break-words whitespace-normal" dir="auto">
+                              <bdi className="min-w-0 break-words" style={{unicodeBidi:'isolate'}}>
+                                {showHighlight ? highlightText(content, searchQuery) : content}
+                              </bdi>
+                            </div>
+                            <div className="mt-1 text-[11px] opacity-70" dir="auto">
+                              <span dir="ltr">{formatTimeShort(m.created_at)}</span>
+                            </div>
+                          </>
                         )}
                       </div>
                     );

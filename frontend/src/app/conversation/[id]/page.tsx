@@ -117,11 +117,11 @@ export default function ConversationPage() {
           <div key={m.id} className={m.sender?.username === conv?.user_a?.username ? 'self-end text-left' : 'self-start text-right'}>
             <div className="inline-block max-w-[75%] bg-white/5 border border-white/10 rounded-2xl px-3 py-2">
               <div className="text-xs text-gray-300 mb-1">{m.sender?.display_name || m.sender?.username || ''}</div>
-              <div className="inline-flex flex-wrap items-end break-words text-sm leading-relaxed whitespace-normal" dir="auto">
-                <bdi className="min-w-0 break-words" style={{unicodeBidi:'isolate'}}>{(m.body || '').replace(/\s+$/,'')}</bdi>
-                <bdi className="whitespace-nowrap flex-none shrink-0 text-[11px] opacity-70 self-end" style={{ marginInlineStart: '0.25rem', unicodeBidi:'isolate' }}>
-                  <span dir="ltr">{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
-                </bdi>
+              <div className="text-sm leading-relaxed break-words whitespace-normal" dir="auto">
+                <bdi className="min-w-0 break-words" style={{unicodeBidi:'isolate'}}>{(m.body || '')}</bdi>
+              </div>
+              <div className="mt-1 text-[11px] opacity-70" dir="auto">
+                <span dir="ltr">{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
               </div>
             </div>
           </div>
