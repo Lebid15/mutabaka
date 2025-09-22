@@ -25,25 +25,41 @@ class APIClient {
     }
   }
 
+  private async postJsonWithFallback<T=any>(path: string, payload: any, headers: Record<string,string> = {}): Promise<{ ok: boolean; status: number; json: any }>{
+    const absUrl = `${this.baseUrl}${path}`;
+    const doPost = async (url: string) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(payload) });
+    let res: Response | null = null;
+    try {
+      res = await doPost(absUrl);
+    } catch {
+      try { res = await doPost(path); } catch { res = null; }
+    }
+    if (!res || !('ok' in res)) {
+      // final attempt relative if first did not throw but returned undefined (edge)
+      try { res = await doPost(path); } catch {}
+    }
+    if (!res) throw new Error('Network error');
+    let data: any = null;
+    try { data = await res.json(); } catch { data = null; }
+    return { ok: res.ok, status: res.status, json: data };
+  }
+
   async login(identifier: string, password: string, otp?: string) {
     const body: any = { password };
     if (identifier.includes('@')) body.email = identifier; else body.username = identifier;
     if (otp) body.otp = otp;
-    const res = await fetch(`${this.baseUrl}/api/auth/token/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(()=>({}));
+    const { ok, json, status } = await this.postJsonWithFallback('/api/auth/token/', body);
+    if (!ok) {
+      const err = json || {};
       if (err && err.otp_required) {
         const e: any = new Error(err.detail || 'OTP required');
         e.otp_required = true;
         throw e;
       }
-      throw new Error(err?.detail || 'Login failed');
+      const msg = err?.detail || (status === 401 ? 'Invalid credentials' : status === 403 ? 'Forbidden' : 'Login failed');
+      throw new Error(msg);
     }
-    const data = await res.json();
+    const data = json;
     this.access = data.access;
     this.refresh = data.refresh;
     if (typeof window !== 'undefined') {
@@ -53,16 +69,13 @@ class APIClient {
   }
 
   async teamLogin(owner_username: string, team_username: string, password: string) {
-    const res = await fetch(`${this.baseUrl}/api/auth/team/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ owner_username, team_username, password })
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(()=>({}));
-      throw new Error(err?.detail || 'Team login failed');
+    const { ok, json, status } = await this.postJsonWithFallback('/api/auth/team/login', { owner_username, team_username, password });
+    if (!ok) {
+      const err = json || {};
+      const msg = err?.detail || (status === 401 ? 'Invalid credentials' : 'Team login failed');
+      throw new Error(msg);
     }
-    const data = await res.json();
+    const data = json;
     this.access = data.access;
     this.refresh = data.refresh;
     if (typeof window !== 'undefined') {
@@ -73,13 +86,9 @@ class APIClient {
 
   async refreshToken() {
     if (!this.refresh) throw new Error('No refresh token');
-    const res = await fetch(`${this.baseUrl}/api/auth/token/refresh/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh: this.refresh })
-    });
-    if (!res.ok) throw new Error('Refresh failed');
-    const data = await res.json();
+    const { ok, json } = await this.postJsonWithFallback('/api/auth/token/refresh/', { refresh: this.refresh });
+    if (!ok) throw new Error('Refresh failed');
+    const data = json;
     this.access = data.access;
     if (typeof window !== 'undefined') {
       localStorage.setItem('auth_tokens_v1', JSON.stringify({ access: this.access, refresh: this.refresh }));
