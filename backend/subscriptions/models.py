@@ -11,7 +11,7 @@ from django.utils import timezone
 
 class SubscriptionPlan(models.Model):
     CODE_CHOICES = [
-        ("trial", "Trial"),
+        ("trial", "مجاني"),
         ("silver", "Silver"),
         ("golden", "Golden"),
         ("king", "King"),
