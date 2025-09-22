@@ -1802,21 +1802,28 @@ export default function Home() {
                         <div className="bg-chatPanel px-6 py-3 font-bold border-b border-chatDivider text-sm flex items-center gap-6 flex-wrap relative">
               {/* شريط أرصدة سريع من منظور هذه المحادثة فقط (موجب = لنا، سالب = لكم) — مخفي عند الدردشة مع admin (أو حسابات إدارية مشابهة) أو عند كون المستخدم الحالي أدمن */}
               {(!isAdminLike(profile?.username) && !isAdminLike(currentContact?.otherUsername)) && (
-                <div className="flex gap-4 text-xs md:text-sm order-2 md:order-1 w-full md:w-auto justify-between md:justify-start">
-                  {currencyCodes().map(code => {
+                <div dir="rtl" className="flex gap-4 text-xs md:text-sm order-2 md:order-1 w-full md:w-auto justify-between md:justify-start">
+                  {(() => {
+                    const ORDER = ['USD','TRY','EUR','SYP'];
                     const pair = getPairWallet(selectedConversationId);
-                    const val = (pair as any)[code] ?? 0;
-                    const positive = val >= 0;
-                    const isPending = pendingCurrencies.has(code);
-                    return (
-                      <span key={code} className={(positive ? 'text-green-400' : 'text-red-400') + ' font-semibold flex items-center gap-1'}>
-                        <span dir="ltr" className="inline-block tabular-nums">
-                          {formatAmount(val, code)}
-                        </span>
-                        {isPending && <span className="text-yellow-400 animate-pulse" title="قيمة مؤقتة قيد التأكيد">⚡</span>}
-                      </span>
-                    );
-                  })}
+                    return ORDER
+                      .filter(code => (pair as any)[code] !== undefined)
+                      .map(code => {
+                        const val = (pair as any)[code] ?? 0;
+                        const rounded = Math.round(val * 100) / 100;
+                        if (rounded === 0) return null; // إخفاء العملة ذات القيمة صفر
+                        const positive = rounded >= 0;
+                        const isPending = pendingCurrencies.has(code);
+                        return (
+                          <span key={code} className={(positive ? 'text-green-400' : 'text-red-400') + ' font-semibold flex items-center gap-1'}>
+                            <span dir="ltr" className="inline-block tabular-nums">
+                              {formatAmount(rounded, code)}
+                            </span>
+                            {isPending && <span className="text-yellow-400 animate-pulse" title="قيمة مؤقتة قيد التأكيد">⚡</span>}
+                          </span>
+                        );
+                      });
+                  })()}
                 </div>
               )}
               {/* زر رجوع للجوال */}
