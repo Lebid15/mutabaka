@@ -175,13 +175,13 @@ function SidebarHeaderAddContact({ onAdded, existingUsernames, currentUsername, 
     <div className="p-3 border-b border-chatDivider bg-chatPanel">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="text-sm font-semibold text-gray-100">الدردشات</div>
+          <div className="text-base font-semibold text-gray-100">الدردشات</div>
           <button
             onClick={() => setOpen(o => !o)}
-            className="relative group w-9 h-9 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 backdrop-blur-sm border border-white/10 text-gray-200 transition"
+            className="relative group w-10 h-10 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 backdrop-blur-sm border border-white/10 text-gray-200 transition"
             title="محادثة جديدة"
           >
-            <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' className='h-5 w-5' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
+            <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' className='h-6 w-6' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
               <path d='M12 4v16m8-8H4' />
             </svg>
           </button>
@@ -189,10 +189,10 @@ function SidebarHeaderAddContact({ onAdded, existingUsernames, currentUsername, 
         <div className="relative" ref={menuRef}>
           <button
             onClick={()=> setMenuOpen(m => !m)}
-            className="w-9 h-9 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 backdrop-blur-sm border border-white/10 text-gray-200"
+            className="w-10 h-10 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 backdrop-blur-sm border border-white/10 text-gray-200"
             title="القائمة"
           >
-            <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' className='h-5 w-5' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
+            <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' className='h-6 w-6' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
               <circle cx='12' cy='5' r='1'/>
               <circle cx='12' cy='12' r='1'/>
               <circle cx='12' cy='19' r='1'/>
@@ -1572,7 +1572,7 @@ export default function Home() {
             }} existingUsernames={contacts.map(c=> c.otherUsername || c.name)} currentUsername={profile?.username} onRefreshContacts={refreshContacts} onSubscriptionGate={(reason)=>{ setSubBannerMsg(reason); setShowSubBanner(true); }} />
             <ul className="flex-1 overflow-y-auto divide-y divide-chatDivider/40 custom-scrollbar">
               {contacts.length === 0 && (
-                <li className="px-4 py-6 text-center text-xs text-gray-400">
+                <li className="px-4 py-6 text-center text-sm text-gray-400">
                   لا توجد محادثات بعد — اضغط على زر + لبدء محادثة جديدة
                 </li>
               )}
@@ -1591,26 +1591,26 @@ export default function Home() {
                 <li
                   key={contact.id}
                   onClick={()=>{ const realIdx = contacts.findIndex(c=>c.id===contact.id); setCurrentContactIndex(realIdx); setSelectedConversationId(contact.id); setMobileView('chat'); setOpenMenuForConvId(null); setUnreadByConv(prev=>({ ...prev, [contact.id]: 0 })); }}
-                  className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-chatDivider/30 transition ${contact.id === selectedConversationId ? 'bg-chatDivider/50' : ''}`}
+                  className={`flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-chatDivider/30 transition ${contact.id === selectedConversationId ? 'bg-chatDivider/50' : ''}`}
                 >
-                  <img src={contact.avatar} alt={contact.name} className="w-10 h-10 rounded-full border border-chatDivider" />
+                  <img src={contact.avatar} alt={contact.name} className="w-12 h-12 rounded-full border border-chatDivider" />
                   <div className="flex flex-col flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold truncate flex items-center gap-1">{contact.name} {contact.isMuted && <span title="مكتمة">🔕</span>}</span>
-                      <span className="text-[10px] text-gray-400" dir="ltr">{contact.last_message_at ? formatTimeShort(contact.last_message_at) : ''}</span>
+                      <span className="text-base font-semibold truncate flex items-center gap-1">{contact.name} {contact.isMuted && <span title="مكتمة">🔕</span>}</span>
+                      <span className="text-[11px] text-gray-400" dir="ltr">{contact.last_message_at ? formatTimeShort(contact.last_message_at) : ''}</span>
                     </div>
-                    <span className="text-xs text-gray-400 truncate">{contact.last_message_preview || ''}</span>
+                    <span className="text-sm text-gray-400 truncate">{contact.last_message_preview || ''}</span>
                   </div>
                   <div className="relative flex items-center gap-2" onClick={(e)=> e.stopPropagation()}>
                     {unreadByConv[contact.id] > 0 && (
-                      <span className="bg-green-600 text-white rounded-full px-2 py-0.5 text-[10px] leading-none">{unreadByConv[contact.id]}</span>
+                      <span className="bg-green-600 text-white rounded-full px-2 py-0.5 text-[11px] leading-none">{unreadByConv[contact.id]}</span>
                     )}
                     <button
-                      className="w-7 h-7 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-gray-200"
+                      className="w-8 h-8 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-gray-200"
                       title="تحرير"
                       onClick={()=> setOpenMenuForConvId(prev => prev===contact.id ? null : contact.id)}
                     >
-                      <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' className='h-4 w-4' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
+                      <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' className='h-5 w-5' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
                         <path d='M12 20h9'/>
                         <path d='M16.5 3.5a2.121 2.121 0 013 3L7 19 3 20l1-4 12.5-12.5z'/>
                       </svg>
@@ -1706,26 +1706,26 @@ export default function Home() {
                     <li
                       key={contact.id}
                       onClick={()=>{ const realIdx = contacts.findIndex(c=>c.id===contact.id); setCurrentContactIndex(realIdx); setSelectedConversationId(contact.id); setMobileView('chat'); setOpenMenuForConvId(null); setUnreadByConv(prev=>({ ...prev, [contact.id]: 0 })); }}
-                      className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-chatDivider/30 transition ${contact.id === selectedConversationId ? 'bg-chatDivider/50' : ''}`}
+                      className={`flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-chatDivider/30 transition ${contact.id === selectedConversationId ? 'bg-chatDivider/50' : ''}`}
                     >
-                      <img src={contact.avatar} alt={contact.name} className="w-10 h-10 rounded-full border border-chatDivider" />
+                      <img src={contact.avatar} alt={contact.name} className="w-12 h-12 rounded-full border border-chatDivider" />
                       <div className="flex flex-col flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold truncate flex items-center gap-1">{contact.name} {contact.isMuted && <span title="مكتمة">🔕</span>}</span>
-                          <span className="text-[10px] text-gray-400" dir="ltr">{contact.last_message_at ? formatTimeShort(contact.last_message_at) : ''}</span>
+                          <span className="text-base font-semibold truncate flex items-center gap-1">{contact.name} {contact.isMuted && <span title="مكتمة">🔕</span>}</span>
+                          <span className="text-[11px] text-gray-400" dir="ltr">{contact.last_message_at ? formatTimeShort(contact.last_message_at) : ''}</span>
                         </div>
-                        <span className="text-xs text-gray-400 truncate">{contact.last_message_preview || ''}</span>
+                        <span className="text-sm text-gray-400 truncate">{contact.last_message_preview || ''}</span>
                       </div>
                       <div className="relative flex items-center gap-2" onClick={(e)=> e.stopPropagation()}>
                         {unreadByConv[contact.id] > 0 && (
-                          <span className="bg-green-600 text-white rounded-full px-2 py-0.5 text-[10px] leading-none">{unreadByConv[contact.id]}</span>
+                          <span className="bg-green-600 text-white rounded-full px-2 py-0.5 text-[11px] leading-none">{unreadByConv[contact.id]}</span>
                         )}
                         <button
-                          className="w-7 h-7 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-gray-200"
+                          className="w-8 h-8 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-gray-200"
                           title="تحرير"
                           onClick={()=> setOpenMenuForConvId(prev => prev===contact.id ? null : contact.id)}
                         >
-                          <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' className='h-4 w-4' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
+                          <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' className='h-5 w-5' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
                             <path d='M12 20h9'/>
                             <path d='M16.5 3.5a2.121 2.121 0 013 3L7 19 3 20l1-4 12.5-12.5z'/>
                           </svg>
@@ -1975,6 +1975,7 @@ export default function Home() {
                 </span>
                 <div className="flex items-center gap-1">
                   {/* removed info button by request */}
+                  <button
                     onClick={()=> setActiveMatchIdx(i=> (i-1+Math.max(1,searchMatches.length)) % Math.max(1,searchMatches.length))}
                     disabled={!searchMatches.length}
                     className="w-7 h-7 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 disabled:opacity-40 border border-white/10 backdrop-blur-sm"
