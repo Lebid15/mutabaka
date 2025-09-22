@@ -2093,16 +2093,17 @@ export default function Home() {
                             })()}
                           </div>
                         )}
-                        {/* Text content */}
+                        {/* Text + Timestamp inline (WhatsApp-like) */}
                         {content && (
-                          <div className="text-sm leading-6 break-words">
-                            {showHighlight ? highlightText(content, searchQuery) : content}
+                          <div className="text-sm leading-6 inline-flex flex-wrap items-baseline break-words" dir="auto">
+                            <span className="whitespace-pre-line min-w-0">
+                              {showHighlight ? highlightText(content, searchQuery) : (typeof content === 'string' ? content.replace(/\s+$/, '') : content)}
+                            </span>
+                            <span className="ml-2 text-[10px] text-gray-300 whitespace-nowrap shrink-0" dir="ltr">
+                              {formatTimeShort(m.created_at)}
+                            </span>
                           </div>
                         )}
-                        {/* Timestamp */}
-                        <div className="mt-1 text-[10px] text-gray-300 flex items-center justify-end" dir="ltr">
-                          {formatTimeShort(m.created_at)}
-                        </div>
                       </div>
                     );
                   }
