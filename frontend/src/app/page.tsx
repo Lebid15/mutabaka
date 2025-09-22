@@ -2107,11 +2107,12 @@ export default function Home() {
                 <div className="flex flex-wrap items-center gap-2 text-xs md:text-sm">
                   <button
                     onClick={sendChat}
-                    className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 backdrop-blur-sm border border-white/15 flex items-center justify-center text-gray-200 transition"
+                    className="w-9 h-9 rounded-lg bg-green-500/20 hover:bg-green-500/30 backdrop-blur-sm border border-green-400/30 flex items-center justify-center text-green-300 transition"
                     title="إرسال الرسالة"
                   >
-                    <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' className='h-5 w-5' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
-                      <path d='M5 15l7-7 7 7'/>
+                    <svg xmlns='http://www.w3.org/2000/svg' className='h-4 w-4' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
+                      <polygon points='22 2 15 22 11 13 2 9 22 2'></polygon>
+                      <line x1='22' y1='2' x2='11' y2='13'></line>
                     </svg>
                   </button>
                   <select value={selectedCurrency} onChange={e=>setSelectedCurrency(e.target.value)} className="bg-chatBg border border-chatDivider rounded px-2 py-1 text-gray-100 focus:outline-none w-auto min-w-0">
