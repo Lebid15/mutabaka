@@ -24,7 +24,7 @@ export default function ConversationPage() {
     const hasTokens = typeof window !== 'undefined' && !!localStorage.getItem('auth_tokens_v1');
     if (!hasTokens) {
       try { sessionStorage.setItem('redirectAfterLogin', `/conversation/${convId}`); } catch {}
-      router.replace('/login'); // adjust to your login route (landing page shows login form otherwise)
+      router.replace('/');
     }
   }, [convId, router]);
 
