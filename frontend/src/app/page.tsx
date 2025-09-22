@@ -2105,8 +2105,14 @@ export default function Home() {
             >
               {(!isAdminLike(profile?.username) && !isAdminLike(currentContact?.otherUsername)) && (
                 <div className="flex flex-wrap items-center gap-2 text-xs md:text-sm">
-                  <button onClick={()=>setTxPanelCollapsed(c=>!c)} className="bg-gray-700 hover:bg-gray-600 text-white rounded px-2 py-1" title={txPanelCollapsed? 'إظهار المعاملات':'إخفاء المعاملات'}>
-                    {txPanelCollapsed? '▼' : '▲'}
+                  <button
+                    onClick={sendChat}
+                    className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 backdrop-blur-sm border border-white/15 flex items-center justify-center text-gray-200 transition"
+                    title="إرسال الرسالة"
+                  >
+                    <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' className='h-5 w-5' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
+                      <path d='M5 15l7-7 7 7'/>
+                    </svg>
                   </button>
                   {!txPanelCollapsed && (
                     <>
@@ -2184,15 +2190,6 @@ export default function Home() {
                   placeholder="اكتب رسالة"
                   className="flex-1 border border-chatDivider bg-chatBg text-gray-100 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-600 resize-none overflow-y-auto min-h-[40px] max-h-40"
                 />
-                  <button
-                   onClick={sendChat}
-                   className="w-10 h-10 rounded-lg bg-white/5 hover:bg-white/10 backdrop-blur-sm border border-white/15 flex items-center justify-center text-gray-200 transition"
-                   title="إرسال الرسالة"
-                 >
-                   <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' className='h-5 w-5' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
-                     <path d='M5 15l7-7 7 7'/>
-                   </svg>
-                 </button>
                </div>
                {/* typing indicator moved to header under contact name */}
             </div>
