@@ -2096,7 +2096,7 @@ export default function Home() {
                         {/* Text + Timestamp inline (WhatsApp-like) */}
                         {content && (
                           <div className="inline-flex flex-wrap items-end break-words whitespace-normal text-sm leading-6" dir="auto">
-                            <span className="min-w-0 break-words">{showHighlight ? highlightText(content, searchQuery) : (typeof content === 'string' ? content.replace(/\s+$/, '') : content)}</span><span className="whitespace-nowrap flex-shrink-0 text-[11px] opacity-70 self-end" style={{marginInlineStart:'0.25rem'}} dir="ltr">{formatTimeShort(m.created_at)}</span>
+                            <bdi className="min-w-0 break-words" style={{unicodeBidi:'isolate'}}>{showHighlight ? highlightText(content, searchQuery) : (typeof content === 'string' ? content.replace(/\s+$/, '') : content)}</bdi><bdi className="whitespace-nowrap flex-shrink-0 text-[11px] opacity-70 self-end" style={{marginInlineStart:'0.25rem', unicodeBidi:'isolate'}} dir="ltr">{formatTimeShort(m.created_at)}</bdi>
                           </div>
                         )}
                       </div>
