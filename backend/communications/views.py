@@ -936,6 +936,9 @@ class ConversationViewSet(viewsets.ModelViewSet):
     def add_team_member(self, request, pk=None):
         conv = self.get_object()
         self._require_participant(request.user, conv)
+        acting_team_id = getattr(getattr(self.request, 'auth', None), 'payload', {}).get('team_member_id') if getattr(self.request, 'auth', None) else None
+        if acting_team_id:
+            return Response({'detail': 'غير مسموح لأعضاء الفريق بإدارة أعضاء المحادثة'}, status=403)
         serializer = ConversationMemberSerializer(data=request.data, context={'request': request, 'conversation': conv})
         serializer.is_valid(raise_exception=True)
         cm = serializer.save()
@@ -1006,6 +1009,9 @@ class ConversationViewSet(viewsets.ModelViewSet):
     def remove_member(self, request, pk=None):
         conv = self.get_object()
         self._require_participant(request.user, conv)
+        acting_team_id = getattr(getattr(self.request, 'auth', None), 'payload', {}).get('team_member_id') if getattr(self.request, 'auth', None) else None
+        if acting_team_id:
+            return Response({'detail': 'غير مسموح لأعضاء الفريق بإدارة أعضاء المحادثة'}, status=403)
         member_id = request.data.get('member_id')
         member_type = request.data.get('member_type')  # 'user' or 'team_member'
         try:

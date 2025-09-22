@@ -1894,6 +1894,7 @@ export default function Home() {
                             <div className="text-[10px] text-gray-400">{(m.role === 'team' || m.role === 'team_member') ? 'عضو فريق' : 'مشارك أساسي'}</div>
                           </div>
                         </div>
+                        {!isTeamActor && (
                         <button
                           onClick={async()=>{
                             if (!selectedConversationId) return;
@@ -1911,6 +1912,7 @@ export default function Home() {
                           className="px-2 py-1 rounded bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 text-[11px]"
                           disabled={membersBusy}
                         >إزالة</button>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -1930,6 +1932,7 @@ export default function Home() {
                               <div className="text-[10px] text-gray-400">{tm.username}</div>
                             </div>
                           </div>
+                          {!isTeamActor && (
                           <button
                             onClick={async()=>{
                               if (!selectedConversationId || already) return;
@@ -1947,6 +1950,7 @@ export default function Home() {
                             className={"px-2 py-1 rounded border text-[11px] " + (already ? 'bg-white/5 border-white/10 text-gray-400 cursor-not-allowed' : 'bg-green-500/15 hover:bg-green-500/25 border-green-500/25 text-green-300')}
                             disabled={already || membersBusy}
                           >{already ? 'مضاف' : 'إضافة +'}</button>
+                          )}
                         </li>
                       );
                     })}
