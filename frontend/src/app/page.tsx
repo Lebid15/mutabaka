@@ -1974,7 +1974,7 @@ export default function Home() {
                   {searchQuery.trim() ? (searchMatches.length ? `${(activeMatchIdx+1)}/${searchMatches.length}` : 'لا نتائج') : ''}
                 </span>
                 <div className="flex items-center gap-1">
-                  <button
+                  {/* removed info button by request */}
                     onClick={()=> setActiveMatchIdx(i=> (i-1+Math.max(1,searchMatches.length)) % Math.max(1,searchMatches.length))}
                     disabled={!searchMatches.length}
                     className="w-7 h-7 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 disabled:opacity-40 border border-white/10 backdrop-blur-sm"
