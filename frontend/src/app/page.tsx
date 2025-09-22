@@ -2105,16 +2105,6 @@ export default function Home() {
             >
               {(!isAdminLike(profile?.username) && !isAdminLike(currentContact?.otherUsername)) && (
                 <div className="flex flex-wrap items-center gap-2 text-xs md:text-sm">
-                  <button
-                    onClick={sendChat}
-                    className="w-9 h-9 rounded-lg bg-green-500/20 hover:bg-green-500/30 backdrop-blur-sm border border-green-400/30 flex items-center justify-center text-green-300 transition"
-                    title="إرسال الرسالة"
-                  >
-                    <svg xmlns='http://www.w3.org/2000/svg' className='h-4 w-4' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
-                      <polygon points='22 2 15 22 11 13 2 9 22 2'></polygon>
-                      <line x1='22' y1='2' x2='11' y2='13'></line>
-                    </svg>
-                  </button>
                   <select value={selectedCurrency} onChange={e=>setSelectedCurrency(e.target.value)} className="bg-chatBg border border-chatDivider rounded px-2 py-1 text-gray-100 focus:outline-none w-auto min-w-0">
                     {effectiveCurrencies.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
                   </select>
@@ -2128,6 +2118,24 @@ export default function Home() {
                     <svg xmlns='http://www.w3.org/2000/svg' className='h-5 w-5' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
                       <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={1.6} d='M11 5H6a2 2 0 00-2 2v9.5A1.5 1.5 0 005.5 18H15a2 2 0 002-2v-1M16 3l5 5M16 3v4a1 1 0 001 1h4' />
                     </svg>
+                  </button>
+                  <button
+                    onClick={addTransaction}
+                    disabled={txLoading}
+                    className="relative group w-9 h-9 flex items-center justify-center rounded-lg bg-green-500/20 hover:bg-green-500/30 disabled:opacity-50 backdrop-blur-sm border border-green-400/30 text-green-300 transition"
+                    title="حفظ المعاملة"
+                  >
+                    {txLoading ? (
+                      <svg className='animate-spin h-5 w-5 text-green-300' viewBox='0 0 24 24'>
+                        <circle className='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' strokeWidth='3'></circle>
+                        <path className='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z'></path>
+                      </svg>
+                    ) : (
+                      <svg xmlns='http://www.w3.org/2000/svg' className='h-4 w-4' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
+                        <polygon points='22 2 15 22 11 13 2 9 22 2'></polygon>
+                        <line x1='22' y1='2' x2='11' y2='13'></line>
+                      </svg>
+                    )}
                   </button>
                 </div>
               )}
@@ -2169,6 +2177,16 @@ export default function Home() {
                   placeholder="اكتب رسالة"
                   className="flex-1 border border-chatDivider bg-chatBg text-gray-100 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-600 resize-none overflow-y-auto min-h-[40px] max-h-40"
                 />
+                  <button
+                   onClick={sendChat}
+                   className="w-10 h-10 rounded-lg bg-green-500/20 hover:bg-green-500/30 backdrop-blur-sm border border-green-400/30 flex items-center justify-center text-green-300 transition"
+                   title="إرسال الرسالة"
+                 >
+                   <svg xmlns='http://www.w3.org/2000/svg' className='h-4 w-4' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
+                     <polygon points='22 2 15 22 11 13 2 9 22 2'></polygon>
+                     <line x1='22' y1='2' x2='11' y2='13'></line>
+                   </svg>
+                 </button>
                </div>
                {/* typing indicator moved to header under contact name */}
             </div>
