@@ -53,6 +53,9 @@ def _plan_contact_limit(user) -> int | None:
         code = (getattr(user.subscription.plan, 'code', '') or '').lower()
     except Exception:
         code = ''
+    # خلال النسخة التجريبية نمنح نفس صلاحيات المدفوعة (بدون حد)
+    if code == 'trial':
+        return None
     if code == 'silver':
         return 5
     if code == 'golden':
