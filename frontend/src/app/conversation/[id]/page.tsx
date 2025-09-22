@@ -119,8 +119,8 @@ export default function ConversationPage() {
               <div className="text-xs text-gray-300 mb-1">{m.sender?.display_name || m.sender?.username || ''}</div>
               <div className="inline-flex flex-wrap items-end break-words text-sm leading-relaxed whitespace-normal" dir="auto">
                 <bdi className="min-w-0 break-words" style={{unicodeBidi:'isolate'}}>{(m.body || '').replace(/\s+$/,'')}</bdi>
-                <bdi dir="ltr" className="whitespace-nowrap flex-none shrink-0 text-[11px] opacity-70 self-end" style={{ marginInlineStart: '0.25rem', unicodeBidi:'isolate' }}>
-                  {new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+                <bdi className="whitespace-nowrap flex-none shrink-0 text-[11px] opacity-70 self-end" style={{ marginInlineStart: '0.25rem', unicodeBidi:'isolate' }}>
+                  <span dir="ltr">{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
                 </bdi>
               </div>
             </div>
