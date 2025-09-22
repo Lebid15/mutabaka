@@ -119,7 +119,7 @@ export default function ConversationPage() {
               <div className="text-xs text-gray-300 mb-1">{m.sender?.display_name || m.sender?.username || ''}</div>
               <div className="inline-flex flex-wrap items-end break-words text-sm leading-relaxed" dir="auto">
                 <span className="min-w-0 break-words">{(m.body || '').replace(/\s+$/,'')}</span>
-                <span className={(m.sender?.username === conv?.user_a?.username ? 'ml-1 ' : 'mr-1 ') + 'whitespace-nowrap flex-none shrink-0 text-[11px] opacity-70 self-end'} dir="ltr">
+                <span className={'whitespace-nowrap flex-none shrink-0 text-[11px] opacity-70 self-end'} style={{ marginInlineStart: '0.25rem' }} dir="ltr">
                   {new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
                 </span>
               </div>
