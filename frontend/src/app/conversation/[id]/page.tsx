@@ -118,7 +118,7 @@ export default function ConversationPage() {
             <div className="inline-block max-w-[75%] bg-white/5 border border-white/10 rounded-2xl px-3 py-2">
               <div className="text-xs text-gray-300 mb-1">{m.sender?.display_name || m.sender?.username || ''}</div>
               <div className="inline-flex flex-wrap items-end break-words text-sm leading-relaxed" dir="auto">
-                <span className="min-w-0 break-words grow">{(m.body || '').replace(/\s+$/,'')}</span>
+                <span className="min-w-0 break-words">{(m.body || '').replace(/\s+$/,'')}</span>
                 <span className={(m.sender?.username === conv?.user_a?.username ? 'ml-1 ' : 'mr-1 ') + 'whitespace-nowrap flex-none shrink-0 text-[11px] opacity-70 self-end'} dir="ltr">
                   {new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
                 </span>
