@@ -5,7 +5,16 @@ import { apiClient } from '@/lib/api';
 import { attachPrimingListeners, tryPlayMessageSound } from '@/lib/sound';
 import { DEBUG_FORCE_APPEND } from '@/lib/config';
 
-type Msg = { id:number; conversation:number; sender:any; type:'text'|'system'|'transaction'; body:string; created_at:string };
+type Msg = {
+  id: number;
+  conversation: number;
+  sender: any;
+  type: 'text'|'system'|'transaction';
+  body: string;
+  created_at: string;
+  client_id?: string;
+  status?: 'pending' | 'delivered' | 'read';
+};
 
 // Simple ticks like WhatsApp: single (not delivered), double gray (delivered), double blue (read)
 function Ticks({ state }: { state: 'single'|'double'|'blue' }) {
@@ -46,6 +55,8 @@ export default function ConversationPage() {
   const lastIdRef = useRef<number>(0);
   const wsRef = useRef<WebSocket|null>(null);
   const [lastReadByOther, setLastReadByOther] = useState<number>(0);
+  const [input, setInput] = useState<string>("");
+  const [sending, setSending] = useState<boolean>(false);
 
   // Centered alerts for member add/remove
   type CenterAlert = { id: string; type: 'added'|'removed'|'info'; msg: string };
@@ -125,15 +136,28 @@ export default function ConversationPage() {
             return;
           }
           if (data?.type === 'chat.message' || DEBUG_FORCE_APPEND) {
-            const msg = {
+            const msg: Msg = {
               id: data.id || Date.now(),
               conversation: convId,
               sender: { username: data.sender },
               type: data.kind || 'text',
               body: data.body || '',
               created_at: data.created_at || new Date().toISOString(),
-            } as Msg;
+              client_id: data.client_id,
+              status: 'delivered',
+            };
             setMessages(prev => {
+              // If this is an echo for a pending local message, update it instead of appending
+              if (msg.client_id) {
+                const idx = prev.findIndex(m => m.client_id && m.client_id === msg.client_id);
+                if (idx !== -1) {
+                  const copy = [...prev];
+                  copy[idx] = { ...copy[idx], id: msg.id, status: 'delivered', created_at: msg.created_at };
+                  lastIdRef.current = msg.id;
+                  setTimeout(()=> listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' }), 0);
+                  return copy;
+                }
+              }
               if (prev.some(m => m.id === msg.id)) return prev; // dedupe
               const next = [...prev, msg];
               // scroll bottom on new message
@@ -182,6 +206,38 @@ export default function ConversationPage() {
     return () => { window.removeEventListener('focus', onFocus); clearTimeout(id); };
   }, [convId]);
 
+  const handleSend = async () => {
+    const text = (input || '').trim();
+    if (!text) return;
+    if (!me) return;
+    const clientId = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+    const temp: Msg = {
+      id: Date.now(),
+      conversation: convId,
+      sender: { username: me.username },
+      type: 'text',
+      body: text,
+      created_at: new Date().toISOString(),
+      client_id: clientId,
+      status: 'pending',
+    };
+    setMessages(prev => [...prev, temp]);
+    setInput("");
+    setSending(true);
+    try {
+      // Prefer WS with client_id; if not open, fall back to HTTP
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'text', body: text, client_id: clientId }));
+      } else {
+        await apiClient.sendMessage(convId, text);
+      }
+    } catch {
+      // keep pending; optionally handle error
+    } finally {
+      setSending(false);
+    }
+  };
+
   if (loading) return <div className="min-h-screen bg-chatBg text-gray-100 p-4">جار التحميل...</div>;
   if (error) return <div className="min-h-screen bg-chatBg text-gray-100 p-4">{error}</div>;
 
@@ -200,9 +256,6 @@ export default function ConversationPage() {
       <div ref={listRef} className="flex-1 max-w-4xl mx-auto w-full overflow-auto p-3 space-y-2">
         {messages.map(m => {
           const isMine = m.sender?.username === me?.username;
-          const status: 'single'|'double'|'blue' = isMine
-            ? (m.id <= lastReadByOther ? 'blue' : 'double')
-            : 'double';
           return (
           <div key={m.id} className={isMine ? 'self-end text-left' : 'self-start text-right'}>
             <div className={"inline-block max-w-[75%] border rounded-2xl px-3 py-2 " + (isMine ? 'bg-emerald-700/30 border-white/10' : 'bg-white/5 border-white/10')}>
@@ -212,11 +265,31 @@ export default function ConversationPage() {
               </div>
               <div className="mt-1 text-[11px] opacity-70 flex items-center gap-1 justify-end" dir="auto">
                 <span dir="ltr">{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
-                {isMine && <Ticks state={status} />}
+                {isMine && (
+                  <Ticks state={(m.status === 'pending') ? 'single' : (m.id <= lastReadByOther ? 'blue' : 'double')} />
+                )}
               </div>
             </div>
           </div>
         )})}
+      </div>
+      {/* Composer */}
+      <div className="sticky bottom-0 bg-chatPanel border-t border-chatDivider p-3">
+        <div className="max-w-4xl mx-auto flex items-center gap-2">
+          <input
+            value={input}
+            onChange={e=> setInput(e.target.value)}
+            onKeyDown={e=> { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+            placeholder="اكتب رسالة..."
+            className="flex-1 bg-chatBg border border-chatDivider rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-600 text-gray-100"
+          />
+          <button
+            onClick={handleSend}
+            disabled={sending || !input.trim()}
+            className="px-4 py-2 rounded bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm"
+            title="إرسال"
+          >إرسال</button>
+        </div>
       </div>
       {/* Centered Alerts Overlay */}
       {centerAlerts.length > 0 && (
