@@ -17,27 +17,19 @@ type Msg = {
 };
 
 // Simple ticks like WhatsApp: single (not delivered), double gray (delivered), double blue (read)
-function Ticks({ state }: { state: 'single'|'double'|'blue' }) {
-  const base = 'inline-block align-middle';
+function Ticks({ state, className }: { state: 'single'|'double'|'blue'; className?: string }) {
+  const base = `inline-block align-middle ${className || ''}`;
   if (state === 'single') {
     return (
       <svg className={base} width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M20 6L9 17l-5-5" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    );
-  }
-  if (state === 'blue') {
-    return (
-      <svg className={base} width="20" height="18" viewBox="0 0 28 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M26 6L15 17l-5-5" stroke="#34B7F1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        <path d="M22 6L11 17l-5-5" stroke="#34B7F1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
     );
   }
   return (
     <svg className={base} width="20" height="18" viewBox="0 0 28 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M26 6L15 17l-5-5" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-      <path d="M22 6L11 17l-5-5" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M26 6L15 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M22 6L11 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
@@ -264,9 +256,11 @@ export default function ConversationPage() {
                 <bdi className="min-w-0 break-words" style={{unicodeBidi:'isolate'}}>{(m.body || '')}</bdi>
               </div>
               <div className="mt-1 text-[11px] opacity-70 flex items-center gap-1 justify-end" dir="auto">
-                <span dir="ltr">{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
                 {isMine && (
-                  <Ticks state={(m.status === 'pending') ? 'single' : (m.id <= lastReadByOther ? 'blue' : 'double')} />
+                  <Ticks
+                    state={(m.status === 'pending') ? 'single' : (m.id <= lastReadByOther ? 'double' : 'double')}
+                    className={(m.status === 'pending') ? 'text-gray-400' : (m.id <= lastReadByOther ? 'text-blue-400' : 'text-gray-400')}
+                  />
                 )}
               </div>
             </div>
