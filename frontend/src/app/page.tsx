@@ -699,7 +699,7 @@ export default function Home() {
             if (isTrial && typeof days === 'number' && days > 0) {
               setTrialDaysLeft(days);
               setShowSubBanner(true);
-              setSubBannerMsg(`أنت على النسخة التجريبية — متبقٍ ${days} يوم`);
+              setSubBannerMsg(`أنت على النسخة المجانية — متبقٍ ${days} يوم`);
             }
           }
         } catch {}
