@@ -448,6 +448,31 @@ export default function Home() {
     setTimeout(() => setToasts(prev => prev.filter(x => x.id !== id)), 4000);
   };
 
+  // Center alerts (overlay) for member add/remove
+  type CenterAlert = { id: string; type: 'added'|'removed'|'info'; msg: string };
+  const [centerAlerts, setCenterAlerts] = useState<CenterAlert[]>([]);
+  const pushCenterAlert = (t: { type: 'added'|'removed'|'info'; msg: string }, ttlMs: number = 3000) => {
+    const id = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+    setCenterAlerts(prev => [...prev, { id, ...t }]);
+    setTimeout(() => setCenterAlerts(prev => prev.filter(x => x.id !== id)), ttlMs);
+  };
+
+  // Detect member add/remove from system text (best-effort Arabic patterns)
+  const detectMemberChange = (text: string): { action: 'added'|'removed'; name?: string } | null => {
+    try {
+      const t = (text || '').trim();
+      const rem = t.match(/إزالة\s+([^\s]+)\s+من\s+المحادثة/);
+      if (rem) return { action: 'removed', name: rem[1] };
+      const add1 = t.match(/إضافة\s+([^\s]+)\s+عضو\s+الفريق/);
+      if (add1) return { action: 'added', name: add1[1] };
+      const addAlt = t.match(/إضافة\s+عضو\s+الفريق\s+([^\s]+)/);
+      if (addAlt) return { action: 'added', name: addAlt[1] };
+      const add2 = t.match(/إضافة\s+([^\s]+)\s+إلى\s+المحادثة/);
+      if (add2) return { action: 'added', name: add2[1] };
+    } catch {}
+    return null;
+  };
+
   // Lightbox for image attachments
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -1150,6 +1175,14 @@ export default function Home() {
               senderDisplay: senderDisplay || undefined,
             } as any,
           ]));
+          // Show centered alert for add/remove member events
+          const mc = detectMemberChange(txt);
+          if (mc) {
+            const msg = mc.action === 'removed'
+              ? `تمت إزالة ${mc.name || 'عضو'} من المحادثة`
+              : `تمت إضافة ${mc.name || 'عضو'} إلى المحادثة`;
+            pushCenterAlert({ type: mc.action === 'removed' ? 'removed' : 'added', msg });
+          }
           // If it is a transaction, refresh aggregates so wallet updates live for recipient
           if (tx && selectedConversationId) {
             refreshConvAggregates(selectedConversationId);
@@ -1935,6 +1968,7 @@ export default function Home() {
                               await removeMemberFromConversation(token, selectedConversationId, m.id, m.member_type || (m.role==='team'?'team_member':'user'));
                               setConvMembers(prev => prev.filter(x => !(x.id === m.id && (x.member_type|| (x.role==='team'?'team_member':'user')) === (m.member_type|| (m.role==='team'?'team_member':'user')))));
                               pushToast({ type: 'success', msg: 'تمت إزالة العضو' });
+                              pushCenterAlert({ type:'removed', msg: `تمت إزالة ${(m.display_name||m.username||'عضو')} من المحادثة` });
                             } catch(e:any) {
                               pushToast({ type: 'error', msg: e?.message || 'تعذر الإزالة' });
                             } finally { setMembersBusy(false); }
@@ -1973,6 +2007,7 @@ export default function Home() {
                                 await addTeamMemberToConversation(token, selectedConversationId, tm.id);
                                 setConvMembers(prev => [...prev, { id: tm.id, username: tm.username, display_name: tm.display_name || tm.username, role: 'team_member', member_type: 'team_member' }]);
                                 pushToast({ type: 'success', msg: 'تمت الإضافة للمحادثة' });
+                                pushCenterAlert({ type:'added', msg: `تمت إضافة ${(tm.display_name||tm.username||'عضو')} إلى المحادثة` });
                               } catch(e:any) {
                                 pushToast({ type: 'error', msg: e?.message || 'تعذر الإضافة' });
                               } finally { setMembersBusy(false); }
@@ -2272,6 +2307,18 @@ export default function Home() {
         </div>
       ))}
     </div>
+    {/* Centered Alerts */}
+    {centerAlerts.length > 0 && (
+      <div className="fixed inset-0 z-[60] pointer-events-none flex items-start justify-center pt-24">
+        <div className="flex flex-col gap-2 w-full max-w-md px-4">
+          {centerAlerts.map(a => (
+            <div key={a.id} className={"mx-auto text-center px-4 py-3 rounded-lg border shadow-lg text-sm font-semibold w-full " + (a.type==='removed' ? 'bg-red-600/90 border-red-400 text-white' : a.type==='added' ? 'bg-green-600/90 border-green-400 text-white' : 'bg-gray-700/90 border-gray-500 text-white') }>
+              {a.msg}
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
     {/* Lightbox Overlay */}
     {lightboxOpen && (() => {
       const items = buildImageItems();
