@@ -2219,7 +2219,8 @@ export default function Home() {
                                 {showHighlight ? highlightText(content, searchQuery) : content}
                               </bdi>
                             </div>
-                            <div className="mt-1 text-[11px] opacity-70 flex items-center justify-end" dir="auto">
+                            <div className="mt-1 text-[11px] opacity-70 flex items-center gap-1 justify-end" dir="auto">
+                              <span dir="ltr">{formatTimeShort(m.created_at)}</span>
                               {m.sender === 'current' && (
                                 <Ticks
                                   state={m.status === 'sending' ? 'single' : 'double'}

@@ -256,9 +256,10 @@ export default function ConversationPage() {
                 <bdi className="min-w-0 break-words" style={{unicodeBidi:'isolate'}}>{(m.body || '')}</bdi>
               </div>
               <div className="mt-1 text-[11px] opacity-70 flex items-center gap-1 justify-end" dir="auto">
+                <span dir="ltr">{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
                 {isMine && (
                   <Ticks
-                    state={(m.status === 'pending') ? 'single' : (m.id <= lastReadByOther ? 'double' : 'double')}
+                    state={(m.status === 'pending') ? 'single' : 'double'}
                     className={(m.status === 'pending') ? 'text-gray-400' : (m.id <= lastReadByOther ? 'text-blue-400' : 'text-gray-400')}
                   />
                 )}
