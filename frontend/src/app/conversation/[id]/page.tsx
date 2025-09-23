@@ -19,6 +19,29 @@ export default function ConversationPage() {
   const lastIdRef = useRef<number>(0);
   const wsRef = useRef<WebSocket|null>(null);
 
+  // Centered alerts for member add/remove
+  type CenterAlert = { id: string; type: 'added'|'removed'|'info'; msg: string };
+  const [centerAlerts, setCenterAlerts] = useState<CenterAlert[]>([]);
+  const pushCenterAlert = (t: { type: 'added'|'removed'|'info'; msg: string }, ttlMs: number = 3000) => {
+    const id = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+    setCenterAlerts(prev => [...prev, { id, ...t }]);
+    setTimeout(() => setCenterAlerts(prev => prev.filter(x => x.id !== id)), ttlMs);
+  };
+  const detectMemberChange = (text: string): { action: 'added'|'removed'; name?: string } | null => {
+    try {
+      const t = (text || '').trim();
+      const rem = t.match(/إزالة\s+([^\s]+)\s+من\s+المحادثة/);
+      if (rem) return { action: 'removed', name: rem[1] };
+      const add1 = t.match(/إضافة\s+([^\s]+)\s+عضو\s+الفريق/);
+      if (add1) return { action: 'added', name: add1[1] };
+      const addAlt = t.match(/إضافة\s+عضو\s+الفريق\s+([^\s]+)/);
+      if (addAlt) return { action: 'added', name: addAlt[1] };
+      const add2 = t.match(/إضافة\s+([^\s]+)\s+إلى\s+المحادثة/);
+      if (add2) return { action: 'added', name: add2[1] };
+    } catch {}
+    return null;
+  };
+
   // Redirect-to-login guard
   useEffect(() => {
     const hasTokens = typeof window !== 'undefined' && !!localStorage.getItem('auth_tokens_v1');
@@ -78,6 +101,16 @@ export default function ConversationPage() {
               lastIdRef.current = msg.id;
               return next;
             });
+            // Show centered alert for member add/remove system messages
+            if (msg && typeof msg.body === 'string' && (msg.type === 'system' || /إزالة|إضافة/.test(msg.body))) {
+              const mc = detectMemberChange(msg.body);
+              if (mc) {
+                const text = mc.action === 'removed'
+                  ? `تمت إزالة ${mc.name || 'عضو'} من المحادثة`
+                  : `تمت إضافة ${mc.name || 'عضو'} إلى المحادثة`;
+                pushCenterAlert({ type: mc.action === 'removed' ? 'removed' : 'added', msg: text });
+              }
+            }
             // Play sound if tab is hidden (different page dedicated to this conversation)
             if (typeof document !== 'undefined' && document.hidden) {
               tryPlayMessageSound().catch(()=>{});
@@ -127,6 +160,18 @@ export default function ConversationPage() {
           </div>
         ))}
       </div>
+      {/* Centered Alerts Overlay */}
+      {centerAlerts.length > 0 && (
+        <div className="fixed inset-0 z-[60] pointer-events-none flex items-start justify-center pt-24">
+          <div className="flex flex-col gap-2 w-full max-w-md px-4">
+            {centerAlerts.map(a => (
+              <div key={a.id} className={"mx-auto text-center px-4 py-3 rounded-lg border shadow-lg text-sm font-semibold w-full " + (a.type==='removed' ? 'bg-red-600/90 border-red-400 text-white' : a.type==='added' ? 'bg-green-600/90 border-green-400 text-white' : 'bg-gray-700/90 border-gray-500 text-white') }>
+                {a.msg}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
