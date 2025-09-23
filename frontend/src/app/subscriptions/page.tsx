@@ -63,6 +63,16 @@ export default function SubscriptionsPage() {
   // Currently selected plan info (to read yearly discount, etc.).
   const selectedPlanInfo = useMemo(() => plans.find(p => p.code === selectedPlan), [plans, selectedPlan]);
 
+  // Enforce dropdown order: فضي → ذهبي → ملكي (silver → golden → king)
+  const sortedPlans = useMemo(() => {
+    const order = ['silver','golden','king'];
+    const rank = (c?: string) => {
+      const i = order.indexOf(String(c||'').toLowerCase());
+      return i === -1 ? 999 : i;
+    };
+    return [...plans].sort((a,b) => rank(a.code) - rank(b.code));
+  }, [plans]);
+
   // Infer current subscription period (monthly/yearly) from duration between start and end
   const periodLabel = useMemo(() => {
     if (!sub?.start_at || !sub?.end_at) return '—';
@@ -215,7 +225,7 @@ export default function SubscriptionsPage() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="text-sm text-gray-300">ترقية الباقة</div>
                 <select disabled={!!pending || busy} value={selectedPlan} onChange={e=>setSelectedPlan(e.target.value as PlanCode)} className="bg-chatBg border border-chatDivider rounded px-2 py-1 text-sm">
-                  {plans.map(p => (
+                  {sortedPlans.map(p => (
                     <option key={p.code} value={p.code}>{planNameOrLabel(p)}</option>
                   ))}
                 </select>
