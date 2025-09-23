@@ -125,8 +125,7 @@ export default function TeamPage() {
             <div className="md:col-span-4">
               <label className="block text-xs text-gray-300 mb-1">اسم المستخدم</label>
               <input
-                placeholder="example"
-                className="w-full bg-chatBg border border-chatDivider rounded px-3 py-2 text-xs text-gray-100 placeholder:text-gray-400"
+                className="w-full bg-chatBg border border-chatDivider rounded px-3 py-2 text-xs text-gray-100"
                 value={form.username}
                 onChange={(e: ChangeEvent<HTMLInputElement>) => setForm({ ...form, username: e.target.value })}
               />
@@ -134,8 +133,7 @@ export default function TeamPage() {
             <div className="md:col-span-4">
               <label className="block text-xs text-gray-300 mb-1">الاسم الظاهر</label>
               <input
-                placeholder="الاسم الظاهر"
-                className="w-full bg-chatBg border border-chatDivider rounded px-3 py-2 text-xs text-gray-100 placeholder:text-gray-400"
+                className="w-full bg-chatBg border border-chatDivider rounded px-3 py-2 text-xs text-gray-100"
                 value={form.display_name}
                 onChange={(e: ChangeEvent<HTMLInputElement>) => setForm({ ...form, display_name: e.target.value })}
               />
@@ -143,8 +141,7 @@ export default function TeamPage() {
             <div className="md:col-span-3">
               <label className="block text-xs text-gray-300 mb-1">رقم الهاتف</label>
               <input
-                placeholder="05555"
-                className="w-full bg-chatBg border border-chatDivider rounded px-3 py-2 text-xs text-gray-100 placeholder:text-gray-400"
+                className="w-full bg-chatBg border border-chatDivider rounded px-3 py-2 text-xs text-gray-100"
                 value={form.phone}
                 onChange={(e: ChangeEvent<HTMLInputElement>) => setForm({ ...form, phone: e.target.value })}
               />
@@ -153,8 +150,7 @@ export default function TeamPage() {
               <label className="block text-xs text-gray-300 mb-1">كلمة المرور</label>
               <input
                 type="password"
-                placeholder="••••••••"
-                className="w-full bg-chatBg border border-chatDivider rounded px-3 py-2 text-xs text-gray-100 placeholder:text-gray-400"
+                className="w-full bg-chatBg border border-chatDivider rounded px-3 py-2 text-xs text-gray-100"
                 value={form.password}
                 onChange={(e: ChangeEvent<HTMLInputElement>) => setForm({ ...form, password: e.target.value })}
               />
