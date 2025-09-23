@@ -102,6 +102,8 @@ class Message(models.Model):
     attachment_mime = models.CharField(max_length=100, blank=True)
     attachment_size = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    read_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']
@@ -110,6 +112,11 @@ class Message(models.Model):
         return f"Msg({self.type}) {self.sender}: {self.body[:30]}"
     def save(self, *args, **kwargs):
         new = self.pk is None
+        if new and getattr(self, 'delivered_at', None) is None:
+            try:
+                self.delivered_at = timezone.now()
+            except Exception:
+                pass
         super().save(*args, **kwargs)
         if new:
             Conversation.objects.filter(pk=self.conversation_id).update(

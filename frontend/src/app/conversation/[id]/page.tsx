@@ -101,6 +101,14 @@ export default function ConversationPage() {
         const ordered = Array.isArray(msgs) ? msgs.sort((a:any,b:any)=> (a.id - b.id)) : [];
         setMessages(ordered);
         lastIdRef.current = ordered.length ? ordered[ordered.length-1].id : 0;
+        // Initialize last read marker for my messages from persisted status
+        try {
+          const myUser = meInfo?.username;
+          const maxRead = ordered
+            .filter((m:any) => m?.sender?.username === myUser && m?.status === 'read')
+            .reduce((acc:number, m:any) => Math.max(acc, Number(m.id)||0), 0);
+          if (maxRead > 0) setLastReadByOther(maxRead);
+        } catch {}
         // Scroll to bottom
         setTimeout(()=> listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' }), 0);
       } catch (e:any) {
@@ -131,12 +139,12 @@ export default function ConversationPage() {
             const msg: Msg = {
               id: data.id || Date.now(),
               conversation: convId,
-              sender: { username: data.sender },
+              sender: { username: data.sender, display_name: data.senderDisplay },
               type: data.kind || 'text',
               body: data.body || '',
               created_at: data.created_at || new Date().toISOString(),
               client_id: data.client_id,
-              status: 'delivered',
+              status: (data.status as any) || 'delivered',
             };
             setMessages(prev => {
               // If this is an echo for a pending local message, update it instead of appending
@@ -259,8 +267,8 @@ export default function ConversationPage() {
                 <span dir="ltr">{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
                 {isMine && (
                   <Ticks
-                    state={(m.status === 'pending') ? 'single' : 'double'}
-                    className={(m.status === 'pending') ? 'text-gray-400' : (m.id <= lastReadByOther ? 'text-blue-400' : 'text-gray-400')}
+                    state={(m.status === 'pending') ? 'single' : (m.id <= lastReadByOther || m.status === 'read') ? 'blue' : 'double'}
+                    className={(m.status === 'pending') ? 'text-gray-400' : (m.id <= lastReadByOther || m.status === 'read') ? 'text-blue-400' : 'text-gray-400'}
                   />
                 )}
               </div>

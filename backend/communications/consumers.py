@@ -86,6 +86,15 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                         last_read_id = int(last_read_id) if last_read_id is not None else None
                     except (TypeError, ValueError):
                         last_read_id = None
+                    # Persist read_at for messages sent by the other participant (reader consumed them)
+                    try:
+                        if last_read_id:
+                            from asgiref.sync import sync_to_async
+                            from django.utils import timezone
+                            async_update = sync_to_async(Message.objects.filter(conversation_id=self.conversation_id, id__lte=last_read_id, read_at__isnull=True).exclude(sender_id=user.id).update)
+                            await async_update(read_at=timezone.now())
+                    except Exception:
+                        pass
                     payload = {
                         'type': 'chat.read',
                         'reader': user.username,
@@ -124,11 +133,13 @@ class ConversationConsumer(AsyncWebsocketConsumer):
             'id': msg.id,
             'conversation_id': int(self.conversation_id),
             'sender': user.username,
+            'senderDisplay': getattr(user, 'display_name', '') or getattr(user, 'username', ''),
             'body': msg.body,
             'created_at': msg.created_at.isoformat(),
             'kind': msg_type,
             'client_id': client_id,
             'seq': msg.id,
+            'status': 'delivered',
         }
         try:
             recipients = get_count(self.group_name)

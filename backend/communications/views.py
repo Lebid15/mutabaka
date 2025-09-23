@@ -500,6 +500,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'created_at': msg.created_at.isoformat(),
                     'kind': 'text',
                     'seq': msg.id,
+                    'status': 'delivered',
                 }
                 async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': payload})
                 # notify all viewers' inboxes (except sender)
@@ -694,6 +695,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'created_at': msg.created_at.isoformat(),
                     'kind': 'text',
                     'seq': msg.id,
+                    'status': 'delivered',
                     'attachment': {
                         'name': msg.attachment_name,
                         'mime': msg.attachment_mime,
@@ -865,10 +867,18 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def read(self, request, pk=None):
-        """Mark conversation as read for the current user. For now, we just notify inbox to reset badge.
-        Future: persist per-user unread state in DB.
+        """Mark conversation as read and persist read_at for messages the user has seen.
+        Also notifies inbox and broadcasts a chat.read event to the conversation group.
         """
         conv = self.get_object()
+        # Persist read_at for messages from the other participant up to latest id
+        try:
+            last_msg = conv.messages.order_by('-id').first()
+            if last_msg:
+                from django.utils import timezone
+                conv.messages.filter(id__lte=last_msg.id).exclude(sender_id=request.user.id).update(read_at=timezone.now())
+        except Exception:
+            pass
         # Notify via channels/pusher so inbox badge disappears
         try:
             from channels.layers import get_channel_layer
@@ -883,6 +893,20 @@ class ConversationViewSet(viewsets.ModelViewSet):
                         'last_message_preview': conv.last_message_preview[:80] if conv.last_message_preview else '',
                         'last_message_at': conv.last_message_at.isoformat() if conv.last_message_at else None,
                         'unread_count': 0,
+                    }
+                })
+                # Broadcast read receipt to conversation group
+                last_id = None
+                try:
+                    last_id = conv.messages.order_by('-id').values_list('id', flat=True).first()
+                except Exception:
+                    last_id = None
+                async_to_sync(channel_layer.group_send)(f"conv_{conv.id}", {
+                    'type': 'broadcast.message',
+                    'data': {
+                        'type': 'chat.read',
+                        'reader': request.user.username,
+                        'last_read_id': last_id,
                     }
                 })
         except Exception:

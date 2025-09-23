@@ -186,12 +186,14 @@ class MessageSerializer(serializers.ModelSerializer):
     senderType = serializers.SerializerMethodField()
     senderDisplay = serializers.SerializerMethodField()
     attachment_url = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
         fields = [
             "id", "conversation", "sender", "senderType", "senderDisplay", "type", "body", "created_at",
-            "attachment_url", "attachment_name", "attachment_mime", "attachment_size"
+            "attachment_url", "attachment_name", "attachment_mime", "attachment_size",
+            "status"
         ]
         read_only_fields = ["id", "sender", "senderType", "senderDisplay", "type", "created_at", "attachment_url"]
 
@@ -217,6 +219,16 @@ class MessageSerializer(serializers.ModelSerializer):
         if u:
             return getattr(u, 'display_name', '') or getattr(u, 'username', '')
         return ''
+
+    def get_status(self, obj):
+        try:
+            if getattr(obj, 'read_at', None):
+                return 'read'
+            if getattr(obj, 'delivered_at', None):
+                return 'delivered'
+            return 'pending'
+        except Exception:
+            return 'delivered'
 
     def create(self, validated_data):
         request = self.context['request']
