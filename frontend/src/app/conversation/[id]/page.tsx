@@ -128,8 +128,9 @@ export default function ConversationPage() {
           const data: any = JSON.parse(ev.data);
           // Handle read receipts from the other participant (assume current user is user_a)
           if (data?.type === 'chat.read') {
-            const otherUsername = me?.username === conv?.user_a?.username ? conv?.user_b?.username : conv?.user_a?.username;
-            if (data.reader && data.reader === otherUsername) {
+            const reader: string | undefined = data.reader;
+            // If the event comes from someone other than me, advance the marker
+            if (!me?.username || (reader && reader !== me.username)) {
               const lr = Number(data.last_read_id || 0);
               if (!Number.isNaN(lr)) setLastReadByOther(prev => Math.max(prev, lr));
             }
@@ -229,7 +230,16 @@ export default function ConversationPage() {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'text', body: text, client_id: clientId }));
       } else {
-        await apiClient.sendMessage(convId, text);
+        const resp = await apiClient.sendMessage(convId, text);
+        // HTTP response returns final id; upgrade the temp message to delivered
+        setMessages(prev => {
+          const idx = prev.findIndex(m => m.client_id === clientId);
+          if (idx === -1) return prev;
+          const copy = [...prev];
+          copy[idx] = { ...copy[idx], id: resp?.id || copy[idx].id, status: 'delivered', created_at: resp?.created_at || copy[idx].created_at };
+          lastIdRef.current = copy[idx].id;
+          return copy;
+        });
       }
     } catch {
       // keep pending; optionally handle error
@@ -265,7 +275,7 @@ export default function ConversationPage() {
               </div>
               <div className="mt-1 text-[11px] opacity-70 flex items-center gap-1 justify-end" dir="auto">
                 <span dir="ltr">{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
-                {isMine && (
+                {isMine && (m.type === 'text' || m.type === 'transaction') && (
                   <Ticks
                     state={(m.status === 'pending') ? 'single' : (m.id <= lastReadByOther || m.status === 'read') ? 'blue' : 'double'}
                     className={(m.status === 'pending') ? 'text-gray-400' : (m.id <= lastReadByOther || m.status === 'read') ? 'text-blue-400' : 'text-gray-400'}
