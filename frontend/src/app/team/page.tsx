@@ -121,7 +121,11 @@ export default function TeamPage() {
         </div>
 
         <div className="bg-chatPanel border border-chatDivider rounded-lg p-4">
-          <form onSubmit={(e)=>{ e.preventDefault(); add(); }} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+          <form
+            onSubmit={(e)=>{ e.preventDefault(); add(); }}
+            autoComplete="off"
+            className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end"
+          >
             <div className="md:col-span-4">
               <label className="block text-xs text-gray-300 mb-1">اسم المستخدم</label>
               <input
@@ -142,6 +146,12 @@ export default function TeamPage() {
               <label className="block text-xs text-gray-300 mb-1">رقم الهاتف</label>
               <input
                 className="w-full bg-chatBg border border-chatDivider rounded px-3 py-2 text-xs text-gray-100"
+                type="tel"
+                name="team-phone"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+                inputMode="tel"
                 value={form.phone}
                 onChange={(e: ChangeEvent<HTMLInputElement>) => setForm({ ...form, phone: e.target.value })}
               />
@@ -151,6 +161,10 @@ export default function TeamPage() {
               <input
                 type="password"
                 className="w-full bg-chatBg border border-chatDivider rounded px-3 py-2 text-xs text-gray-100"
+                name="new-password"
+                autoComplete="new-password"
+                autoCorrect="off"
+                spellCheck={false}
                 value={form.password}
                 onChange={(e: ChangeEvent<HTMLInputElement>) => setForm({ ...form, password: e.target.value })}
               />
