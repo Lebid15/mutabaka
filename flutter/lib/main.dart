@@ -3,8 +3,14 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'api_client.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'features/auth/login_page.dart';
+import 'features/auth/pin_page.dart';
 import 'theme/app_theme.dart';
 import 'theme/theme_controller.dart';
+import 'services/auth_service.dart';
+import 'services/session.dart';
+import 'models/user_me.dart';
+import 'features/home/home_page.dart';
+import 'package:dio/dio.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,11 +31,13 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   final ThemeController _theme = ThemeController.I;
+  Widget? _home;
 
   @override
   void initState() {
     super.initState();
     _theme.addListener(_onTheme);
+    _bootstrap();
   }
 
   @override
@@ -39,6 +47,40 @@ class _MyAppState extends State<MyApp> {
   }
 
   void _onTheme() => setState(() {});
+
+  Future<void> _bootstrap() async {
+    // Try restore tokens; if present keep user signed in and land on PIN gate if needed
+    try {
+      final auth = AuthService();
+      final t = await auth.loadTokens();
+      if (t != null) {
+        // We have tokens, try fetch /me to restore session silently
+        final dio = ApiClient.dio;
+        String access = t.access;
+        Future<UserMe> _fetchMe() async {
+          final meResp = await dio.get('/api/auth/me/', options: Options(headers: {'Authorization': 'Bearer $access'}));
+          return UserMe.fromJson((meResp.data as Map).cast<String, dynamic>());
+        }
+        UserMe me;
+        try {
+          me = await _fetchMe();
+        } on DioException catch (e) {
+          // Try refresh on 401
+          if (e.response?.statusCode == 401) {
+            final nt = await auth.refreshToken(t.refresh);
+            access = nt.access;
+            me = await _fetchMe();
+          } else {
+            rethrow;
+          }
+        }
+        Session.I.setAuth(access: access, refresh: t.refresh, me: me);
+        setState(() { _home = const LoginPinGate(); });
+        return;
+      }
+    } catch (_) {}
+    setState(() { _home = const LoginPage(); });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -55,10 +97,44 @@ class _MyAppState extends State<MyApp> {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      home: const LoginPage(),
+      home: _home ?? const SizedBox.shrink(),
     );
   }
 }
+
+/// A small gate that asks only for PIN when user has a stored session.
+class LoginPinGate extends StatelessWidget {
+  const LoginPinGate({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<bool>(
+      future: _ensurePinThenHome(context),
+      builder: (context, snap) {
+        return const Directionality(
+          textDirection: TextDirection.rtl,
+          child: Scaffold(body: Center(child: CircularProgressIndicator())),
+        );
+      },
+    );
+  }
+
+  Future<bool> _ensurePinThenHome(BuildContext context) async {
+    // Direct to PIN entry; after success go to HomePage
+    final user = Session.I.currentUser;
+  final greeting = (user != null && ((user.displayName.isNotEmpty) || user.username.isNotEmpty))
+    ? 'مرحبا ${(user.displayName.isNotEmpty ? user.displayName : user.username)}\nأدخل رمز PIN'
+        : 'أدخل رمز PIN';
+    final ok = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => PinPage(args: PinPageArgs(hint: greeting))),
+    );
+    if (ok == true && context.mounted) {
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomePage()));
+    }
+    return true;
+  }
+}
+
+// End bootstrap helpers
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key, required this.title});

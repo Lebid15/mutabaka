@@ -47,10 +47,13 @@ _DEFAULT_HOSTS = ["127.0.0.1", "localhost", "testserver", "10.0.2.2"]
 
 # Prefer DJANGO_ALLOWED_HOSTS, fallback to legacy ALLOWED_HOSTS
 _env_allowed = _env_list("DJANGO_ALLOWED_HOSTS") or _env_list("ALLOWED_HOSTS")
-# Default to local + our domains and server IP if not provided
+# Default to local + our domains and server IP if not provided. In DEBUG, always allow 10.0.2.2 for Android emulator.
 ALLOWED_HOSTS = _env_allowed or (
     _DEFAULT_HOSTS + ["mutabaka.com", "www.mutabaka.com", "91.98.95.210"]
 )
+# In development, allow all hosts to simplify emulator/device testing (10.0.2.2, LAN IPs, etc.).
+if DEBUG and not os.getenv("STRICT_DEBUG_HOSTS"):
+    ALLOWED_HOSTS = ["*"]
 
 # In production, refuse to start without a proper SECRET_KEY
 if not DEBUG and (not SECRET_KEY or SECRET_KEY == "dev-insecure-key"):

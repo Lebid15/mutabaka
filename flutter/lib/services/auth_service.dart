@@ -29,7 +29,7 @@ class OtpRequiredError implements Exception {
 
 class AuthService {
   final TokenStorage _storage;
-  AuthService({TokenStorage? storage}) : _storage = storage ?? MemoryTokenStorage();
+  AuthService({TokenStorage? storage}) : _storage = storage ?? SecureTokenStorage();
 
   final Dio _dio = ApiClient.dio;
 
@@ -77,9 +77,8 @@ class AuthService {
       final me = UserMe.fromJson((meResp.data as Map).cast<String, dynamic>());
 
       final tokens = AuthTokens(access: access, refresh: refresh);
-      if (remember) {
-        await _persistTokens(tokens);
-      }
+      // Persist tokens securely so we can resume session and do PIN-only next time
+      await _persistTokens(tokens);
       Session.I.setAuth(access: access, refresh: refresh, me: me);
       // If we have fingerprint and platform, register device after login (may be auto-approved)
       if (fingerprint != null && fingerprint.isNotEmpty) {
@@ -152,18 +151,24 @@ class AuthService {
   Future<void> verifyPin({required String pin, String? fingerprint, String? deviceName, String? platform}) async {
     final access = Session.I.accessToken;
     if (access == null || access.isEmpty) throw Exception('No access token');
-    await _dio.post(
-      '/api/auth/verify-pin',
-      data: {
-        'pin': pin,
-        if (fingerprint != null) 'fingerprint': fingerprint,
-        if (deviceName != null) 'device_name': deviceName,
-        if (platform != null) 'platform': platform,
-      },
-      options: Options(headers: {
-        'Authorization': 'Bearer $access',
-        'Content-Type': 'application/json',
-      }),
-    );
+    try {
+      await _dio.post(
+        '/api/auth/verify-pin',
+        data: {
+          'pin': pin,
+          if (fingerprint != null) 'fingerprint': fingerprint,
+          if (deviceName != null) 'device_name': deviceName,
+          if (platform != null) 'platform': platform,
+        },
+        options: Options(headers: {
+          'Authorization': 'Bearer $access',
+          'Content-Type': 'application/json',
+        }),
+      );
+    } on DioException catch (e) {
+      final body = (e.response?.data is Map) ? (e.response!.data as Map) : const {};
+      final msg = body['detail']?.toString() ?? 'تعذر التحقق من PIN';
+      throw Exception(msg);
+    }
   }
 }
