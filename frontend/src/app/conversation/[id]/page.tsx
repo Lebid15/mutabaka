@@ -7,6 +7,32 @@ import { DEBUG_FORCE_APPEND } from '@/lib/config';
 
 type Msg = { id:number; conversation:number; sender:any; type:'text'|'system'|'transaction'; body:string; created_at:string };
 
+// Simple ticks like WhatsApp: single (not delivered), double gray (delivered), double blue (read)
+function Ticks({ state }: { state: 'single'|'double'|'blue' }) {
+  const base = 'inline-block align-middle';
+  if (state === 'single') {
+    return (
+      <svg className={base} width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M20 6L9 17l-5-5" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    );
+  }
+  if (state === 'blue') {
+    return (
+      <svg className={base} width="20" height="18" viewBox="0 0 28 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M26 6L15 17l-5-5" stroke="#34B7F1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M22 6L11 17l-5-5" stroke="#34B7F1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    );
+  }
+  return (
+    <svg className={base} width="20" height="18" viewBox="0 0 28 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M26 6L15 17l-5-5" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M22 6L11 17l-5-5" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
 export default function ConversationPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -18,6 +44,7 @@ export default function ConversationPage() {
   const listRef = useRef<HTMLDivElement|null>(null);
   const lastIdRef = useRef<number>(0);
   const wsRef = useRef<WebSocket|null>(null);
+  const [lastReadByOther, setLastReadByOther] = useState<number>(0);
 
   // Centered alerts for member add/remove
   type CenterAlert = { id: string; type: 'added'|'removed'|'info'; msg: string };
@@ -50,6 +77,7 @@ export default function ConversationPage() {
       router.replace('/');
     }
   }, [convId, router]);
+  
 
   // Fetch conversation + initial messages
   useEffect(() => {
@@ -83,7 +111,15 @@ export default function ConversationPage() {
     if (socket) {
       socket.onmessage = (ev: MessageEvent) => {
         try {
-          const data = JSON.parse(ev.data);
+          const data: any = JSON.parse(ev.data);
+          // Handle read receipts from the other participant (assume current user is user_a)
+          if (data?.type === 'chat.read') {
+            if (data.reader && data.reader === conv?.user_b?.username) {
+              const lr = Number(data.last_read_id || 0);
+              if (!Number.isNaN(lr)) setLastReadByOther(prev => Math.max(prev, lr));
+            }
+            return;
+          }
           if (data?.type === 'chat.message' || DEBUG_FORCE_APPEND) {
             const msg = {
               id: data.id || Date.now(),
@@ -99,6 +135,14 @@ export default function ConversationPage() {
               // scroll bottom on new message
               setTimeout(()=> listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' }), 0);
               lastIdRef.current = msg.id;
+              // If received a message from the other participant, send read receipt when focused
+              try {
+                if (data.sender && data.sender === conv?.user_b?.username) {
+                  if (typeof document !== 'undefined' && !document.hidden) {
+                    wsRef.current?.send(JSON.stringify({ type: 'read', last_read_id: lastIdRef.current }));
+                  }
+                }
+              } catch {}
               return next;
             });
             // Show centered alert for member add/remove system messages
@@ -124,7 +168,10 @@ export default function ConversationPage() {
 
   // Mark as read on focus
   useEffect(() => {
-    const onFocus = () => { apiClient.readConversation?.(convId).catch(()=>{}); };
+    const onFocus = () => {
+      apiClient.readConversation?.(convId).catch(()=>{});
+      try { wsRef.current?.send(JSON.stringify({ type: 'read', last_read_id: lastIdRef.current })); } catch {}
+    };
     window.addEventListener('focus', onFocus);
     const id = setTimeout(onFocus, 600); // also try shortly after open
     return () => { window.removeEventListener('focus', onFocus); clearTimeout(id); };
@@ -146,19 +193,25 @@ export default function ConversationPage() {
         </div>
       </div>
       <div ref={listRef} className="flex-1 max-w-4xl mx-auto w-full overflow-auto p-3 space-y-2">
-        {messages.map(m => (
-          <div key={m.id} className={m.sender?.username === conv?.user_a?.username ? 'self-end text-left' : 'self-start text-right'}>
-            <div className="inline-block max-w-[75%] bg-white/5 border border-white/10 rounded-2xl px-3 py-2">
+        {messages.map(m => {
+          const isMine = m.sender?.username === conv?.user_a?.username; // same assumption used for alignment
+          const status: 'single'|'double'|'blue' = isMine
+            ? (m.id <= lastReadByOther ? 'blue' : 'double')
+            : 'double';
+          return (
+          <div key={m.id} className={isMine ? 'self-end text-left' : 'self-start text-right'}>
+            <div className={"inline-block max-w-[75%] border rounded-2xl px-3 py-2 " + (isMine ? 'bg-emerald-700/30 border-white/10' : 'bg-white/5 border-white/10')}>
               <div className="text-xs text-gray-300 mb-1">{m.sender?.display_name || m.sender?.username || ''}</div>
               <div className="text-sm leading-relaxed break-words whitespace-normal" dir="auto">
                 <bdi className="min-w-0 break-words" style={{unicodeBidi:'isolate'}}>{(m.body || '')}</bdi>
               </div>
-              <div className="mt-1 text-[11px] opacity-70" dir="auto">
+              <div className="mt-1 text-[11px] opacity-70 flex items-center gap-1 justify-end" dir="auto">
                 <span dir="ltr">{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                {isMine && <Ticks state={status} />}
               </div>
             </div>
           </div>
-        ))}
+        )})}
       </div>
       {/* Centered Alerts Overlay */}
       {centerAlerts.length > 0 && (
