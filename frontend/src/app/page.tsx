@@ -83,6 +83,24 @@ function parseTransaction(body: string): null | { direction: 'lna'|'lkm'; amount
   } catch { return null; }
 }
 
+// Simple WhatsApp-like ticks (single for pending, double for delivered/read)
+function Ticks({ state, className }: { state: 'single'|'double'; className?: string }) {
+  const base = `inline-block align-middle ${className || ''}`;
+  if (state === 'single') {
+    return (
+      <svg className={base} width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    );
+  }
+  return (
+    <svg className={base} width="20" height="18" viewBox="0 0 28 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M26 6L15 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M22 6L11 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
 function TransactionBubble({ sender, tx, createdAt }: { sender: 'current'|'other'; tx: { direction: 'lna'|'lkm'; amount: number; currency: string; symbol: string; note?: string }, createdAt?: string }) {
   const isMine = sender === 'current';
   const sign = tx.direction === 'lna' ? '+' : '-';
@@ -281,6 +299,7 @@ function PasswordField({ value, onChange }: { value: string; onChange: (v:string
 export default function Home() {
   const scrollRef = useRef<HTMLDivElement|null>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const lastMsgIdRef = useRef<number>(0);
   // قائمة العملات من الخادم
   const [serverCurrencies, setServerCurrencies] = useState<any[]>([]);
   // Auth/session
@@ -1450,6 +1469,14 @@ export default function Home() {
               }
             } else {
               setUnreadByConv(prev => ({ ...prev, [payload.conversation_id]: 0 }));
+              // If viewing, update last seen id and emit read
+              try {
+                const idNum = typeof payload.id === 'number' ? payload.id : 0;
+                if (idNum > lastMsgIdRef.current) lastMsgIdRef.current = idNum;
+                if (ws && ws.readyState === WebSocket.OPEN && idNum > 0) {
+                  ws.send(JSON.stringify({ type: 'read', last_read_id: lastMsgIdRef.current }));
+                }
+              } catch {}
             }
           }
           return;
@@ -1477,6 +1504,19 @@ export default function Home() {
     setWs((controller as any).socket || null);
     return () => { try { controller.close(); } catch {} };
   }, [isAuthed, selectedConversationId, profile?.username, mobileView]);
+
+  // Emit read when window gains focus (if WS is open and we have a last id)
+  useEffect(() => {
+    const onFocus = () => {
+      try {
+        if (ws && ws.readyState === WebSocket.OPEN && lastMsgIdRef.current > 0) {
+          ws.send(JSON.stringify({ type: 'read', last_read_id: lastMsgIdRef.current }));
+        }
+      } catch {}
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [ws]);
 
   // Zero-polling: لا يوجد استعلام دوري للرسائل؛ WS هو المصدر الوحيد بعد الجلب الأولي.
 
@@ -2171,7 +2211,7 @@ export default function Home() {
                             })()}
                           </div>
                         )}
-                        {/* Text with timestamp on its own line */}
+                        {/* Text with ticks (no inline time) */}
                         {content && (
                           <>
                             <div className="text-sm leading-6 break-words whitespace-normal" dir="auto">
@@ -2179,8 +2219,13 @@ export default function Home() {
                                 {showHighlight ? highlightText(content, searchQuery) : content}
                               </bdi>
                             </div>
-                            <div className="mt-1 text-[11px] opacity-70" dir="auto">
-                              <span dir="ltr">{formatTimeShort(m.created_at)}</span>
+                            <div className="mt-1 text-[11px] opacity-70 flex items-center justify-end" dir="auto">
+                              {m.sender === 'current' && (
+                                <Ticks
+                                  state={m.status === 'sending' ? 'single' : 'double'}
+                                  className={m.status === 'read' ? 'text-blue-400' : 'text-gray-400'}
+                                />
+                              )}
                             </div>
                           </>
                         )}
