@@ -42,6 +42,15 @@ python manage.py seed_currencies
 | إنشاء معاملة | POST | /api/transactions/ |
 | المحافظ | GET | /api/wallets/ |
 | JWT توكن | POST | /api/auth/token/ |
+- Mobile PIN (feature-flagged via `PIN_REQUIRE_CHANNELS`, default `mobile`):
+	- First mobile login returns a one-time `pin` in token response if not set.
+	- Verify PIN: `POST /api/auth/verify-pin` with headers `X-Client: mobile` and body `{ pin, fingerprint?, device_name?, platform? }`.
+	- Devices:
+		- Register: `POST /api/devices/register`
+		- Approve: `POST /api/devices/approve` `{ id }`
+		- Delete: `DELETE /api/devices/{id}`
+		- List: `GET /api/devices/list`
+	- Limit: max 2 approved devices per user; additional are pending until approved.
 
 ### Team Members
 - `GET /api/team/` — list your team members

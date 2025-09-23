@@ -211,12 +211,16 @@ REST_FRAMEWORK = {
         'rest_framework.throttling.AnonRateThrottle',
         'rest_framework.throttling.UserRateThrottle',
     ],
-    'DEFAULT_THROTTLE_RATES': {
-        'anon': '100/hour',
-        'user': '1000/hour',
-        'auth_token': '20/minute',
-        'transaction': '60/minute',
-    }
+        'DEFAULT_THROTTLE_RATES': {
+            'anon': '100/hour',
+            'user': '1000/hour',
+            'auth_token': '20/minute',
+            'transaction': '60/minute',
+            'pin_generate': '3/minute',
+            'pin_verify': '20/minute',
+            'devices_register': '10/minute',
+            'devices_approve': '10/minute',
+        },
 }
 
 # Simple JWT (basic defaults, can tweak lifetimes later)

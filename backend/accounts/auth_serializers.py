@@ -1,6 +1,9 @@
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model, authenticate
 from rest_framework import serializers
+from django.contrib.auth.hashers import make_password
+from django.utils import timezone
+import os
 try:
     import pyotp
 except Exception:
@@ -47,7 +50,35 @@ class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
             if not getattr(user, 'totp_secret', '') or not totp.verify(otp, valid_window=1):
                 raise serializers.ValidationError({'otp_required': True, 'detail': 'Invalid OTP'})
         attrs[self.username_field] = user.username
-        return super().validate(attrs)
+        data = super().validate(attrs)
+        # PIN channel check
+        try:
+            request = self.context.get('request') if hasattr(self, 'context') else None
+        except Exception:
+            request = None
+        client = ''
+        if request is not None:
+            client = (request.headers.get('X-Client') or request.META.get('HTTP_X_CLIENT') or '').strip().lower()
+        raw = os.environ.get('PIN_REQUIRE_CHANNELS', 'mobile')
+        channels = {x.strip().lower() for x in raw.split(',') if x.strip()}
+        if client in channels:
+            # First mobile login: generate a 6-digit PIN and return it once
+            if not getattr(user, 'pin_hash', ''):
+                import secrets
+                pin = f"{secrets.randbelow(1_000_000):06d}"
+                try:
+                    pin_hash = make_password(pin, hasher='argon2')
+                except Exception:
+                    pin_hash = make_password(pin)
+                user.pin_hash = pin_hash
+                user.pin_initialized_at = timezone.now()
+                user.pin_failed_attempts = 0
+                user.pin_locked_until = None
+                user.save(update_fields=['pin_hash', 'pin_initialized_at', 'pin_failed_attempts', 'pin_locked_until'])
+                data['pin'] = pin
+            else:
+                data['pin_required'] = True
+        return data
 
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.throttling import ScopedRateThrottle
@@ -56,3 +87,8 @@ class EmailOrUsernameTokenObtainPairView(TokenObtainPairView):
     serializer_class = EmailOrUsernameTokenObtainPairSerializer
     throttle_scope = 'auth_token'
     throttle_classes = [ScopedRateThrottle]
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx['request'] = self.request
+        return ctx

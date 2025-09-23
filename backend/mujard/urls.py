@@ -30,6 +30,10 @@ from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.contrib.auth import get_user_model
 from accounts.totp_views import TOTPStatusView, TOTPSetupView, TOTPEnableView, TOTPDisableView
+from accounts.pin_views import (
+    GeneratePinOnFirstMobileLogin, VerifyPinView,
+    DevicesRegisterView, DevicesApproveView, DevicesDeleteView, DevicesListView,
+)
 from django.utils import timezone
 
 
@@ -115,6 +119,13 @@ urlpatterns = [
     path('api/auth/totp/setup', TOTPSetupView.as_view(), name='totp_setup'),
     path('api/auth/totp/enable', TOTPEnableView.as_view(), name='totp_enable'),
     path('api/auth/totp/disable', TOTPDisableView.as_view(), name='totp_disable'),
+    # PIN & devices endpoints (mobile channel)
+    path('api/auth/generate-pin', GeneratePinOnFirstMobileLogin.as_view(), name='generate_pin'),
+    path('api/auth/verify-pin', VerifyPinView.as_view(), name='verify_pin'),
+    path('api/devices/register', DevicesRegisterView.as_view(), name='devices_register'),
+    path('api/devices/approve', DevicesApproveView.as_view(), name='devices_approve'),
+    path('api/devices/<int:id>', DevicesDeleteView.as_view(), name='devices_delete'),
+    path('api/devices/list', DevicesListView.as_view(), name='devices_list'),
 ]
 
 if settings.DEBUG:
