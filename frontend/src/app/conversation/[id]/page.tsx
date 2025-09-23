@@ -38,6 +38,7 @@ export default function ConversationPage() {
   const router = useRouter();
   const convId = useMemo(()=> Number(params?.id), [params]);
   const [conv, setConv] = useState<any|null>(null);
+  const [me, setMe] = useState<any|null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string|null>(null);
@@ -86,12 +87,14 @@ export default function ConversationPage() {
     (async () => {
       try {
         setLoading(true);
-        const [c, msgs] = await Promise.all([
+        const [c, msgs, meInfo] = await Promise.all([
           apiClient.getConversation(convId),
           apiClient.getMessages(convId, 50, 0),
+          apiClient.getMe(),
         ]);
         if (cancelled) return;
         setConv(c);
+        setMe(meInfo);
         const ordered = Array.isArray(msgs) ? msgs.sort((a:any,b:any)=> (a.id - b.id)) : [];
         setMessages(ordered);
         lastIdRef.current = ordered.length ? ordered[ordered.length-1].id : 0;
@@ -114,7 +117,8 @@ export default function ConversationPage() {
           const data: any = JSON.parse(ev.data);
           // Handle read receipts from the other participant (assume current user is user_a)
           if (data?.type === 'chat.read') {
-            if (data.reader && data.reader === conv?.user_b?.username) {
+            const otherUsername = me?.username === conv?.user_a?.username ? conv?.user_b?.username : conv?.user_a?.username;
+            if (data.reader && data.reader === otherUsername) {
               const lr = Number(data.last_read_id || 0);
               if (!Number.isNaN(lr)) setLastReadByOther(prev => Math.max(prev, lr));
             }
@@ -137,7 +141,8 @@ export default function ConversationPage() {
               lastIdRef.current = msg.id;
               // If received a message from the other participant, send read receipt when focused
               try {
-                if (data.sender && data.sender === conv?.user_b?.username) {
+                const otherUsername = me?.username === conv?.user_a?.username ? conv?.user_b?.username : conv?.user_a?.username;
+                if (data.sender && data.sender === otherUsername) {
                   if (typeof document !== 'undefined' && !document.hidden) {
                     wsRef.current?.send(JSON.stringify({ type: 'read', last_read_id: lastIdRef.current }));
                   }
@@ -164,7 +169,7 @@ export default function ConversationPage() {
       };
     }
     return () => { try { socket?.close(); } catch {} };
-  }, [convId]);
+  }, [convId, me?.username]);
 
   // Mark as read on focus
   useEffect(() => {
@@ -194,7 +199,7 @@ export default function ConversationPage() {
       </div>
       <div ref={listRef} className="flex-1 max-w-4xl mx-auto w-full overflow-auto p-3 space-y-2">
         {messages.map(m => {
-          const isMine = m.sender?.username === conv?.user_a?.username; // same assumption used for alignment
+          const isMine = m.sender?.username === me?.username;
           const status: 'single'|'double'|'blue' = isMine
             ? (m.id <= lastReadByOther ? 'blue' : 'double')
             : 'double';

@@ -165,6 +165,10 @@ class APIClient {
     return this.authFetch(`/api/conversations/${id}/`).then((r: Response) => r.json());
   }
 
+  getMe(): Promise<any> {
+    return this.authFetch('/api/auth/me/').then((r: Response) => r.json());
+  }
+
   getMessages(id: number, limit = 50, offset = 0): Promise<any> {
     // backend currently exposes messages via /api/conversations/{id}/messages/
     return this.authFetch(`/api/conversations/${id}/messages/?limit=${limit}&offset=${offset}`).then((r: Response) => r.json());
