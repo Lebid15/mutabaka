@@ -500,9 +500,25 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'created_at': msg.created_at.isoformat(),
                     'kind': 'text',
                     'seq': msg.id,
-                    'status': 'delivered',
+                    'status': 'sent',
                 }
                 async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': payload})
+                # Try to set delivery/read status based on connectivity
+                try:
+                    from .group_registry import get_count
+                    recipient_id = conv.user_b_id if request.user.id == conv.user_a_id else conv.user_a_id
+                    inbox_group = f"user_{recipient_id}"
+                    recipient_online = get_count(inbox_group) > 0
+                    recipient_in_conv = get_count(group) > 1
+                    from django.utils import timezone
+                    if recipient_in_conv:
+                        Message.objects.filter(id=msg.id, read_at__isnull=True).update(read_at=timezone.now(), delivered_at=timezone.now())
+                        async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'status':'read'}})
+                    elif recipient_online:
+                        Message.objects.filter(id=msg.id, delivered_at__isnull=True).update(delivered_at=timezone.now())
+                        async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'status':'delivered'}})
+                except Exception:
+                    pass
                 # notify all viewers' inboxes (except sender)
                 for uid in get_conversation_viewer_ids(conv):
                     if uid == request.user.id:
@@ -695,7 +711,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'created_at': msg.created_at.isoformat(),
                     'kind': 'text',
                     'seq': msg.id,
-                    'status': 'delivered',
+                    'status': 'sent',
                     'attachment': {
                         'name': msg.attachment_name,
                         'mime': msg.attachment_mime,
@@ -703,6 +719,22 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     }
                 }
                 async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': payload})
+                # Connectivity-based status
+                try:
+                    from .group_registry import get_count
+                    recipient_id = conv.user_b_id if request.user.id == conv.user_a_id else conv.user_a_id
+                    inbox_group = f"user_{recipient_id}"
+                    recipient_online = get_count(inbox_group) > 0
+                    recipient_in_conv = get_count(group) > 1
+                    from django.utils import timezone
+                    if recipient_in_conv:
+                        Message.objects.filter(id=msg.id, read_at__isnull=True).update(read_at=timezone.now(), delivered_at=timezone.now())
+                        async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'status':'read'}})
+                    elif recipient_online:
+                        Message.objects.filter(id=msg.id, delivered_at__isnull=True).update(delivered_at=timezone.now())
+                        async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'status':'delivered'}})
+                except Exception:
+                    pass
                 for uid in get_conversation_viewer_ids(conv):
                     if uid == request.user.id:
                         continue

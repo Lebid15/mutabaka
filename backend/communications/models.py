@@ -112,11 +112,6 @@ class Message(models.Model):
         return f"Msg({self.type}) {self.sender}: {self.body[:30]}"
     def save(self, *args, **kwargs):
         new = self.pk is None
-        if new and getattr(self, 'delivered_at', None) is None:
-            try:
-                self.delivered_at = timezone.now()
-            except Exception:
-                pass
         super().save(*args, **kwargs)
         if new:
             Conversation.objects.filter(pk=self.conversation_id).update(

@@ -13,7 +13,7 @@ type Msg = {
   body: string;
   created_at: string;
   client_id?: string;
-  status?: 'pending' | 'delivered' | 'read';
+  status?: 'pending' | 'sent' | 'delivered' | 'read';
 };
 
 // Simple ticks like WhatsApp: single (not delivered), double gray (delivered), double blue (read)
@@ -145,7 +145,7 @@ export default function ConversationPage() {
               body: data.body || '',
               created_at: data.created_at || new Date().toISOString(),
               client_id: data.client_id,
-              status: (data.status as any) || 'delivered',
+              status: (data.status as any) || 'sent',
             };
             setMessages(prev => {
               // If this is an echo for a pending local message, update it instead of appending
@@ -190,6 +190,24 @@ export default function ConversationPage() {
               tryPlayMessageSound().catch(()=>{});
             }
           }
+          // Status updates for existing messages
+          if (data?.type === 'message.status') {
+            const id = Number(data.id);
+            const newStatus = data.status as ('delivered'|'read');
+            if (!id || !newStatus) return;
+            setMessages(prev => prev.map(m => {
+              if (m.id !== id) return m;
+              // Monotonic upgrade only
+              const order = { pending: 0, sent: 0, delivered: 1, read: 2 } as any;
+              const curr = m.status || 'pending';
+              const next = newStatus;
+              return order[next] > order[curr] ? { ...m, status: next } : m;
+            }));
+            if (newStatus === 'read') {
+              setLastReadByOther(prev => Math.max(prev, id));
+            }
+            return;
+          }
         } catch {}
       };
     }
@@ -220,7 +238,7 @@ export default function ConversationPage() {
       body: text,
       created_at: new Date().toISOString(),
       client_id: clientId,
-      status: 'pending',
+  status: 'sent',
     };
     setMessages(prev => [...prev, temp]);
     setInput("");
@@ -231,12 +249,12 @@ export default function ConversationPage() {
         wsRef.current.send(JSON.stringify({ type: 'text', body: text, client_id: clientId }));
       } else {
         const resp = await apiClient.sendMessage(convId, text);
-        // HTTP response returns final id; upgrade the temp message to delivered
+        // HTTP response returns final id; keep status as 'sent' until a status event arrives
         setMessages(prev => {
           const idx = prev.findIndex(m => m.client_id === clientId);
           if (idx === -1) return prev;
           const copy = [...prev];
-          copy[idx] = { ...copy[idx], id: resp?.id || copy[idx].id, status: 'delivered', created_at: resp?.created_at || copy[idx].created_at };
+          copy[idx] = { ...copy[idx], id: resp?.id || copy[idx].id, status: 'sent', created_at: resp?.created_at || copy[idx].created_at };
           lastIdRef.current = copy[idx].id;
           return copy;
         });
@@ -277,8 +295,8 @@ export default function ConversationPage() {
                 <span dir="ltr">{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
                 {isMine && (m.type === 'text' || m.type === 'transaction') && (
                   <Ticks
-                    state={(m.status === 'pending') ? 'single' : (m.id <= lastReadByOther || m.status === 'read') ? 'blue' : 'double'}
-                    className={(m.status === 'pending') ? 'text-gray-400' : (m.id <= lastReadByOther || m.status === 'read') ? 'text-blue-400' : 'text-gray-400'}
+                    state={((m.status === 'pending') || (m.status === 'sent')) ? 'single' : (m.id <= lastReadByOther || m.status === 'read') ? 'blue' : 'double'}
+                    className={((m.status === 'pending') || (m.status === 'sent')) ? 'text-gray-400' : (m.id <= lastReadByOther || m.status === 'read') ? 'text-blue-400' : 'text-gray-400'}
                   />
                 )}
               </div>

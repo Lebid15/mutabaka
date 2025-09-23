@@ -139,7 +139,7 @@ class ConversationConsumer(AsyncWebsocketConsumer):
             'kind': msg_type,
             'client_id': client_id,
             'seq': msg.id,
-            'status': 'delivered',
+            'status': 'sent',
         }
         try:
             recipients = get_count(self.group_name)
@@ -147,6 +147,37 @@ class ConversationConsumer(AsyncWebsocketConsumer):
         except Exception:
             pass
         await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': payload})
+
+        # Determine delivery/read based on recipient connectivity
+        try:
+            from asgiref.sync import sync_to_async
+            from django.utils import timezone
+            conv = await self.get_conversation()
+            recipient_id = conv.user_b_id if user.id == conv.user_a_id else conv.user_a_id
+            inbox_group = f"user_{recipient_id}"
+            conv_group = self.group_name
+            recipient_online = get_count(inbox_group) > 0
+            recipient_in_conv = get_count(conv_group) > 1  # sender + recipient present
+            # If recipient is in the same conversation: mark read immediately
+            if recipient_in_conv:
+                await sync_to_async(Message.objects.filter(id=msg.id, read_at__isnull=True).update)(read_at=timezone.now(), delivered_at=timezone.now())
+                status_evt = {
+                    'type': 'message.status',
+                    'id': msg.id,
+                    'status': 'read',
+                }
+                await self.channel_layer.group_send(conv_group, {'type': 'broadcast.message', 'data': status_evt})
+            elif recipient_online:
+                await sync_to_async(Message.objects.filter(id=msg.id, delivered_at__isnull=True).update)(delivered_at=timezone.now())
+                status_evt = {
+                    'type': 'message.status',
+                    'id': msg.id,
+                    'status': 'delivered',
+                }
+                # Send status back to conversation group so sender updates ticks
+                await self.channel_layer.group_send(conv_group, {'type': 'broadcast.message', 'data': status_evt})
+        except Exception:
+            pass
         # Also notify recipient's inbox channel so their conversation list updates instantly
         try:
             from asgiref.sync import sync_to_async
