@@ -323,6 +323,8 @@ export default function Home() {
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   // Members panel state
   const [membersPanelOpen, setMembersPanelOpen] = useState(false);
+  const membersPanelRef = useRef<HTMLDivElement|null>(null);
+  const membersBtnRef = useRef<HTMLButtonElement|null>(null);
   const [teamList, setTeamList] = useState<TeamMember[]>([]);
   const [convMembers, setConvMembers] = useState<Array<{ id: number; username: string; display_name: string; role: 'participant' | 'team' | 'team_member'; member_type?: 'user'|'team_member' }>>([]);
   const [membersBusy, setMembersBusy] = useState(false);
@@ -357,6 +359,26 @@ export default function Home() {
     }
     return fallback;
   }, [profile?.display_name, profile?.username, getJwtPayload, teamList]);
+
+  // Close members panel when clicking outside it or its toggle button
+  useEffect(() => {
+    if (!membersPanelOpen) return;
+    const onDocPointer = (ev: MouseEvent | TouchEvent) => {
+      const target = ev.target as Node | null;
+      const pane = membersPanelRef.current;
+      const btn = membersBtnRef.current;
+      if (!target) return;
+      if (pane && pane.contains(target)) return; // inside panel
+      if (btn && btn.contains(target)) return; // the toggle button itself
+      setMembersPanelOpen(false);
+    };
+    document.addEventListener('mousedown', onDocPointer, true);
+    document.addEventListener('touchstart', onDocPointer, true);
+    return () => {
+      document.removeEventListener('mousedown', onDocPointer, true);
+      document.removeEventListener('touchstart', onDocPointer, true);
+    };
+  }, [membersPanelOpen]);
 
   // هل الحساب الحالي هو عضو فريق؟ احسبها في كل رندر لضمان التزامن مع تغيّر التوكن
   const isTeamActor = (() => {
@@ -1838,6 +1860,7 @@ export default function Home() {
               <div className="ml-auto flex items-center gap-3 text-gray-300">
                 {/* Members button */}
                 <button
+                  ref={membersBtnRef}
                   onClick={async()=>{
                     if (!selectedConversationId) return;
                     setMembersPanelOpen(o=>!o);
@@ -1880,7 +1903,7 @@ export default function Home() {
             </div>
             {/* Members side panel */}
             {membersPanelOpen && (
-              <div className="absolute right-0 top-12 md:top-14 z-30 w-full md:w-[420px] max-h-[65vh] overflow-y-auto bg-chatBg border border-chatDivider rounded-lg shadow-2xl p-3">
+              <div ref={membersPanelRef} className="absolute right-0 top-12 md:top-14 z-30 w-full md:w-[420px] max-h-[65vh] overflow-y-auto bg-chatBg border border-chatDivider rounded-lg shadow-2xl p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-xs font-bold text-gray-100">أعضاء المحادثة</div>
                   <button onClick={()=> setMembersPanelOpen(false)} className="text-gray-300 hover:text-white text-xs">إغلاق ✕</button>
