@@ -218,9 +218,9 @@ function SidebarHeaderAddContact({ onAdded, existingUsernames, currentUsername, 
           </button>
           {menuOpen && (
             <div className="absolute left-0 top-full mt-2 min-w-[160px] bg-chatBg border border-chatDivider rounded-lg shadow-xl overflow-hidden z-40">
-              <a href="/profile" className="block px-3 py-2 text-sm text-gray-100 hover:bg-white/5">بروفايلي</a>
+              {!isTeamActor && <a href="/profile" className="block px-3 py-2 text-sm text-gray-100 hover:bg-white/5">بروفايلي</a>}
               {!isTeamActor && <a href="/matches" className="block px-3 py-2 text-sm text-gray-100 hover:bg-white/5">مطابقاتي</a>}
-              <a href="/settings" className="block px-3 py-2 text-sm text-gray-100 hover:bg-white/5">الإعدادات</a>
+              {!isTeamActor && <a href="/settings" className="block px-3 py-2 text-sm text-gray-100 hover:bg-white/5">الإعدادات</a>}
               {!isTeamActor && <a href="/subscriptions" className="block px-3 py-2 text-sm text-gray-100 hover:bg-white/5">الاشتراك</a>}
               {!isTeamActor && <a href="/team" className="block px-3 py-2 text-sm text-gray-100 hover:bg-white/5">فريق العمل</a>}
               <button onClick={() => { onRefreshContacts && onRefreshContacts(); setMenuOpen(false); }} className="w-full text-right px-3 py-2 text-sm text-gray-100 hover:bg-white/5">تحديث جهات الاتصال</button>
