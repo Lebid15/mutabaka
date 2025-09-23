@@ -43,7 +43,7 @@ def _env_list(name: str, sep: str = ","):
         return None
     return [x.strip() for x in v.split(sep) if x.strip()]
 
-_DEFAULT_HOSTS = ["127.0.0.1", "localhost", "testserver"]
+_DEFAULT_HOSTS = ["127.0.0.1", "localhost", "testserver", "10.0.2.2"]
 
 # Prefer DJANGO_ALLOWED_HOSTS, fallback to legacy ALLOWED_HOSTS
 _env_allowed = _env_list("DJANGO_ALLOWED_HOSTS") or _env_list("ALLOWED_HOSTS")
