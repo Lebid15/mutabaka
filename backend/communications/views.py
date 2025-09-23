@@ -47,8 +47,9 @@ def _has_active_subscription(user) -> bool:
 
 def _plan_contact_limit(user) -> int | None:
     """حد أقصى لعدد جهات الاتصال غير الـ admin حسب الباقة: silver=5, golden=30, king=غير محدود."""
+    # بعد انتهاء النسخة التجريبية أو عدم وجود اشتراك نشط: يُسمح بجهة اتصال واحدة فقط
     if not _has_active_subscription(user):
-        return 0
+        return 1
     try:
         code = (getattr(user.subscription.plan, 'code', '') or '').lower()
     except Exception:
@@ -83,11 +84,30 @@ def _count_non_admin_conversations(user) -> int:
     return qs.count()
 
 
+def _count_non_admin_contacts(user) -> int:
+    """عدد جهات الاتصال (ContactRelation) غير الخاصة بالحسابات الإدارية."""
+    from django.db.models import Q
+    from .models import ContactRelation
+    admin_ids = list(get_user_model().objects.filter(is_superuser=True).values_list('id', flat=True))
+    try:
+        admin_named = get_user_model().objects.filter(username__iexact='admin').values_list('id', flat=True)
+        for aid in admin_named:
+            if aid not in admin_ids:
+                admin_ids.append(aid)
+    except Exception:
+        pass
+    qs = ContactRelation.objects.filter(owner=user)
+    if admin_ids:
+        qs = qs.exclude(contact_id__in=admin_ids)
+    return qs.count()
+
+
 def _ensure_can_message_or_contact(user, other=None, conversation: Conversation | None = None):
     """يرفع ValidationError برسالة عربية عند عدم السماح بالمراسلة/الإنشاء.
 
-    - بدون اشتراك نشط: يُسمح فقط مع admin.
-    - مع اشتراك نشط: يُسمح مع الجميع، لكن إنشاء محادثات جديدة يخضع للحد.
+    السياسة الحالية:
+    - أثناء التجربة المجانية أو مع اشتراك مدفوع نشط: مسموح بالكامل (مع حدود الباقة إن وُجدت عند الإنشاء).
+    - بعد انتهاء التجربة وبدون اشتراك نشط: مسموح المراسلة مع المحادثات الحالية، ومسموح إضافة/بدء جهة اتصال واحدة فقط غير إدارية.
     """
     # إذا وجد محادثة نتحقق من الشخص الآخر
     if conversation is not None:
@@ -98,7 +118,10 @@ def _ensure_can_message_or_contact(user, other=None, conversation: Conversation 
         raise ValidationError({'detail': 'مستخدم غير معروف'})
     if _is_admin_user(other):
         return  # admin دائماً مسموح
+    # عند الإنشاء (other بدون conversation):
+    # إن لم يكن هناك اشتراك نشط، نتحقق من الحد (1 جهة اتصال)
     if not _has_active_subscription(user):
+        # بدون اشتراك نشط: ممنوع المراسلة أو الإضافة مع غير admin (يُطبق حد الإضافة في نقاط الإنشاء نفسها)
         raise ValidationError({'detail': 'انتهت صلاحية الاشتراك أو غير موجود — لا يمكنك المراسلة أو إضافة جهات اتصال إلا مع admin'})
 
 
@@ -189,6 +212,24 @@ class ContactRelationViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return ContactRelation.objects.filter(owner=self.request.user)
 
+    def create(self, request, *args, **kwargs):
+        # فرض حد إنشاء جهة الاتصال حسب الباقة، مع السماح دومًا بإضافة admin
+        contact_id = request.data.get('contact_id') or request.data.get('contact')
+        other = None
+        if contact_id:
+            try:
+                other = User.objects.get(id=contact_id)
+            except User.DoesNotExist:
+                return Response({'detail': 'المستخدم غير موجود'}, status=404)
+        # في حال تزويد معرف الطرف الآخر وغير إداري، طبّق الحد
+        if other is not None and not _is_admin_user(other):
+            limit = _plan_contact_limit(request.user)
+            if limit is not None:
+                count = _count_non_admin_contacts(request.user)
+                if count >= (limit or 0):
+                    return Response({'detail': 'لقد بلغت الحد المسموح لجهات الاتصال حسب باقتك'}, status=403)
+        return super().create(request, *args, **kwargs)
+
 
 class TeamMemberViewSet(viewsets.ModelViewSet):
     """CRUD for the current user's team."""
@@ -251,11 +292,10 @@ class ConversationViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(existing)
             headers = self.get_success_headers(serializer.data)
             return Response(serializer.data, status=status.HTTP_200_OK, headers=headers)
-        # قيود الاشتراك: السماح دوماً بمحادثة admin، غير ذلك يتطلب اشتراك نشط واحترام الحد
+        # قيود الاشتراك: السماح دوماً بمحادثة admin. لغير admin يتطلب اشتراك نشط + احترام الحد حسب الباقة
         if not _is_admin_user(other):
             if not _has_active_subscription(user):
                 return Response({'detail': 'لا يمكنك إنشاء محادثات جديدة بدون اشتراك نشط. يمكنك مراسلة admin فقط.'}, status=403)
-            # تحقق الحد حسب الباقة
             limit = _plan_contact_limit(user)
             if limit is not None:
                 count = _count_non_admin_conversations(user)
