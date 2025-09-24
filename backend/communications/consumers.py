@@ -75,6 +75,12 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                     )
                 )
                 last_read_id = max(ids)
+            else:
+                # حتى لو لم تكن هناك رسائل تحتاج ترقية الآن، احصل على أعلى معرف لرسالة للطرف الآخر لتجميد الحالة بعد إعادة التحميل.
+                try:
+                    last_read_id = await sync_to_async(lambda: Message.objects.filter(conversation_id=self.conversation_id).exclude(sender_id=user.id).order_by('-id').values_list('id', flat=True).first())()
+                except Exception:
+                    last_read_id = None
                 # Persist read marker (monotonic)
                 try:
                     await sync_to_async(ConversationReadMarker.objects.update_or_create)(
@@ -89,8 +95,9 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                 except Exception:
                     pass
                 # Broadcast chat.read once with last_read_id
-                payload = { 'type': 'chat.read', 'reader': getattr(user, 'username', None), 'last_read_id': int(last_read_id) }
-                await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': payload})
+                if last_read_id:
+                    payload = { 'type': 'chat.read', 'reader': getattr(user, 'username', None), 'last_read_id': int(last_read_id) }
+                    await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': payload})
                 # Also broadcast per-message status for sender ticks (limit to first 300 to avoid flood)
                 for mid in ids[:300]:
                     try:
