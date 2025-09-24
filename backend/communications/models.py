@@ -145,6 +145,14 @@ class Message(models.Model):
                 self.delivery_status = 1
         except Exception:
             pass
+        # Ensure delivered_at is always stamped for newly created messages that are at least delivered (status>=1)
+        # Missing delivered_at caused admin panel + FE inconsistency after refresh.
+        if new and (self.delivery_status or 0) >= 1 and not self.delivered_at:
+            from django.utils import timezone
+            try:
+                self.delivered_at = timezone.now()
+            except Exception:
+                pass
         super().save(*args, **kwargs)
         if new:
             Conversation.objects.filter(pk=self.conversation_id).update(
