@@ -1737,7 +1737,27 @@ export default function Home() {
                       <span className="text-base font-semibold truncate flex items-center gap-1">{contact.name} {contact.isMuted && <span title="مكتمة">🔕</span>}</span>
                       <span className="text-[11px] text-gray-400" dir="ltr">{contact.last_message_at ? formatTimeShort(contact.last_message_at) : ''}</span>
                     </div>
-                    <span className="text-sm text-gray-400 truncate">{contact.last_message_preview || ''}</span>
+                    {(() => {
+                      const raw = contact.last_message_preview || '';
+                      let truncated = raw;
+                      try {
+                        // Grapheme-aware slice to 20 clusters
+                        // @ts-ignore
+                        if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+                          // @ts-ignore
+                          const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+                          const it = seg.segment(raw);
+                          const arr: string[] = [];
+                          // @ts-ignore
+                          for (const p of it) { if (arr.length >= 20) break; arr.push(p.segment); }
+                          truncated = arr.join('');
+                        } else {
+                          const codepoints = Array.from(raw);
+                          truncated = codepoints.slice(0,20).join('');
+                        }
+                      } catch { truncated = raw.slice(0,20); }
+                      return <span className="text-sm text-gray-400">{truncated}</span>;
+                    })()}
                   </div>
                   <div className="relative flex items-center gap-2" onClick={(e)=> e.stopPropagation()}>
                     {unreadByConv[contact.id] > 0 && (
