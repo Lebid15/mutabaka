@@ -4,6 +4,8 @@ import '../api_client.dart';
 import '../models/user_me.dart';
 import 'token_storage.dart';
 import 'session.dart';
+import 'secure_prefs.dart';
+import 'device_fingerprint.dart';
 
 class AuthTokens {
   final String access;
@@ -76,10 +78,13 @@ class AuthService {
       );
       final me = UserMe.fromJson((meResp.data as Map).cast<String, dynamic>());
 
-      final tokens = AuthTokens(access: access, refresh: refresh);
+  final tokens = AuthTokens(access: access, refresh: refresh);
       // Persist tokens securely so we can resume session and do PIN-only next time
       await _persistTokens(tokens);
       Session.I.setAuth(access: access, refresh: refresh, me: me);
+  // Remember user for PIN and store last user info
+  await SecurePrefs.setRememberPin(true);
+  await SecurePrefs.setLastUser(username: me.username, displayName: me.displayName);
       // If we have fingerprint and platform, register device after login (may be auto-approved)
       if (fingerprint != null && fingerprint.isNotEmpty) {
         try {
@@ -109,6 +114,40 @@ class AuthService {
         throw OtpRequiredError(body['detail']?.toString() ?? 'OTP required');
       }
       final msg = body['detail']?.toString() ?? 'بيانات غير صحيحة';
+      throw Exception(msg);
+    }
+  }
+
+  /// Try logging in using PIN + device fingerprint only (no existing access token).
+  /// Requires backend to accept /api/auth/verify-pin without Authorization and return JWT.
+  Future<AuthTokens> loginWithPin({required String pin}) async {
+    final did = await DeviceFingerprintService.getIdentity();
+    try {
+      final resp = await _dio.post(
+        '/api/auth/verify-pin',
+        data: {
+          'pin': pin,
+          'fingerprint': did.fingerprint,
+          'device_name': did.name,
+          'platform': did.platform,
+        },
+        options: Options(headers: {'Content-Type': 'application/json'}),
+      );
+      final data = resp.data as Map;
+      final access = (data['access'] ?? '').toString();
+      final refresh = (data['refresh'] ?? '').toString();
+      if (access.isEmpty || refresh.isEmpty) throw Exception('Invalid token response');
+      final meResp = await _dio.get('/api/auth/me/', options: Options(headers: {'Authorization': 'Bearer $access'}));
+      final me = UserMe.fromJson((meResp.data as Map).cast<String, dynamic>());
+      final t = AuthTokens(access: access, refresh: refresh);
+      await _persistTokens(t);
+      Session.I.setAuth(access: access, refresh: refresh, me: me);
+      await SecurePrefs.setRememberPin(true);
+      await SecurePrefs.setLastUser(username: me.username, displayName: me.displayName);
+      return t;
+    } on DioException catch (e) {
+      final body = (e.response?.data is Map) ? (e.response!.data as Map) : const {};
+      final msg = body['detail']?.toString() ?? 'فشل تسجيل الدخول عبر PIN';
       throw Exception(msg);
     }
   }

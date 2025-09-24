@@ -2,15 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'api_client.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter/services.dart';
 import 'features/auth/login_page.dart';
 import 'features/auth/pin_page.dart';
+import 'features/auth/welcome_pin_page.dart';
 import 'theme/app_theme.dart';
 import 'theme/theme_controller.dart';
 import 'services/auth_service.dart';
 import 'services/session.dart';
+import 'services/device_fingerprint.dart';
 import 'models/user_me.dart';
 import 'features/home/home_page.dart';
 import 'package:dio/dio.dart';
+import 'services/secure_prefs.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,6 +24,11 @@ Future<void> main() async {
   } catch (_) {
     // Ignore missing .env
   }
+  // Make status bar transparent; set a sensible default for icons in light mode
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.dark,
+  ));
   runApp(const MyApp());
 }
 
@@ -46,7 +55,24 @@ class _MyAppState extends State<MyApp> {
     super.dispose();
   }
 
-  void _onTheme() => setState(() {});
+  void _onTheme() {
+    _applySystemOverlay();
+    setState(() {});
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _applySystemOverlay();
+  }
+
+  void _applySystemOverlay() {
+    final isLight = _theme.mode == ThemeMode.light;
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: isLight ? Brightness.dark : Brightness.light,
+    ));
+  }
 
   Future<void> _bootstrap() async {
     // Try restore tokens; if present keep user signed in and land on PIN gate if needed
@@ -74,9 +100,21 @@ class _MyAppState extends State<MyApp> {
             rethrow;
           }
         }
-        Session.I.setAuth(access: access, refresh: t.refresh, me: me);
-        setState(() { _home = const LoginPinGate(); });
+  Session.I.setAuth(access: access, refresh: t.refresh, me: me);
+  setState(() { _home = const HomePage(); });
         return;
+      }
+      // No tokens; check if we should go straight to PIN gate
+      final rememberPin = await SecurePrefs.getRememberPin();
+      if (rememberPin) {
+        // We might not have user info in memory; fetch last stored name for greeting
+        final last = await SecurePrefs.getLastUser();
+        // Ensure fingerprint exists (device was registered)
+        final did = await DeviceFingerprintService.getIdentity();
+        if ((last != null) && (did.fingerprint.isNotEmpty)) {
+          setState(() { _home = const WelcomePinPage(); });
+          return;
+        }
       }
     } catch (_) {}
     setState(() { _home = const LoginPage(); });
@@ -103,34 +141,53 @@ class _MyAppState extends State<MyApp> {
 }
 
 /// A small gate that asks only for PIN when user has a stored session.
-class LoginPinGate extends StatelessWidget {
+class LoginPinGate extends StatefulWidget {
   const LoginPinGate({super.key});
   @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<bool>(
-      future: _ensurePinThenHome(context),
-      builder: (context, snap) {
-        return const Directionality(
-          textDirection: TextDirection.rtl,
-          child: Scaffold(body: Center(child: CircularProgressIndicator())),
-        );
-      },
-    );
+  State<LoginPinGate> createState() => _LoginPinGateState();
+}
+
+class _LoginPinGateState extends State<LoginPinGate> {
+  bool _started = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _start());
   }
 
-  Future<bool> _ensurePinThenHome(BuildContext context) async {
-    // Direct to PIN entry; after success go to HomePage
+  Future<void> _start() async {
+    if (_started || !mounted) return;
+    _started = true;
+    // Prefer session user; fallback to last stored user for greeting
     final user = Session.I.currentUser;
-  final greeting = (user != null && ((user.displayName.isNotEmpty) || user.username.isNotEmpty))
-    ? 'مرحبا ${(user.displayName.isNotEmpty ? user.displayName : user.username)}\nأدخل رمز PIN'
-        : 'أدخل رمز PIN';
-    final ok = await Navigator.of(context).push<bool>(
+    String greeting;
+    if (user != null && ((user.displayName.isNotEmpty) || user.username.isNotEmpty)) {
+      final name = user.displayName.isNotEmpty ? user.displayName : user.username;
+      greeting = 'مرحبا $name\nأدخل رمز PIN';
+    } else {
+      final last = await SecurePrefs.getLastUser();
+      final name = (last?.$2.isNotEmpty == true) ? last!.$2 : ((last?.$1 ?? ''));
+      greeting = name.isNotEmpty ? 'مرحبا $name\nأدخل رمز PIN' : 'أدخل رمز PIN';
+    }
+    final res = await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => PinPage(args: PinPageArgs(hint: greeting))),
     );
-    if (ok == true && context.mounted) {
+    if (!mounted) return;
+    if (res is PinResult && res.success || res == true) {
       Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomePage()));
+    } else if (res is PinResult && !res.success) {
+      // Edge cases: device not approved/locked -> go to Login with a message
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const LoginPage()));
     }
-    return true;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(body: Center(child: CircularProgressIndicator())),
+    );
   }
 }
 

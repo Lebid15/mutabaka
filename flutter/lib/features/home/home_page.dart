@@ -3,12 +3,13 @@ import 'dart:ui' show ImageFilter;
 import 'dart:async';
 import 'home_controller.dart';
 import 'chat_page.dart';
-import '../auth/login_page.dart';
 import '../profile/profile_page.dart';
 import '../matches/matches_page.dart';
 import '../settings/settings_page.dart';
 import '../subscriptions/subscriptions_page.dart';
 import '../../services/session.dart';
+import '../../services/auth_service.dart';
+import '../auth/welcome_pin_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -601,10 +602,13 @@ class _HeaderBarState extends State<_HeaderBar> {
                           break;
                         
                         case 'logout':
+                          // Clear tokens only; keep device trust + last user for PIN
+                          await AuthService().clearTokens();
                           Session.I.clear();
                           if (!mounted) return;
+                          // Route user to PIN gate if remember flag is set; otherwise Login
                           Navigator.of(context).pushAndRemoveUntil(
-                            MaterialPageRoute(builder: (_) => const LoginPage()),
+                            MaterialPageRoute(builder: (_) => const WelcomePinPage()),
                             (route) => false,
                           );
                           break;

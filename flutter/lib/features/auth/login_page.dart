@@ -3,6 +3,8 @@ import 'login_controller.dart';
 import '../home/home_page.dart';
 import '../../theme/theme_controller.dart';
 import 'pin_page.dart';
+import '../../services/secure_prefs.dart';
+import '../../services/session.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -53,6 +55,12 @@ class _LoginPageState extends State<LoginPage> {
     );
     if (_controller.isSuccess) {
       if (mounted) {
+        // Persist remember flag and last user for PIN greeting
+        final me = Session.I.currentUser;
+        if (me != null) {
+          await SecurePrefs.setRememberPin(true);
+          await SecurePrefs.setLastUser(username: me.username, displayName: me.displayName);
+        }
         // If backend generated a PIN on first mobile login, show it once
         if (_controller.generatedPinOnce != null) {
           final pin = _controller.generatedPinOnce!;
@@ -109,6 +117,8 @@ class _LoginPageState extends State<LoginPage> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
+        extendBodyBehindAppBar: true,
+        backgroundColor: scheme.surface,
         body: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
