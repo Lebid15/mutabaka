@@ -13,8 +13,8 @@ type Msg = {
   body: string;
   created_at: string;
   client_id?: string;
-  status?: 'pending' | 'sent' | 'delivered' | 'read';
-  delivery_status?: 0|1|2;
+  status?: 'delivered' | 'read';
+  delivery_status?: 1|2; // simplified: 1=delivered, 2=read
 };
 
 // Force wrap every HARD_WRAP_LIMIT characters even inside a single long word (Arabic / digits / Latin).
@@ -52,16 +52,9 @@ function hardWrapNodes(body: string, limit: number = HARD_WRAP_LIMIT): React.Rea
   return result;
 }
 
-// Simple ticks like WhatsApp: single (not delivered), double gray (delivered), double blue (read)
-function Ticks({ state, className }: { state: 'single'|'double'|'blue'; className?: string }) {
+// Two-state ticks: gray double (delivered=1), blue double (read=2)
+function Ticks({ state, className }: { state: 'double'|'blue'; className?: string }) {
   const base = `inline-block align-middle ${className || ''}`;
-  if (state === 'single') {
-    return (
-      <svg className={base} width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    );
-  }
   return (
     <svg className={base} width="20" height="18" viewBox="0 0 28 24" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M26 6L15 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -228,8 +221,8 @@ export default function ConversationPage() {
               body: data.body || '',
               created_at: data.created_at || new Date().toISOString(),
               client_id: data.client_id,
-              status: (data.status as any) || 'sent',
-              delivery_status: typeof data.delivery_status === 'number' ? data.delivery_status as 0|1|2 : undefined,
+              status: ((data.status as any) === 'read') ? 'read' : 'delivered',
+              delivery_status: typeof data.delivery_status === 'number' ? ((data.delivery_status <= 1) ? 1 : 2) as 1|2 : 1,
             };
             setMessages(prev => {
               // If this is an echo for a pending local message, update it instead of appending
@@ -237,8 +230,8 @@ export default function ConversationPage() {
                 const idx = prev.findIndex(m => m.client_id && m.client_id === msg.client_id);
                 if (idx !== -1) {
                   const copy = [...prev];
-                  // Keep as 'sent' until explicit status events arrive
-                  copy[idx] = { ...copy[idx], id: msg.id, status: 'sent', created_at: msg.created_at };
+                  // Normalize to delivered (1) immediately (no transient single state)
+                  copy[idx] = { ...copy[idx], id: msg.id, status: (msg.delivery_status === 2 ? 'read' : 'delivered'), delivery_status: (msg.delivery_status === 2 ? 2 : 1), created_at: msg.created_at };
                   lastIdRef.current = msg.id;
                   setTimeout(()=> listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' }), 0);
                   return copy;
@@ -290,13 +283,13 @@ export default function ConversationPage() {
           if (data?.type === 'message.status') {
             const id = Number(data.id);
             const newStatusStr = data.status as ('delivered'|'read'|undefined);
-            const ds: number = typeof data.delivery_status === 'number' ? data.delivery_status : (newStatusStr === 'read' ? 2 : newStatusStr === 'delivered' ? 1 : -1);
+            const ds: number = typeof data.delivery_status === 'number' ? ((data.delivery_status <=1) ? 1 : 2) : (newStatusStr === 'read' ? 2 : newStatusStr === 'delivered' ? 1 : -1);
             if (!id || ds < 0) return;
             setMessages(prev => prev.map(m => {
               if (m.id !== id) return m;
-              const currDs = m.delivery_status ?? (m.status === 'read' ? 2 : m.status === 'delivered' ? 1 : 0);
+              const currDs = m.delivery_status || (m.status === 'read' ? 2 : 1);
               if (ds > currDs) {
-                return { ...m, delivery_status: ds as 0|1|2, status: ds >= 2 ? 'read' : ds >= 1 ? 'delivered' : 'sent' };
+                return { ...m, delivery_status: (ds === 2 ? 2 : 1) as 1|2, status: ds === 2 ? 'read' : 'delivered' };
               }
               return m;
             }));
@@ -337,7 +330,8 @@ export default function ConversationPage() {
       body: text,
       created_at: new Date().toISOString(),
       client_id: clientId,
-  status: 'sent',
+      status: 'delivered',
+      delivery_status: 1,
     };
     setMessages(prev => [...prev, temp]);
     setInput("");
@@ -399,11 +393,9 @@ export default function ConversationPage() {
               <div className="mt-1 text-[11px] opacity-70 flex items-center gap-1 justify-end" dir="auto">
                 <span dir="ltr">{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
                 {isMine && (m.type === 'text' || m.type === 'transaction') && (() => {
-                  const ds = m.delivery_status ?? 0; // undefined => pending local => single
+                  const ds = m.delivery_status || 1; // default to delivered
                   const isRead = ds >= 2 || m.id <= lastReadByOther;
-                  const tickState = isRead ? 'blue' : (ds >= 1 ? 'double' : 'single');
-                  const tickClass = isRead ? 'text-blue-400' : 'text-gray-400';
-                  return <Ticks state={tickState as any} className={tickClass} />;
+                  return <Ticks state={isRead ? 'blue' : 'double'} className={isRead ? 'text-blue-400' : 'text-gray-400'} />;
                 })()}
               </div>
             </div>
