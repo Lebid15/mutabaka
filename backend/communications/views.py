@@ -498,19 +498,39 @@ class ConversationViewSet(viewsets.ModelViewSet):
             qs = conv.messages.all().order_by('-created_at')[:limit]
         # Inject counterpart last_read marker so serializer can freeze blue ticks
         other_last_read_id = 0
+        viewer_id = request.user.id
         try:
-            from .models import ConversationReadMarker
-            # Determine counterpart user id (simple 1:1 conversation assumption)
-            if request.user == conv.user_a:
-                other_id = conv.user_b_id
-            else:
-                other_id = conv.user_a_id
+            from .models import ConversationReadMarker, Message
+            other_id = conv.user_b_id if viewer_id == conv.user_a_id else conv.user_a_id
             marker = ConversationReadMarker.objects.filter(conversation_id=conv.id, user_id=other_id).first()
-            if marker:
-                other_last_read_id = int(marker.last_read_message_id or 0)
+            if marker and marker.last_read_message_id:
+                other_last_read_id = int(marker.last_read_message_id)
+            if not other_last_read_id:
+                # Fallback 1: max id of viewer's messages that actually have read_at (canonical)
+                fallback = Message.objects.filter(conversation_id=conv.id, sender_id=viewer_id, read_at__isnull=False).order_by('-id').values_list('id', flat=True).first()
+                if fallback:
+                    other_last_read_id = int(fallback)
+                if not other_last_read_id:
+                    # Fallback 2: infer reading if other participant has sent later messages
+                    latest_other_msg_id = Message.objects.filter(conversation_id=conv.id, sender_id=other_id).order_by('-id').values_list('id', flat=True).first()
+                    if latest_other_msg_id:
+                        # All my messages with id <= latest_other_msg_id are considered seen
+                        latest_my_msg_before = Message.objects.filter(conversation_id=conv.id, sender_id=viewer_id, id__lte=latest_other_msg_id).order_by('-id').values_list('id', flat=True).first()
+                        if latest_my_msg_before:
+                            other_last_read_id = int(latest_my_msg_before)
+                # If we derived a value but no marker exists yet, persist it to stabilize future responses
+                if other_last_read_id and not marker:
+                    try:
+                        ConversationReadMarker.objects.update_or_create(
+                            conversation_id=conv.id,
+                            user_id=other_id,
+                            defaults={'last_read_message_id': other_last_read_id}
+                        )
+                    except Exception:
+                        pass
         except Exception:
             pass
-        return Response(MessageSerializer(qs, many=True, context={'request': request, 'other_last_read_id': other_last_read_id, 'viewer_id': request.user.id}).data)
+        return Response(MessageSerializer(qs, many=True, context={'request': request, 'other_last_read_id': other_last_read_id, 'viewer_id': viewer_id}).data)
 
     @action(detail=True, methods=['post'])
     def send(self, request, pk=None):
