@@ -29,6 +29,7 @@ class InboxConsumer(AsyncWebsocketConsumer):
             from asgiref.sync import sync_to_async
             from django.utils import timezone
             from .models import Message, Conversation
+            from django.db import models as dj_models
             async_get_convs = sync_to_async(list)
             convs = await async_get_convs(Conversation.objects.filter(models.Q(user_a_id=self.user_id) | models.Q(user_b_id=self.user_id)).only('id'))
             now = timezone.now()
@@ -45,13 +46,19 @@ class InboxConsumer(AsyncWebsocketConsumer):
                 if not ids:
                     continue
                 async_update = sync_to_async(Message.objects.filter(id__in=ids).update)
-                await async_update(delivered_at=now)
+                await async_update(
+                    delivered_at=now,
+                    delivery_status=dj_models.Case(
+                        dj_models.When(delivery_status__lt=1, then=dj_models.Value(1)),
+                        default=dj_models.F('delivery_status')
+                    )
+                )
                 # Broadcast per-message status so senders update ticks to double gray
                 for mid in ids:
                     try:
                         await self.channel_layer.group_send(f"conv_{c.id}", {
                             'type': 'broadcast.message',
-                            'data': { 'type': 'message.status', 'id': int(mid), 'status': 'delivered' }
+                            'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 1, 'status': 'delivered' }
                         })
                     except Exception:
                         pass

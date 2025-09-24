@@ -48,6 +48,7 @@ class ConversationConsumer(AsyncWebsocketConsumer):
         try:
             from asgiref.sync import sync_to_async
             from django.utils import timezone
+            from django.db import models as dj_models
             from django.db.models import Q, Max
             last_read_id = None
             async_filter = sync_to_async(list)
@@ -62,11 +63,26 @@ class ConversationConsumer(AsyncWebsocketConsumer):
             )
             if ids:
                 now = timezone.now()
-                await sync_to_async(Message.objects.filter(id__in=ids).update)(read_at=now, delivered_at=now)
+                await sync_to_async(Message.objects.filter(id__in=ids).update)(
+                    read_at=now, delivered_at=now,
+                    delivery_status=dj_models.Case(
+                        dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)),
+                        default=dj_models.F('delivery_status')
+                    )
+                )
                 last_read_id = max(ids)
                 # Broadcast chat.read once with last_read_id
                 payload = { 'type': 'chat.read', 'reader': getattr(user, 'username', None), 'last_read_id': int(last_read_id) }
                 await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': payload})
+                # Also broadcast per-message status for sender ticks (limit to first 300 to avoid flood)
+                for mid in ids[:300]:
+                    try:
+                        await self.channel_layer.group_send(self.group_name, {
+                            'type': 'broadcast.message',
+                            'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 2, 'status': 'read' }
+                        })
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -116,9 +132,27 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                         if last_read_id:
                             from asgiref.sync import sync_to_async
                             from django.utils import timezone
-                            async_update = sync_to_async(Message.objects.filter(conversation_id=self.conversation_id, id__lte=last_read_id, read_at__isnull=True).exclude(sender_id=user.id).update)
+                            from django.db import models as dj_models
+                            qs = Message.objects.filter(conversation_id=self.conversation_id, id__lte=last_read_id, read_at__isnull=True).exclude(sender_id=user.id)
+                            async_update = sync_to_async(qs.update)
                             now = timezone.now()
-                            await async_update(read_at=now, delivered_at=now)
+                            await async_update(
+                                read_at=now, delivered_at=now,
+                                delivery_status=dj_models.Case(
+                                    dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)),
+                                    default=dj_models.F('delivery_status')
+                                )
+                            )
+                            # Broadcast per-message read status (cap at 300)
+                            ids = await sync_to_async(list)(qs.values_list('id', flat=True)[:300])
+                            for mid in ids:
+                                try:
+                                    await self.channel_layer.group_send(self.group_name, {
+                                        'type': 'broadcast.message',
+                                        'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 2, 'status': 'read' }
+                                    })
+                                except Exception:
+                                    pass
                     except Exception:
                         pass
                     payload = {
@@ -186,19 +220,33 @@ class ConversationConsumer(AsyncWebsocketConsumer):
             recipient_in_conv = get_count(conv_group) > 1  # sender + recipient present
             # If recipient is in the same conversation: mark read immediately
             if recipient_in_conv:
-                await sync_to_async(Message.objects.filter(id=msg.id, read_at__isnull=True).update)(read_at=timezone.now(), delivered_at=timezone.now())
+                from django.db import models as dj_models
+                await sync_to_async(Message.objects.filter(id=msg.id).update)(
+                    read_at=timezone.now(), delivered_at=timezone.now(),
+                    delivery_status=dj_models.Case(
+                        dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)),
+                        default=dj_models.F('delivery_status')
+                    )
+                )
                 status_evt = {
                     'type': 'message.status',
                     'id': msg.id,
-                    'status': 'read',
+                    'delivery_status': 2, 'status': 'read',
                 }
                 await self.channel_layer.group_send(conv_group, {'type': 'broadcast.message', 'data': status_evt})
             elif recipient_online:
-                await sync_to_async(Message.objects.filter(id=msg.id, delivered_at__isnull=True).update)(delivered_at=timezone.now())
+                from django.db import models as dj_models
+                await sync_to_async(Message.objects.filter(id=msg.id).update)(
+                    delivered_at=timezone.now(),
+                    delivery_status=dj_models.Case(
+                        dj_models.When(delivery_status__lt=1, then=dj_models.Value(1)),
+                        default=dj_models.F('delivery_status')
+                    )
+                )
                 status_evt = {
                     'type': 'message.status',
                     'id': msg.id,
-                    'status': 'delivered',
+                    'delivery_status': 1, 'status': 'delivered',
                 }
                 # Send status back to conversation group so sender updates ticks
                 await self.channel_layer.group_send(conv_group, {'type': 'broadcast.message', 'data': status_evt})

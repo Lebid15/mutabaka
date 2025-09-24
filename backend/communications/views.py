@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 import mimetypes
 from django.core.files.storage import default_storage
 from django.db.models import Q
+from django.db import models as dj_models
 from django.contrib.auth import get_user_model
 from .models import ContactRelation, Conversation, Message, Transaction, PushSubscription, ConversationMute, TeamMember, ConversationMember, get_conversation_viewer_ids
 from .serializers import (
@@ -400,6 +401,33 @@ class ConversationViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'])
     def messages(self, request, pk=None):
         conv = self.get_object()
+        # Mark undelivered inbound messages as delivered upon fetch (idempotent, monotonic)
+        try:
+            undelivered_qs = conv.messages.filter(delivered_at__isnull=True).exclude(sender_id=request.user.id)
+            ids_to_broadcast = list(undelivered_qs.order_by('id').values_list('id', flat=True)[:300])
+            if undelivered_qs.exists():
+                undelivered_qs.update(
+                    delivered_at=timezone.now(),
+                    delivery_status=dj_models.Case(
+                        dj_models.When(delivery_status__lt=1, then=dj_models.Value(1)),
+                        default=dj_models.F('delivery_status')
+                    )
+                )
+                try:
+                    from channels.layers import get_channel_layer
+                    from asgiref.sync import async_to_sync
+                    channel_layer = get_channel_layer()
+                    if channel_layer is not None:
+                        group = f"conv_{conv.id}"
+                        for mid in ids_to_broadcast:
+                            async_to_sync(channel_layer.group_send)(group, {
+                                'type': 'broadcast.message',
+                                'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 1, 'status': 'delivered' }
+                            })
+                except Exception:
+                    pass
+        except Exception:
+            pass
         since_id = request.query_params.get('since_id')
         before = request.query_params.get('before')
         try:
@@ -500,7 +528,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'created_at': msg.created_at.isoformat(),
                     'kind': 'text',
                     'seq': msg.id,
-                    'status': 'sent',
+                    'status': 'sent',  # legacy string for FE
                 }
                 async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': payload})
                 # Try to set delivery/read status based on connectivity
@@ -512,11 +540,17 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     recipient_in_conv = get_count(group) > 1
                     from django.utils import timezone
                     if recipient_in_conv:
-                        Message.objects.filter(id=msg.id, read_at__isnull=True).update(read_at=timezone.now(), delivered_at=timezone.now())
-                        async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'status':'read'}})
+                        # Upgrade to READ (2) monotonic
+                        Message.objects.filter(id=msg.id).update(delivery_status=dj_models.Case(
+                            dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)), default=dj_models.F('delivery_status')
+                        ), read_at=timezone.now(), delivered_at=timezone.now())
+                        async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'delivery_status': 2, 'status':'read'}})
                     elif recipient_online:
-                        Message.objects.filter(id=msg.id, delivered_at__isnull=True).update(delivered_at=timezone.now())
-                        async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'status':'delivered'}})
+                        # Upgrade to DELIVERED (1) if below
+                        Message.objects.filter(id=msg.id).update(delivery_status=dj_models.Case(
+                            dj_models.When(delivery_status__lt=1, then=dj_models.Value(1)), default=dj_models.F('delivery_status')
+                        ), delivered_at=timezone.now())
+                        async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'delivery_status': 1, 'status':'delivered'}})
                 except Exception:
                     pass
                 # notify all viewers' inboxes (except sender)
@@ -728,11 +762,15 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     recipient_in_conv = get_count(group) > 1
                     from django.utils import timezone
                     if recipient_in_conv:
-                        Message.objects.filter(id=msg.id, read_at__isnull=True).update(read_at=timezone.now(), delivered_at=timezone.now())
-                        async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'status':'read'}})
+                        Message.objects.filter(id=msg.id).update(delivery_status=dj_models.Case(
+                            dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)), default=dj_models.F('delivery_status')
+                        ), read_at=timezone.now(), delivered_at=timezone.now())
+                        async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'delivery_status': 2, 'status':'read'}})
                     elif recipient_online:
-                        Message.objects.filter(id=msg.id, delivered_at__isnull=True).update(delivered_at=timezone.now())
-                        async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'status':'delivered'}})
+                        Message.objects.filter(id=msg.id).update(delivery_status=dj_models.Case(
+                            dj_models.When(delivery_status__lt=1, then=dj_models.Value(1)), default=dj_models.F('delivery_status')
+                        ), delivered_at=timezone.now())
+                        async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'delivery_status': 1, 'status':'delivered'}})
                 except Exception:
                     pass
                 for uid in get_conversation_viewer_ids(conv):
@@ -908,7 +946,14 @@ class ConversationViewSet(viewsets.ModelViewSet):
             last_msg = conv.messages.order_by('-id').first()
             if last_msg:
                 from django.utils import timezone
-                conv.messages.filter(id__lte=last_msg.id).exclude(sender_id=request.user.id).update(read_at=timezone.now())
+                from django.db import models as dj_models
+                conv.messages.filter(id__lte=last_msg.id).exclude(sender_id=request.user.id).update(
+                    read_at=timezone.now(), delivered_at=timezone.now(),
+                    delivery_status=dj_models.Case(
+                        dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)),
+                        default=dj_models.F('delivery_status')
+                    )
+                )
         except Exception:
             pass
         # Notify via channels/pusher so inbox badge disappears

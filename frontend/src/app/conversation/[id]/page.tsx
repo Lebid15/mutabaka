@@ -14,6 +14,7 @@ type Msg = {
   created_at: string;
   client_id?: string;
   status?: 'pending' | 'sent' | 'delivered' | 'read';
+  delivery_status?: 0|1|2;
 };
 
 // Simple ticks like WhatsApp: single (not delivered), double gray (delivered), double blue (read)
@@ -105,18 +106,9 @@ export default function ConversationPage() {
         try {
           const myUser = meInfo?.username;
           const maxRead = ordered
-            .filter((m:any) => m?.sender?.username === myUser && m?.status === 'read')
+            .filter((m:any) => m?.sender?.username === myUser && ((m?.delivery_status ?? 0) >= 2 || m?.status === 'read'))
             .reduce((acc:number, m:any) => Math.max(acc, Number(m.id)||0), 0);
-          // Also consider sessionStorage to freeze blue ticks across reloads
-          let stored = 0;
-          try {
-            if (typeof window !== 'undefined') {
-              const key = `conv_last_read_other_${convId}_${myUser || ''}`;
-              const raw = window.sessionStorage.getItem(key);
-              stored = raw ? Number(raw) : 0;
-            }
-          } catch {}
-          const initial = Math.max(stored || 0, maxRead || 0);
+          const initial = maxRead || 0;
           if (initial > 0) setLastReadByOther(initial);
         } catch {}
         // Scroll to bottom
@@ -165,6 +157,7 @@ export default function ConversationPage() {
               created_at: data.created_at || new Date().toISOString(),
               client_id: data.client_id,
               status: (data.status as any) || 'sent',
+              delivery_status: typeof data.delivery_status === 'number' ? data.delivery_status as 0|1|2 : undefined,
             };
             setMessages(prev => {
               // If this is an echo for a pending local message, update it instead of appending
@@ -213,25 +206,20 @@ export default function ConversationPage() {
           // Status updates for existing messages
           if (data?.type === 'message.status') {
             const id = Number(data.id);
-            const newStatus = data.status as ('delivered'|'read');
-            if (!id || !newStatus) return;
+            const newStatusStr = data.status as ('delivered'|'read'|undefined);
+            const ds: number = typeof data.delivery_status === 'number' ? data.delivery_status : (newStatusStr === 'read' ? 2 : newStatusStr === 'delivered' ? 1 : -1);
+            if (!id || ds < 0) return;
             setMessages(prev => prev.map(m => {
               if (m.id !== id) return m;
-              // Monotonic upgrade only
-              const order = { pending: 0, sent: 0, delivered: 1, read: 2 } as any;
-              const curr = m.status || 'pending';
-              const next = newStatus;
-              return order[next] > order[curr] ? { ...m, status: next } : m;
+              const currDs = m.delivery_status ?? (m.status === 'read' ? 2 : m.status === 'delivered' ? 1 : 0);
+              if (ds > currDs) {
+                return { ...m, delivery_status: ds as 0|1|2, status: ds >= 2 ? 'read' : ds >= 1 ? 'delivered' : 'sent' };
+              }
+              return m;
             }));
-            if (newStatus === 'read') {
+            if (ds >= 2) {
               setLastReadByOther(prev => {
                 const next = Math.max(prev, id);
-                try {
-                  if (typeof window !== 'undefined') {
-                    const key = `conv_last_read_other_${convId}_${me?.username || ''}`;
-                    window.sessionStorage.setItem(key, String(next));
-                  }
-                } catch {}
                 return next;
               });
             }
@@ -324,8 +312,8 @@ export default function ConversationPage() {
                 <span dir="ltr">{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
                 {isMine && (m.type === 'text' || m.type === 'transaction') && (
                   <Ticks
-                    state={((m.status === 'pending') || (m.status === 'sent')) ? 'single' : (m.id <= lastReadByOther || m.status === 'read') ? 'blue' : 'double'}
-                    className={((m.status === 'pending') || (m.status === 'sent')) ? 'text-gray-400' : (m.id <= lastReadByOther || m.status === 'read') ? 'text-blue-400' : 'text-gray-400'}
+                    state={((m.delivery_status ?? 0) <= 0) ? 'single' : (m.id <= lastReadByOther || (m.delivery_status ?? 0) >= 2) ? 'blue' : 'double'}
+                    className={((m.delivery_status ?? 0) <= 0) ? 'text-gray-400' : (m.id <= lastReadByOther || (m.delivery_status ?? 0) >= 2) ? 'text-blue-400' : 'text-gray-400'}
                   />
                 )}
               </div>

@@ -186,16 +186,19 @@ class MessageSerializer(serializers.ModelSerializer):
     senderType = serializers.SerializerMethodField()
     senderDisplay = serializers.SerializerMethodField()
     attachment_url = serializers.SerializerMethodField()
-    status = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()  # legacy string for FE compatibility
+    delivery_status = serializers.IntegerField(read_only=True)
+    delivered_at = serializers.DateTimeField(read_only=True)
+    read_at = serializers.DateTimeField(read_only=True)
 
     class Meta:
         model = Message
         fields = [
             "id", "conversation", "sender", "senderType", "senderDisplay", "type", "body", "created_at",
             "attachment_url", "attachment_name", "attachment_mime", "attachment_size",
-            "status"
+            "status", "delivery_status", "delivered_at", "read_at"
         ]
-        read_only_fields = ["id", "sender", "senderType", "senderDisplay", "type", "created_at", "attachment_url"]
+        read_only_fields = ["id", "sender", "senderType", "senderDisplay", "type", "created_at", "attachment_url", "delivery_status", "delivered_at", "read_at"]
 
     def get_attachment_url(self, obj):  # pragma: no cover - simple URL builder
         try:
@@ -222,13 +225,14 @@ class MessageSerializer(serializers.ModelSerializer):
 
     def get_status(self, obj):
         try:
-            if getattr(obj, 'read_at', None):
+            ds = getattr(obj, 'delivery_status', 0) or 0
+            if ds >= 2:
                 return 'read'
-            if getattr(obj, 'delivered_at', None):
+            if ds >= 1:
                 return 'delivered'
-            return 'pending'
+            return 'sent'
         except Exception:
-            return 'delivered'
+            return 'sent'
 
     def create(self, validated_data):
         request = self.context['request']
