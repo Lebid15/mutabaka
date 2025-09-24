@@ -47,6 +47,9 @@ export default function ConversationPage() {
   const listRef = useRef<HTMLDivElement|null>(null);
   const lastIdRef = useRef<number>(0);
   const wsRef = useRef<WebSocket|null>(null);
+  const connRef = useRef<any|null>(null);
+  const pendingAckRef = useRef<Set<number>>(new Set());
+  const ackTimerRef = useRef<any>(null);
   const [lastReadByOther, setLastReadByOther] = useState<number>(0);
   const [input, setInput] = useState<string>("");
   const [sending, setSending] = useState<boolean>(false);
@@ -120,12 +123,38 @@ export default function ConversationPage() {
     return () => { cancelled = true; };
   }, [convId]);
 
-  // Connect WS
+  // Connect WS (with ACK batching + resend on reconnect)
   useEffect(() => {
-    const { socket } = apiClient.connectSocketWithRetry(convId);
-    wsRef.current = socket;
-    if (socket) {
-      socket.onmessage = (ev: MessageEvent) => {
+    const conn = apiClient.connectSocketWithRetry(convId);
+    connRef.current = conn;
+    wsRef.current = conn.socket;
+
+    const flushAck = () => {
+      try {
+        const ids = Array.from(pendingAckRef.current);
+        if (!ids.length) return;
+        // Limit per batch to 300 to align with server broadcast cap
+        const batch = ids.slice(0, 300);
+        // Remove from set before sending; if send fails, re-add
+        batch.forEach(id => pendingAckRef.current.delete(id));
+        const sock = connRef.current?.socket ?? wsRef.current;
+        if (sock && sock.readyState === WebSocket.OPEN) {
+          sock.send(JSON.stringify({ type: 'ack', message_ids: batch }));
+        } else {
+          // re-queue if not open
+          batch.forEach(id => pendingAckRef.current.add(id));
+        }
+      } catch {}
+    };
+
+    conn.on('open', () => {
+      // Ensure ref points to latest socket and flush ACKs; also resend READ
+      wsRef.current = conn.socket;
+      flushAck();
+      try { wsRef.current?.send(JSON.stringify({ type: 'read', last_read_id: lastIdRef.current })); } catch {}
+    });
+
+    conn.on('message', (ev: MessageEvent) => {
         try {
           const data: any = JSON.parse(ev.data);
           // Handle read receipts from the other participant (assume current user is user_a)
@@ -181,6 +210,16 @@ export default function ConversationPage() {
               try {
                 const otherUsername = me?.username === conv?.user_a?.username ? conv?.user_b?.username : conv?.user_a?.username;
                 if (data.sender && data.sender === otherUsername) {
+                  // Queue ACK regardless of visibility
+                  if (typeof msg.id === 'number' && msg.id > 0) {
+                    pendingAckRef.current.add(msg.id);
+                    if (!ackTimerRef.current) {
+                      ackTimerRef.current = setTimeout(() => {
+                        ackTimerRef.current = null;
+                        flushAck();
+                      }, 150);
+                    }
+                  }
                   if (typeof document !== 'undefined' && !document.hidden) {
                     wsRef.current?.send(JSON.stringify({ type: 'read', last_read_id: lastIdRef.current }));
                   }
@@ -226,9 +265,8 @@ export default function ConversationPage() {
             return;
           }
         } catch {}
-      };
-    }
-    return () => { try { socket?.close(); } catch {} };
+      });
+    return () => { try { conn?.close(); } catch {} };
   }, [convId, me?.username]);
 
   // Mark as read on focus
