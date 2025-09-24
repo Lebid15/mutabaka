@@ -520,7 +520,7 @@ export default function Home() {
 
   // Initial auth check and audio priming
   useEffect(() => {
-    (async () => {
+  (async () => {
       try {
         const me = await apiClient.getProfile().catch(() => null);
         if (me) {
@@ -550,7 +550,7 @@ export default function Home() {
       // أضف فقاعة تفاؤلية للمرفق
       const clientId = `attach_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
       const previewText = caption || f.name;
-  setMessages(prev => [...prev, { sender: 'current', text: previewText, client_id: clientId, status: 'sending', kind: 'text', senderDisplay: currentSenderDisplay, attachment: { name: f.name, mime: f.type, size: f.size } }]);
+  setMessages(prev => [...prev, { sender: 'current', text: previewText, client_id: clientId, status: 'sending', delivery_status: 0, kind: 'text', senderDisplay: currentSenderDisplay, attachment: { name: f.name, mime: f.type, size: f.size } }]);
       const doUpload = async (maybeOtp?: string) => {
         try {
           const res = await apiClient.uploadConversationAttachment(selectedConversationId, f, caption || undefined, maybeOtp);
@@ -560,7 +560,7 @@ export default function Home() {
               const m = copy[i];
               if (m.client_id === clientId) {
                 // Patch attachment info and, if no caption was provided, remove the provisional filename text
-                const patched: any = { ...m, id: res.id, status: 'delivered', attachment: { url: res.attachment_url || null, name: res.attachment_name, mime: res.attachment_mime, size: res.attachment_size } };
+                const patched: any = { ...m, id: res.id, attachment: { url: res.attachment_url || null, name: res.attachment_name, mime: res.attachment_mime, size: res.attachment_size } };
                 if (!caption) patched.text = '';
                 copy[i] = patched;
                 break;
@@ -592,7 +592,7 @@ export default function Home() {
     const text = outgoingText.trim();
     setOutgoingText('');
     const clientId = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
-  setMessages(prev => [...prev, { sender: 'current', text, client_id: clientId, status: 'sending', kind: 'text', senderDisplay: currentSenderDisplay }]);
+  setMessages(prev => [...prev, { sender: 'current', text, client_id: clientId, status: 'sending', delivery_status: 0, kind: 'text', senderDisplay: currentSenderDisplay }]);
     try {
       try {
         await apiClient.sendMessage(selectedConversationId, text);
@@ -609,16 +609,10 @@ export default function Home() {
           throw err;
         }
       }
-      setMessages(prev => {
-        const copy = [...prev];
-        for (let i = copy.length - 1; i >= 0; i--) {
-          if (copy[i].sender === 'current' && copy[i].status === 'sending' && copy[i].text === text) {
-            copy[i] = { ...copy[i], status: 'delivered', created_at: copy[i].created_at || new Date().toISOString() } as any;
-            break;
-          }
-        }
-        return copy;
-      });
+      // Do not force 'delivered' locally; wait for backend status
+      setMessages(prev => prev.map(m => (m.sender === 'current' && m.status === 'sending' && m.text === text)
+        ? ({ ...m, created_at: m.created_at || new Date().toISOString() } as any)
+        : m));
     } catch (e:any) {
       pushToast({ type: 'error', msg: e?.message || 'تعذر إرسال الرسالة' });
     }
@@ -1162,7 +1156,7 @@ export default function Home() {
             for (let i = copy.length - 1; i >= 0; i--) {
               const m = copy[i];
               if (m.sender === 'current' && m.status === 'sending' && m.text === txt) {
-                copy[i] = { ...m, status: 'delivered', created_at: m.created_at || new Date().toISOString(), kind: tx ? 'transaction' : 'text', tx: tx || undefined } as any;
+                copy[i] = { ...m, created_at: m.created_at || new Date().toISOString(), kind: tx ? 'transaction' : 'text', tx: tx || undefined } as any;
                 return copy;
               }
             }
@@ -1175,7 +1169,7 @@ export default function Home() {
                 created_at: new Date().toISOString(),
                 kind: tx ? 'transaction' : (data?.kind === 'system' ? 'system' : 'text'),
                 tx: tx || undefined,
-                status: 'delivered',
+                status: 'sent',
                 senderDisplay: senderDisplay || undefined,
               } as any,
             ];
@@ -1190,7 +1184,7 @@ export default function Home() {
               created_at: new Date().toISOString(),
               kind: tx ? 'transaction' : (data?.kind === 'system' ? 'system' : 'text'),
               tx: tx || undefined,
-              status: 'delivered',
+              status: 'sent',
               senderDisplay: senderDisplay || undefined,
             } as any,
           ]));
@@ -1253,9 +1247,10 @@ export default function Home() {
     (async () => {
       try {
         setLoadingMessages(true);
-        const data = await apiClient.getMessages(selectedConversationId);
+  const data = await apiClient.getMessages(selectedConversationId);
         if (!active) return;
         const mapped = (Array.isArray(data) ? data : []).map((m: any) => {
+              const ds: number = (typeof m.delivery_status === 'number' && isFinite(m.delivery_status)) ? m.delivery_status : 0;
               const base: any = {
             id: m.id,
             sender: m.sender && profile && m.sender.id === profile.id ? 'current' : 'other',
@@ -1263,6 +1258,8 @@ export default function Home() {
                 created_at: m.created_at,
                 attachment: (m.attachment_url || m.attachment_name) ? { url: m.attachment_url || null, name: m.attachment_name || undefined, mime: m.attachment_mime || undefined, size: typeof m.attachment_size === 'number' ? m.attachment_size : undefined } : undefined,
                 senderDisplay: (m.senderDisplay || (m.sender && (m.sender.display_name || m.sender.username))) || undefined,
+                delivery_status: ds,
+                status: ds >= 2 ? 'read' : ds >= 1 ? 'delivered' : 'sent',
           };
           if (m.type === 'transaction') {
             const tx = parseTransaction(base.text);
@@ -1365,7 +1362,7 @@ export default function Home() {
                   copy[i] = {
                     ...m,
                     id: typeof payload.id === 'number' ? payload.id : m.id,
-                    status: 'delivered',
+                    // keep status; delivery status will be updated by message.status events
                     created_at: m.created_at || payload.created_at || new Date().toISOString(),
                     kind: tx ? 'transaction' : 'text',
                     tx: tx || undefined,
@@ -1388,7 +1385,7 @@ export default function Home() {
                   created_at: payload.created_at || new Date().toISOString(),
                   kind: tx ? 'transaction' : 'text',
                   tx: tx || undefined,
-                  status: 'delivered',
+                  status: 'sent',
                   id: typeof payload.id === 'number' ? payload.id : undefined,
                   senderDisplay: (profile?.display_name || profile?.username) || undefined,
                   attachment: payload.attachment ? {
@@ -1409,7 +1406,7 @@ export default function Home() {
                 created_at: payload.created_at || new Date().toISOString(),
                 kind: tx ? 'transaction' : 'text',
                 tx: tx || undefined,
-                status: 'delivered',
+                status: 'sent',
                 id: typeof payload.id === 'number' ? payload.id : undefined,
                 senderDisplay: (payload.senderDisplay || payload.display_name) || undefined,
                 attachment: payload.attachment ? {
@@ -1493,7 +1490,30 @@ export default function Home() {
           const isMe = payload.reader && profile && payload.reader === profile.username;
           if (!isMe) {
             const lastId = Number(payload.last_read_id || 0);
-            if (lastId > 0) setMessages(prev => prev.map(m => (m.sender === 'current' && (m.id || 0) <= lastId) ? { ...m, status: 'read' } : m));
+            if (lastId > 0) setMessages(prev => prev.map(m => {
+              if (m.sender === 'current' && (m.id || 0) <= lastId) {
+                const currDs = typeof m.delivery_status === 'number' ? m.delivery_status : (m.status === 'read' ? 2 : m.status === 'delivered' ? 1 : 0);
+                const nextDs = Math.max(currDs, 2);
+                return { ...m, delivery_status: nextDs, status: 'read' };
+              }
+              return m;
+            }));
+          }
+        }
+        // Uniform status updates: message.status from backend
+        if (payload.type === 'message.status') {
+          const idNum: number = typeof payload.id === 'number' ? payload.id : -1;
+          const newStatusStr = payload.status as ('delivered'|'read'|undefined);
+          const ds: number = typeof payload.delivery_status === 'number'
+            ? payload.delivery_status
+            : (newStatusStr === 'read' ? 2 : newStatusStr === 'delivered' ? 1 : -1);
+          if (idNum > 0 && ds >= 0) {
+            setMessages(prev => prev.map(m => {
+              if ((m.id || 0) !== idNum) return m;
+              const currDs = typeof m.delivery_status === 'number' ? m.delivery_status : (m.status === 'read' ? 2 : m.status === 'delivered' ? 1 : 0);
+              const nextDs = Math.max(currDs, ds);
+              return { ...m, delivery_status: nextDs, status: nextDs >= 2 ? 'read' : nextDs >= 1 ? 'delivered' : 'sent' };
+            }));
           }
         }
       } catch {}
@@ -2221,12 +2241,15 @@ export default function Home() {
                             </div>
                             <div className="mt-1 text-[11px] opacity-70 flex items-center gap-1 justify-end" dir="auto">
                               <span dir="ltr">{formatTimeShort(m.created_at)}</span>
-                              {m.sender === 'current' && (
-                                <Ticks
-                                  state={m.status === 'sending' ? 'single' : 'double'}
-                                  className={m.status === 'read' ? 'text-blue-400' : 'text-gray-400'}
-                                />
-                              )}
+                              {m.sender === 'current' && (() => {
+                                const ds = typeof m.delivery_status === 'number' ? m.delivery_status : (m.status === 'read' ? 2 : m.status === 'delivered' ? 1 : (m.status === 'sending' ? 0 : 0));
+                                return (
+                                  <Ticks
+                                    state={ds >= 1 ? 'double' : 'single'}
+                                    className={ds >= 2 ? 'text-blue-400' : 'text-gray-400'}
+                                  />
+                                );
+                              })()}
                             </div>
                           </>
                         )}
