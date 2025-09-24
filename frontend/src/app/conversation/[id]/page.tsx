@@ -17,6 +17,24 @@ type Msg = {
   delivery_status?: 0|1|2;
 };
 
+// Force wrap long uninterrupted sequences: insert zero-width space every N chars in tokens > N
+const HARD_WRAP_LIMIT = 28; // characters per visual line requirement
+function hardWrap(body: string, limit: number = HARD_WRAP_LIMIT): string {
+  if (!body) return '';
+  // Split by whitespace (keep delimiters) so we only process long continuous chunks
+  return body.split(/(\s+)/).map(part => {
+    if (!part) return part;
+    // if whitespace or short token, keep as is
+    if (/^\s+$/.test(part) || part.length <= limit) return part;
+    // Break long token into chunks and join with zero-width space so browser can wrap
+    const pieces: string[] = [];
+    for (let i = 0; i < part.length; i += limit) {
+      pieces.push(part.slice(i, i + limit));
+    }
+    return pieces.join('\u200B');
+  }).join('');
+}
+
 // Simple ticks like WhatsApp: single (not delivered), double gray (delivered), double blue (read)
 function Ticks({ state, className }: { state: 'single'|'double'|'blue'; className?: string }) {
   const base = `inline-block align-middle ${className || ''}`;
@@ -351,12 +369,12 @@ export default function ConversationPage() {
             <div className={"inline-block max-w-[75%] border rounded-2xl px-3 py-2 " + (isMine ? 'bg-emerald-700/30 border-white/10' : 'bg-white/5 border-white/10')}>
               <div className="text-xs text-gray-300 mb-1">{m.sender?.display_name || m.sender?.username || ''}</div>
               <div
-                className="text-sm leading-relaxed whitespace-normal"
+                className="text-sm leading-relaxed whitespace-pre-wrap"
                 dir="auto"
                 style={{ overflowWrap: 'anywhere', wordBreak: 'break-word', maxWidth: '28ch' }}
               >
-                <bdi className="min-w-0 break-all" style={{unicodeBidi:'isolate'}}>
-                  {(m.body || '')}
+                <bdi className="min-w-0" style={{unicodeBidi:'isolate'}}>
+                  {hardWrap(m.body || '')}
                 </bdi>
               </div>
               <div className="mt-1 text-[11px] opacity-70 flex items-center gap-1 justify-end" dir="auto">
