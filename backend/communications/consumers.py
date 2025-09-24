@@ -2,7 +2,7 @@ import json
 import logging
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.contrib.auth.models import AnonymousUser
-from .models import Conversation, Message, ConversationMember, TeamMember, get_conversation_viewer_ids
+from .models import Conversation, Message, ConversationMember, TeamMember, get_conversation_viewer_ids, ConversationReadMarker
 from decimal import Decimal
 from .group_registry import add_channel, remove_channel, get_count
 
@@ -74,6 +74,15 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                     )
                 )
                 last_read_id = max(ids)
+                # Persist read marker (monotonic)
+                try:
+                    await sync_to_async(ConversationReadMarker.objects.update_or_create)(
+                        conversation_id=self.conversation_id,
+                        user_id=user.id,
+                        defaults={"last_read_message_id": last_read_id}
+                    )
+                except Exception:
+                    pass
                 try:
                     logger.info("READ on connect", extra={"event": "read_on_connect", "conv": self.group_name, "user": getattr(user,'username',None), "count": len(ids), "last_read_id": last_read_id})
                 except Exception:
@@ -190,6 +199,17 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                                     default=dj_models.F('delivery_status')
                                 )
                             )
+                            # Update read marker if newer
+                            try:
+                                if ids:
+                                    max_id = max(ids)
+                                    await sync_to_async(ConversationReadMarker.objects.update_or_create)(
+                                        conversation_id=self.conversation_id,
+                                        user_id=user.id,
+                                        defaults={"last_read_message_id": max_id}
+                                    )
+                            except Exception:
+                                pass
                             # Broadcast per-message read status (cap at 300)
                             for mid in ids[:300]:
                                 try:
@@ -256,6 +276,15 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                     default=dj_models.F('delivery_status')
                 )
             )
+            # Update read marker as well (msg.id covers all prior inbound)
+            try:
+                await sync_to_async(ConversationReadMarker.objects.update_or_create)(
+                    conversation_id=self.conversation_id,
+                    user_id=user.id,
+                    defaults={"last_read_message_id": msg.id}
+                )
+            except Exception:
+                pass
         except Exception:
             pass
 

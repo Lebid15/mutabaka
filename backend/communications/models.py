@@ -65,6 +65,29 @@ class Conversation(models.Model):
     def __str__(self):
         return f"Conv({self.user_a}-{self.user_b})"
 
+class ConversationReadMarker(models.Model):
+    """Persist the last read message id per (conversation,user).
+
+    This gives an idempotent, monotonic source of truth so that even if some
+    individual Message.read_at updates were skipped (race / disconnect), the
+    frontend can still render blue ticks permanently (never regress).
+    """
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='read_markers')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='conversation_read_markers')
+    last_read_message_id = models.BigIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("conversation", "user")
+        indexes = [
+            models.Index(fields=["conversation", "user"]),
+            models.Index(fields=["conversation", "last_read_message_id"]),
+        ]
+
+    def __str__(self):  # pragma: no cover
+        return f"ReadMarker(conv={self.conversation_id}, user={self.user_id}, last={self.last_read_message_id})"
+
 class ConversationMute(models.Model):
     """Per-user mute state for a conversation.
 
