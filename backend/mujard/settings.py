@@ -299,3 +299,43 @@ if _csrf_cookie_domain:
 
 # Behind Nginx/Proxy/SSL termination - trust X-Forwarded-Proto for HTTPS detection
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Logging configuration to surface ACK/READ websocket events from communications.consumers
+LOG_LEVEL = os.getenv("DJANGO_LOG_LEVEL", "INFO").upper()
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "chat_verbose": {
+            "format": "%(asctime)s %(levelname)s %(name)s %(message)s"
+        },
+        # Simple structured-ish formatter (extra keys will append at end automatically)
+        "chat_struct": {
+            "format": "%(asctime)s|%(levelname)s|%(name)s|msg=%(message)s"
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "chat_verbose",
+        }
+    },
+    "loggers": {
+        # Our app (covers communications.consumers via propagation)
+        "communications": {
+            "handlers": ["console"],
+            "level": LOG_LEVEL,
+            "propagate": True,
+        },
+        # Ensure Django errors still appear
+        "django": {
+            "handlers": ["console"],
+            "level": "WARNING",
+            "propagate": True,
+        },
+    },
+    "root": {  # catch-all
+        "handlers": ["console"],
+        "level": LOG_LEVEL,
+    },
+}
