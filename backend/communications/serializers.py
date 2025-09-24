@@ -1,7 +1,7 @@
 from rest_framework import serializers
 import re
 from django.contrib.auth import get_user_model
-from .models import ContactRelation, Conversation, Message, Transaction, PushSubscription, ConversationMute, TeamMember, ConversationMember
+from .models import ContactRelation, Conversation, Message, Transaction, PushSubscription, ConversationMute, TeamMember, ConversationMember, ConversationReadMarker
 from finance.models import Currency
 from django.core.exceptions import ValidationError
 
@@ -265,6 +265,15 @@ class MessageSerializer(serializers.ModelSerializer):
                 data['delivery_status'] = 1
                 if data.get('status') == 'sent':
                     data['status'] = 'delivered'
+            # Marker-based freeze: if this message was sent by current viewer AND
+            # counterpart's last_read_message_id >= this id => force read (2)
+            ctx = getattr(self, 'context', {}) or {}
+            viewer_id = ctx.get('viewer_id')
+            other_last_read_id = ctx.get('other_last_read_id') or 0
+            if other_last_read_id and viewer_id and instance.sender_id == viewer_id and instance.id <= other_last_read_id:
+                if data.get('delivery_status', 0) < 2:
+                    data['delivery_status'] = 2
+                    data['status'] = 'read'
         except Exception:
             pass
         return data

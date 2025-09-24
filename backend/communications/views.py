@@ -496,7 +496,21 @@ class ConversationViewSet(viewsets.ModelViewSet):
                 qs = conv.messages.all().order_by('-created_at')[:limit]
         else:
             qs = conv.messages.all().order_by('-created_at')[:limit]
-        return Response(MessageSerializer(qs, many=True, context={'request': request}).data)
+        # Inject counterpart last_read marker so serializer can freeze blue ticks
+        other_last_read_id = 0
+        try:
+            from .models import ConversationReadMarker
+            # Determine counterpart user id (simple 1:1 conversation assumption)
+            if request.user == conv.user_a:
+                other_id = conv.user_b_id
+            else:
+                other_id = conv.user_a_id
+            marker = ConversationReadMarker.objects.filter(conversation_id=conv.id, user_id=other_id).first()
+            if marker:
+                other_last_read_id = int(marker.last_read_message_id or 0)
+        except Exception:
+            pass
+        return Response(MessageSerializer(qs, many=True, context={'request': request, 'other_last_read_id': other_last_read_id, 'viewer_id': request.user.id}).data)
 
     @action(detail=True, methods=['post'])
     def send(self, request, pk=None):
