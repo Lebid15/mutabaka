@@ -17,22 +17,20 @@ type Msg = {
   delivery_status?: 0|1|2;
 };
 
-// Force wrap long uninterrupted sequences: insert zero-width space every N chars in tokens > N
-const HARD_WRAP_LIMIT = 28; // characters per visual line requirement
+// Enforce EXACT fixed-length wrapping: insert a real newline after every N characters (regardless of spaces).
+// This guarantees no line visually exceeds ~N characters on any screen size.
+const HARD_WRAP_LIMIT = 28;
 function hardWrap(body: string, limit: number = HARD_WRAP_LIMIT): string {
   if (!body) return '';
-  // Split by whitespace (keep delimiters) so we only process long continuous chunks
-  return body.split(/(\s+)/).map(part => {
-    if (!part) return part;
-    // if whitespace or short token, keep as is
-    if (/^\s+$/.test(part) || part.length <= limit) return part;
-    // Break long token into chunks and join with zero-width space so browser can wrap
-    const pieces: string[] = [];
-    for (let i = 0; i < part.length; i += limit) {
-      pieces.push(part.slice(i, i + limit));
+  // Preserve existing newlines, but re-chunk each original line.
+  return body.split(/\r?\n/).map(line => {
+    if (line.length <= limit) return line; // short line untouched
+    const out: string[] = [];
+    for (let i = 0; i < line.length; i += limit) {
+      out.push(line.slice(i, i + limit));
     }
-    return pieces.join('\u200B');
-  }).join('');
+    return out.join('\n');
+  }).join('\n');
 }
 
 // Simple ticks like WhatsApp: single (not delivered), double gray (delivered), double blue (read)
