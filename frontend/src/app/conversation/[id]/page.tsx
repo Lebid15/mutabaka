@@ -392,12 +392,13 @@ export default function ConversationPage() {
               </div>
               <div className="mt-1 text-[11px] opacity-70 flex items-center gap-1 justify-end" dir="auto">
                 <span dir="ltr">{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
-                {isMine && (m.type === 'text' || m.type === 'transaction') && (
-                  <Ticks
-                    state={((m.delivery_status ?? 0) <= 0) ? 'single' : (m.id <= lastReadByOther || (m.delivery_status ?? 0) >= 2) ? 'blue' : 'double'}
-                    className={((m.delivery_status ?? 0) <= 0) ? 'text-gray-400' : (m.id <= lastReadByOther || (m.delivery_status ?? 0) >= 2) ? 'text-blue-400' : 'text-gray-400'}
-                  />
-                )}
+                {isMine && (m.type === 'text' || m.type === 'transaction') && (() => {
+                  const ds = m.delivery_status ?? 0; // undefined => pending local => single
+                  const isRead = ds >= 2 || m.id <= lastReadByOther;
+                  const tickState = isRead ? 'blue' : (ds >= 1 ? 'double' : 'single');
+                  const tickClass = isRead ? 'text-blue-400' : 'text-gray-400';
+                  return <Ticks state={tickState as any} className={tickClass} />;
+                })()}
               </div>
             </div>
           </div>
