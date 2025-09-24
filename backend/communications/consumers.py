@@ -44,6 +44,31 @@ class ConversationConsumer(AsyncWebsocketConsumer):
         except Exception:
             pass
         await self.accept()
+        # Upon entering the conversation, mark all inbound messages as read (and delivered)
+        try:
+            from asgiref.sync import sync_to_async
+            from django.utils import timezone
+            from django.db.models import Q, Max
+            last_read_id = None
+            async_filter = sync_to_async(list)
+            # Get ids of messages from others which are not read yet
+            from .models import Message
+            ids = await sync_to_async(list)(
+                Message.objects
+                    .filter(conversation_id=self.conversation_id, read_at__isnull=True)
+                    .exclude(sender_id=user.id)
+                    .order_by('id')
+                    .values_list('id', flat=True)
+            )
+            if ids:
+                now = timezone.now()
+                await sync_to_async(Message.objects.filter(id__in=ids).update)(read_at=now, delivered_at=now)
+                last_read_id = max(ids)
+                # Broadcast chat.read once with last_read_id
+                payload = { 'type': 'chat.read', 'reader': getattr(user, 'username', None), 'last_read_id': int(last_read_id) }
+                await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': payload})
+        except Exception:
+            pass
 
     async def disconnect(self, code):
         if hasattr(self, 'group_name'):
@@ -92,7 +117,8 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                             from asgiref.sync import sync_to_async
                             from django.utils import timezone
                             async_update = sync_to_async(Message.objects.filter(conversation_id=self.conversation_id, id__lte=last_read_id, read_at__isnull=True).exclude(sender_id=user.id).update)
-                            await async_update(read_at=timezone.now())
+                            now = timezone.now()
+                            await async_update(read_at=now, delivered_at=now)
                     except Exception:
                         pass
                     payload = {

@@ -2,6 +2,7 @@ import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.contrib.auth.models import AnonymousUser
 from .group_registry import add_channel, remove_channel, get_count
+from django.db import models
 
 
 class InboxConsumer(AsyncWebsocketConsumer):
@@ -21,6 +22,39 @@ class InboxConsumer(AsyncWebsocketConsumer):
         # optional: send hello
         try:
             await self.send(text_data=json.dumps({'type':'inbox.hello'}))
+        except Exception:
+            pass
+        # Mark undelivered inbound messages as delivered now that user is online (outside conversation)
+        try:
+            from asgiref.sync import sync_to_async
+            from django.utils import timezone
+            from .models import Message, Conversation
+            async_get_convs = sync_to_async(list)
+            convs = await async_get_convs(Conversation.objects.filter(models.Q(user_a_id=self.user_id) | models.Q(user_b_id=self.user_id)).only('id'))
+            now = timezone.now()
+            for c in convs:
+                # Fetch up to last 100 inbound messages that are not yet delivered
+                async_get_ids = sync_to_async(list)
+                ids = await async_get_ids(
+                    Message.objects
+                        .filter(conversation_id=c.id, delivered_at__isnull=True)
+                        .exclude(sender_id=self.user_id)
+                        .order_by('-id')
+                        .values_list('id', flat=True)[:100]
+                )
+                if not ids:
+                    continue
+                async_update = sync_to_async(Message.objects.filter(id__in=ids).update)
+                await async_update(delivered_at=now)
+                # Broadcast per-message status so senders update ticks to double gray
+                for mid in ids:
+                    try:
+                        await self.channel_layer.group_send(f"conv_{c.id}", {
+                            'type': 'broadcast.message',
+                            'data': { 'type': 'message.status', 'id': int(mid), 'status': 'delivered' }
+                        })
+                    except Exception:
+                        pass
         except Exception:
             pass
         try:

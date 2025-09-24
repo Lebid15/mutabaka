@@ -153,7 +153,8 @@ export default function ConversationPage() {
                 const idx = prev.findIndex(m => m.client_id && m.client_id === msg.client_id);
                 if (idx !== -1) {
                   const copy = [...prev];
-                  copy[idx] = { ...copy[idx], id: msg.id, status: 'delivered', created_at: msg.created_at };
+                  // Keep as 'sent' until explicit status events arrive
+                  copy[idx] = { ...copy[idx], id: msg.id, status: 'sent', created_at: msg.created_at };
                   lastIdRef.current = msg.id;
                   setTimeout(()=> listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' }), 0);
                   return copy;
