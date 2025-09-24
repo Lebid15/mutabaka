@@ -632,12 +632,13 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'created_at': msg.created_at.isoformat(),
                     'kind': 'text',
                     'seq': msg.id,
-                    'status': 'sent',  # legacy string for FE
+                    'status': 'delivered',
+                    'delivery_status': 1,
                 }
                 async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': payload})
-                # Emit explicit numeric status=0 as acknowledgment (optional for FE monotonicity)
+                # Emit explicit numeric status=1 for clients listening for status events
                 try:
-                    async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': { 'type': 'message.status', 'id': msg.id, 'delivery_status': 0, 'status': 'sent' }})
+                    async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': { 'type': 'message.status', 'id': msg.id, 'delivery_status': 1, 'status': 'delivered' }})
                 except Exception:
                     pass
                 # Broadcast read updates from this sender's perspective for any prior inbound messages
@@ -868,7 +869,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'created_at': msg.created_at.isoformat(),
                     'kind': 'text',
                     'seq': msg.id,
-                    'status': 'sent',
+                    'status': 'delivered',
+                    'delivery_status': 1,
                     'attachment': {
                         'name': msg.attachment_name,
                         'mime': msg.attachment_mime,
@@ -876,9 +878,9 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     }
                 }
                 async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': payload})
-                # Initial numeric status event (sent)
+                # Initial numeric status event (delivered)
                 try:
-                    async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': { 'type': 'message.status', 'id': msg.id, 'delivery_status': 0, 'status': 'sent' }})
+                    async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': { 'type': 'message.status', 'id': msg.id, 'delivery_status': 1, 'status': 'delivered' }})
                 except Exception:
                     pass
                 # Connectivity-based status

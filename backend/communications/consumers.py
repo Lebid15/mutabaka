@@ -67,7 +67,8 @@ class ConversationConsumer(AsyncWebsocketConsumer):
             if ids:
                 now = timezone.now()
                 await sync_to_async(Message.objects.filter(id__in=ids).update)(
-                    read_at=now, delivered_at=now,
+                    read_at=now,
+                    delivered_at=now,
                     delivery_status=dj_models.Case(
                         dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)),
                         default=dj_models.F('delivery_status')
@@ -193,7 +194,8 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                             async_update = sync_to_async(qs.update)
                             now = timezone.now()
                             await async_update(
-                                read_at=now, delivered_at=now,
+                                read_at=now,
+                                delivered_at=now,
                                 delivery_status=dj_models.Case(
                                     dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)),
                                     default=dj_models.F('delivery_status')
@@ -270,7 +272,8 @@ class ConversationConsumer(AsyncWebsocketConsumer):
             now = timezone.now()
             qs = Message.objects.filter(conversation_id=self.conversation_id, id__lte=msg.id, delivery_status__lt=2).exclude(sender_id=user.id)
             await sync_to_async(qs.update)(
-                read_at=now, delivered_at=now,
+                read_at=now,
+                delivered_at=now,
                 delivery_status=dj_models.Case(
                     dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)),
                     default=dj_models.F('delivery_status')
