@@ -8,8 +8,8 @@ django-jazzmin==3.0.1
 django-cors-headers==4.4.0
 pusher==3.3.2
 python-dotenv==1.0.1
-pywebpush==2.0.0
+pywebpush==2.0.3
 pyotp==2.9.0
 Pillow==10.4.0
-psycopg2-binary==2.9.9
+pywebpush==2.0.3
 argon2-cffi==23.1.0
