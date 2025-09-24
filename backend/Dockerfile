@@ -1,5 +1,7 @@
 # Backend Dockerfile for Mutabaka
-FROM python:3.12-slim
+# Allow overriding base image (to use public mirrors and avoid Docker Hub auth/rate limits)
+ARG BASE_IMAGE=python:3.12-slim
+FROM ${BASE_IMAGE}
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
