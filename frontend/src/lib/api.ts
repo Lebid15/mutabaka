@@ -171,7 +171,13 @@ class APIClient {
 
   getMessages(id: number, limit = 50, offset = 0): Promise<any> {
     // backend currently exposes messages via /api/conversations/{id}/messages/
-    return this.authFetch(`/api/conversations/${id}/messages/?limit=${limit}&offset=${offset}`).then((r: Response) => r.json());
+    return this.authFetch(`/api/conversations/${id}/messages/?limit=${limit}&offset=${offset}`)
+      .then((r: Response) => r.json())
+      .then(data => {
+        if (Array.isArray(data)) return data;
+        if (data && Array.isArray((data as any).results)) return (data as any).results;
+        return [];
+      });
   }
 
   // Optional alternative pagination: before cursor
@@ -179,7 +185,13 @@ class APIClient {
     const params = new URLSearchParams();
     params.set('limit', String(limit));
     if (typeof before === 'number') params.set('before', String(before));
-    return this.authFetch(`/api/conversations/${id}/messages/?${params.toString()}`).then((r: Response) => r.json());
+    return this.authFetch(`/api/conversations/${id}/messages/?${params.toString()}`)
+      .then((r: Response) => r.json())
+      .then(data => {
+        if (Array.isArray(data)) return data;
+        if (data && Array.isArray((data as any).results)) return (data as any).results;
+        return [];
+      });
   }
 
   clearConversation(id: number): Promise<{status:string; deleted_messages:number}> {
@@ -234,7 +246,13 @@ class APIClient {
     const params = new URLSearchParams();
     if (sinceId && sinceId > 0) params.set('since_id', String(sinceId));
     params.set('limit', String(limit));
-    return this.authFetch(`/api/conversations/${id}/messages/?${params.toString()}`).then((r: Response) => r.json());
+    return this.authFetch(`/api/conversations/${id}/messages/?${params.toString()}`)
+      .then((r: Response) => r.json())
+      .then(data => {
+        if (Array.isArray(data)) return data;
+        if (data && Array.isArray((data as any).results)) return (data as any).results;
+        return [];
+      });
   }
 
   createConversation(other_user_id: number): Promise<any> {
