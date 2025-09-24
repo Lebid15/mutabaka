@@ -83,20 +83,13 @@ function parseTransaction(body: string): null | { direction: 'lna'|'lkm'; amount
   } catch { return null; }
 }
 
-// Simple WhatsApp-like ticks (single for pending, double for delivered/read)
-function Ticks({ state, className }: { state: 'single'|'double'; className?: string }) {
+// Two-state ticks (delivered=1 gray, read=2 blue)
+function Ticks({ read, className }: { read: boolean; className?: string }) {
   const base = `inline-block align-middle ${className || ''}`;
-  if (state === 'single') {
-    return (
-      <svg className={base} width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    );
-  }
   return (
-    <svg className={base} width="20" height="18" viewBox="0 0 28 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M26 6L15 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-      <path d="M22 6L11 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <svg className={base} width="22" height="20" viewBox="0 0 32 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M30 6L18 18l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M23 6L11 18l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
@@ -579,7 +572,8 @@ export default function Home() {
             setSubBannerMsg(err.message || 'حسابك بحاجة لاشتراك نشط. يمكنك مراسلة الأدمن فقط.');
             setShowSubBanner(true);
           }
-          setMessages(prev => prev.map(m => m.client_id === clientId ? { ...m, status: 'sent' } as any : m));
+          // Failure path: keep message but already considered delivered=1 (no distinct 'sent' state)
+          setMessages(prev => prev.map(m => m.client_id === clientId ? { ...m, delivery_status: 1 } as any : m));
           pushToast({ type: 'error', msg: err?.message || 'فشل رفع الملف' });
         }
       };
@@ -592,7 +586,7 @@ export default function Home() {
     const text = outgoingText.trim();
     setOutgoingText('');
     const clientId = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
-  setMessages(prev => [...prev, { sender: 'current', text, client_id: clientId, status: 'sending', delivery_status: 0, kind: 'text', senderDisplay: currentSenderDisplay }]);
+  setMessages(prev => [...prev, { sender: 'current', text, client_id: clientId, delivery_status: 1, status: 'delivered', kind: 'text', senderDisplay: currentSenderDisplay }]);
     try {
       try {
         await apiClient.sendMessage(selectedConversationId, text);
@@ -610,8 +604,9 @@ export default function Home() {
         }
       }
       // Do not force 'delivered' locally; wait for backend status
-      setMessages(prev => prev.map(m => (m.sender === 'current' && m.status === 'sending' && m.text === text)
-        ? ({ ...m, created_at: m.created_at || new Date().toISOString() } as any)
+      // Already shown as delivered=1; just ensure created_at filled (no status downgrade/upgrade here)
+      setMessages(prev => prev.map(m => (m.sender === 'current' && m.client_id === clientId)
+        ? ({ ...m, created_at: m.created_at || new Date().toISOString(), delivery_status: 1, status: 'delivered' } as any)
         : m));
     } catch (e:any) {
       pushToast({ type: 'error', msg: e?.message || 'تعذر إرسال الرسالة' });
@@ -1155,8 +1150,8 @@ export default function Home() {
             const copy = [...prev];
             for (let i = copy.length - 1; i >= 0; i--) {
               const m = copy[i];
-              if (m.sender === 'current' && m.status === 'sending' && m.text === txt) {
-                copy[i] = { ...m, created_at: m.created_at || new Date().toISOString(), kind: tx ? 'transaction' : 'text', tx: tx || undefined } as any;
+              if (m.sender === 'current' && m.text === txt) {
+                copy[i] = { ...m, created_at: m.created_at || new Date().toISOString(), kind: tx ? 'transaction' : 'text', tx: tx || undefined, delivery_status: Math.max(m.delivery_status||1, 1), status: (m.delivery_status||1) >=2 ? 'read':'delivered' } as any;
                 return copy;
               }
             }
@@ -1169,7 +1164,8 @@ export default function Home() {
                 created_at: new Date().toISOString(),
                 kind: tx ? 'transaction' : (data?.kind === 'system' ? 'system' : 'text'),
                 tx: tx || undefined,
-                status: 'sent',
+                status: 'delivered',
+                delivery_status: 1,
                 senderDisplay: senderDisplay || undefined,
               } as any,
             ];
@@ -1184,7 +1180,8 @@ export default function Home() {
               created_at: new Date().toISOString(),
               kind: tx ? 'transaction' : (data?.kind === 'system' ? 'system' : 'text'),
               tx: tx || undefined,
-              status: 'sent',
+              status: 'delivered',
+              delivery_status: 1,
               senderDisplay: senderDisplay || undefined,
             } as any,
           ]));
@@ -1358,7 +1355,7 @@ export default function Home() {
               const copy = [...prev];
               for (let i = copy.length - 1; i >= 0; i--) {
                 const m = copy[i];
-                if (m.sender === 'current' && m.status === 'sending' && m.text === txt) {
+                if (m.sender === 'current' && m.text === txt) {
                   copy[i] = {
                     ...m,
                     id: typeof payload.id === 'number' ? payload.id : m.id,
@@ -1385,7 +1382,8 @@ export default function Home() {
                   created_at: payload.created_at || new Date().toISOString(),
                   kind: tx ? 'transaction' : 'text',
                   tx: tx || undefined,
-                  status: 'sent',
+                  status: 'delivered',
+                  delivery_status: 1,
                   id: typeof payload.id === 'number' ? payload.id : undefined,
                   senderDisplay: (profile?.display_name || profile?.username) || undefined,
                   attachment: payload.attachment ? {
@@ -1406,7 +1404,8 @@ export default function Home() {
                 created_at: payload.created_at || new Date().toISOString(),
                 kind: tx ? 'transaction' : 'text',
                 tx: tx || undefined,
-                status: 'sent',
+                status: 'delivered',
+                delivery_status: 1,
                 id: typeof payload.id === 'number' ? payload.id : undefined,
                 senderDisplay: (payload.senderDisplay || payload.display_name) || undefined,
                 attachment: payload.attachment ? {
@@ -2242,13 +2241,9 @@ export default function Home() {
                             <div className="mt-1 text-[11px] opacity-70 flex items-center gap-1 justify-end" dir="auto">
                               <span dir="ltr">{formatTimeShort(m.created_at)}</span>
                               {m.sender === 'current' && (() => {
-                                const ds = typeof m.delivery_status === 'number' ? m.delivery_status : (m.status === 'read' ? 2 : m.status === 'delivered' ? 1 : (m.status === 'sending' ? 0 : 0));
-                                return (
-                                  <Ticks
-                                    state={ds >= 1 ? 'double' : 'single'}
-                                    className={ds >= 2 ? 'text-blue-400' : 'text-gray-400'}
-                                  />
-                                );
+                                                    const ds = typeof m.delivery_status === 'number' ? (m.delivery_status >=2 ? 2 : 1) : (m.status === 'read' ? 2 : 1);
+                                                    const isRead = ds >= 2;
+                                                    return <Ticks read={isRead} className={isRead ? 'text-blue-400' : 'text-gray-400'} />;
                               })()}
                             </div>
                           </>
