@@ -452,6 +452,16 @@ class ConversationViewSet(viewsets.ModelViewSet):
                             default=dj_models.F('delivery_status')
                         )
                     )
+                    # Persist / advance read marker for this user (threshold = last_id)
+                    try:
+                        from .models import ConversationReadMarker
+                        ConversationReadMarker.objects.update_or_create(
+                            conversation_id=conv.id,
+                            user_id=request.user.id,
+                            defaults={'last_read_message_id': int(last_id)}
+                        )
+                    except Exception:
+                        pass
                     # Optional broadcast: per-message read status capped
                     try:
                         from channels.layers import get_channel_layer
