@@ -436,6 +436,43 @@ class ConversationViewSet(viewsets.ModelViewSet):
             )
         except Exception:
             pass
+        # Optional: mark inbound as read when explicitly requested by client on open
+        try:
+            mark_read = request.query_params.get('mark_read') in ['1', 'true', 'True']
+        except Exception:
+            mark_read = False
+        if mark_read:
+            try:
+                last_id = conv.messages.order_by('-id').values_list('id', flat=True).first()
+                if last_id:
+                    conv.messages.exclude(sender_id=request.user.id).filter(id__lte=last_id, delivery_status__lt=2).update(
+                        read_at=timezone.now(), delivered_at=timezone.now(),
+                        delivery_status=dj_models.Case(
+                            dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)),
+                            default=dj_models.F('delivery_status')
+                        )
+                    )
+                    # Optional broadcast: per-message read status capped
+                    try:
+                        from channels.layers import get_channel_layer
+                        from asgiref.sync import async_to_sync
+                        channel_layer = get_channel_layer()
+                        if channel_layer is not None:
+                            group = f"conv_{conv.id}"
+                            ids = list(conv.messages.exclude(sender_id=request.user.id).filter(id__lte=last_id).order_by('-id').values_list('id', flat=True)[:300])
+                            for mid in ids:
+                                async_to_sync(channel_layer.group_send)(group, {
+                                    'type': 'broadcast.message',
+                                    'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 2, 'status': 'read' }
+                                })
+                            async_to_sync(channel_layer.group_send)(group, {
+                                'type': 'broadcast.message',
+                                'data': { 'type': 'chat.read', 'reader': request.user.username, 'last_read_id': int(last_id) }
+                            })
+                    except Exception:
+                        pass
+            except Exception:
+                pass
         since_id = request.query_params.get('since_id')
         before = request.query_params.get('before')
         try:
@@ -510,6 +547,22 @@ class ConversationViewSet(viewsets.ModelViewSet):
             except Exception:
                 pass
         msg = Message.objects.create(**msg_kwargs)
+        # Persist: when user sends a message while viewing a conversation, consider prior inbound as read
+        try:
+            from django.utils import timezone
+            from django.db import models as dj_models
+            inbound_qs = conv.messages.exclude(sender_id=request.user.id).filter(delivery_status__lt=2)
+            ids_read = list(inbound_qs.values_list('id', flat=True)[:300])
+            if ids_read:
+                inbound_qs.update(
+                    read_at=timezone.now(), delivered_at=timezone.now(),
+                    delivery_status=dj_models.Case(
+                        dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)),
+                        default=dj_models.F('delivery_status')
+                    )
+                )
+        except Exception:
+            ids_read = []
         # broadcast via WS for realtime delivery
         try:
             from channels.layers import get_channel_layer
@@ -542,6 +595,20 @@ class ConversationViewSet(viewsets.ModelViewSet):
                 # Emit explicit numeric status=0 as acknowledgment (optional for FE monotonicity)
                 try:
                     async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': { 'type': 'message.status', 'id': msg.id, 'delivery_status': 0, 'status': 'sent' }})
+                except Exception:
+                    pass
+                # Broadcast read updates from this sender's perspective for any prior inbound messages
+                try:
+                    for mid in ids_read:
+                        async_to_sync(channel_layer.group_send)(group, {
+                            'type': 'broadcast.message',
+                            'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 2, 'status': 'read' }
+                        })
+                    if ids_read:
+                        async_to_sync(channel_layer.group_send)(group, {
+                            'type': 'broadcast.message',
+                            'data': { 'type': 'chat.read', 'reader': request.user.username, 'last_read_id': int(max(ids_read)) }
+                        })
                 except Exception:
                     pass
                 # Try to set delivery/read status based on connectivity

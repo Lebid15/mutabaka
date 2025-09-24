@@ -238,6 +238,23 @@ class ConversationConsumer(AsyncWebsocketConsumer):
         # Persist the new message
         msg = await async_create(**kwargs)
 
+        # Failsafe: since user is actively sending in this conversation, mark prior inbound messages as read (monotonic)
+        try:
+            from django.utils import timezone
+            from django.db import models as dj_models
+            from asgiref.sync import sync_to_async
+            now = timezone.now()
+            qs = Message.objects.filter(conversation_id=self.conversation_id, id__lte=msg.id, delivery_status__lt=2).exclude(sender_id=user.id)
+            await sync_to_async(qs.update)(
+                read_at=now, delivered_at=now,
+                delivery_status=dj_models.Case(
+                    dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)),
+                    default=dj_models.F('delivery_status')
+                )
+            )
+        except Exception:
+            pass
+
         # Broadcast chat.message to conversation group
         sender_display = (getattr(tm, 'display_name', '') or getattr(tm, 'username', '')) if tm else (getattr(user, 'display_name', '') or user.username)
         payload = {

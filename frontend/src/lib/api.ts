@@ -169,9 +169,9 @@ class APIClient {
     return this.authFetch('/api/auth/me/').then((r: Response) => r.json());
   }
 
-  getMessages(id: number, limit = 50, offset = 0): Promise<any> {
+  getMessages(id: number, limit = 50, offset = 0, markRead: boolean = false): Promise<any> {
     // backend currently exposes messages via /api/conversations/{id}/messages/
-    return this.authFetch(`/api/conversations/${id}/messages/?limit=${limit}&offset=${offset}`)
+      return this.authFetch(`/api/conversations/${id}/messages/?limit=${limit}&offset=${offset}${markRead ? '&mark_read=1' : ''}`)
       .then((r: Response) => r.json())
       .then(data => {
         if (Array.isArray(data)) return data;
@@ -181,11 +181,11 @@ class APIClient {
   }
 
   // Optional alternative pagination: before cursor
-  getMessagesBefore(id: number, limit = 50, before?: number): Promise<any> {
+  getMessagesBefore(id: number, limit = 50, before?: number, markRead: boolean = false): Promise<any> {
     const params = new URLSearchParams();
     params.set('limit', String(limit));
     if (typeof before === 'number') params.set('before', String(before));
-    return this.authFetch(`/api/conversations/${id}/messages/?${params.toString()}`)
+      return this.authFetch(`/api/conversations/${id}/messages/?${params.toString()}${markRead ? '&mark_read=1' : ''}`)
       .then((r: Response) => r.json())
       .then(data => {
         if (Array.isArray(data)) return data;
@@ -242,11 +242,11 @@ class APIClient {
   }
 
   // Differential fetch: get messages with id > sinceId (ascending)
-  getMessagesSince(id: number, sinceId: number, limit = 200): Promise<any> {
+  getMessagesSince(id: number, sinceId: number, limit = 200, markRead: boolean = false): Promise<any> {
     const params = new URLSearchParams();
     if (sinceId && sinceId > 0) params.set('since_id', String(sinceId));
     params.set('limit', String(limit));
-    return this.authFetch(`/api/conversations/${id}/messages/?${params.toString()}`)
+      return this.authFetch(`/api/conversations/${id}/messages/?${params.toString()}${markRead ? '&mark_read=1' : ''}`)
       .then((r: Response) => r.json())
       .then(data => {
         if (Array.isArray(data)) return data;

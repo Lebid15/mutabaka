@@ -96,7 +96,7 @@ export default function ConversationPage() {
         setLoading(true);
         const [c, msgs, meInfo] = await Promise.all([
           apiClient.getConversation(convId),
-          apiClient.getMessages(convId, 50, 0),
+          apiClient.getMessages(convId, 50, 0, true),
           apiClient.getMe(),
         ]);
         if (cancelled) return;
