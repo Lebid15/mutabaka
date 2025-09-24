@@ -17,38 +17,53 @@ type Msg = {
   delivery_status?: 1|2; // simplified: 1=delivered, 2=read
 };
 
-// Force wrap every HARD_WRAP_LIMIT characters even inside a single long word (Arabic / digits / Latin).
-// We output an array of segments separated by <wbr/> so the browser can break, without inserting visible characters.
+// Force wrap every HARD_WRAP_LIMIT grapheme clusters even inside a single long word.
+// Uses Intl.Segmenter when available to treat emojis + combining marks as single units.
 const HARD_WRAP_LIMIT = 28;
 function hardWrapNodes(body: string, limit: number = HARD_WRAP_LIMIT): React.ReactNode[] {
   if (!body) return [''];
+  let clusters: string[] = [];
+  try {
+    // Prefer grapheme segmentation for accurate visual cluster counting.
+    // Fallback to Array.from (code points) if Segmenter unsupported.
+    // @ts-ignore - dynamic feature detection
+    if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+      // @ts-ignore
+      const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+      // @ts-ignore
+      for (const part of seg.segment(body)) {
+        clusters.push(part.segment);
+      }
+    } else {
+      clusters = Array.from(body); // code points (handles surrogate pairs)
+    }
+  } catch {
+    clusters = Array.from(body);
+  }
+
   const result: React.ReactNode[] = [];
-  let buffer = '';
+  let line: string[] = [];
   let lineCount = 0;
-  for (let i = 0; i < body.length; i++) {
-    const ch = body[i];
-    if (ch === '\n' || ch === '\r') {
-      // Flush current buffer as a line (could be shorter than limit)
-      if (buffer) {
-        result.push(buffer);
-        buffer = '';
+  for (let i = 0; i < clusters.length; i++) {
+    const g = clusters[i];
+    if (g === '\n' || g === '\r') {
+      if (line.length) {
+        result.push(line.join(''));
+        line = [];
       }
       result.push(<br key={`br-explicit-${i}-${lineCount++}`} />);
       continue;
     }
-    buffer += ch;
-    if (buffer.length === limit) {
-      result.push(buffer);
-      buffer = '';
-      // Always break after each exact chunk (hard enforcement)
-      if (i < body.length - 1) {
+    line.push(g);
+    if (line.length === limit) {
+      result.push(line.join(''));
+      line = [];
+      if (i < clusters.length - 1) {
         result.push(<br key={`br-chunk-${i}-${lineCount++}`} />);
       }
     }
   }
-  if (buffer) {
-    result.push(buffer);
-  }
+  if (line.length) result.push(line.join(''));
   return result;
 }
 
@@ -347,7 +362,8 @@ export default function ConversationPage() {
           const idx = prev.findIndex(m => m.client_id === clientId);
           if (idx === -1) return prev;
           const copy = [...prev];
-          copy[idx] = { ...copy[idx], id: resp?.id || copy[idx].id, status: 'sent', created_at: resp?.created_at || copy[idx].created_at };
+          // In two-state model we treat HTTP fallback immediate as delivered (1)
+          copy[idx] = { ...copy[idx], id: resp?.id || copy[idx].id, status: 'delivered', delivery_status: 1, created_at: resp?.created_at || copy[idx].created_at };
           lastIdRef.current = copy[idx].id;
           return copy;
         });
