@@ -535,6 +535,23 @@ class ConversationViewSet(viewsets.ModelViewSet):
                         user_id=other_id,
                         defaults={'last_read_message_id': effective}
                     )
+                    # Also persist read status for my outbound messages up to 'effective' if still stale (DB parity with marker)
+                    from django.utils import timezone
+                    from django.db import models as dj_models
+                    now = timezone.now()
+                    (Message.objects
+                        .filter(conversation_id=conv.id, sender_id=viewer_id, id__lte=effective, delivery_status__lt=2)
+                        .update(
+                            read_at=now,
+                            delivered_at=dj_models.Case(
+                                dj_models.When(delivered_at__isnull=True, then=dj_models.Value(now)),
+                                default=dj_models.F('delivered_at')
+                            ),
+                            delivery_status=dj_models.Case(
+                                dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)),
+                                default=dj_models.F('delivery_status')
+                            )
+                        ))
                 except Exception:
                     pass
         except Exception:

@@ -81,24 +81,26 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                     last_read_id = await sync_to_async(lambda: Message.objects.filter(conversation_id=self.conversation_id).exclude(sender_id=user.id).order_by('-id').values_list('id', flat=True).first())()
                 except Exception:
                     last_read_id = None
-                # Persist read marker (monotonic)
-                try:
-                    await sync_to_async(ConversationReadMarker.objects.update_or_create)(
-                        conversation_id=self.conversation_id,
-                        user_id=user.id,
-                        defaults={"last_read_message_id": last_read_id}
-                    )
-                except Exception:
-                    pass
-                try:
-                    logger.info("READ on connect", extra={"event": "read_on_connect", "conv": self.group_name, "user": getattr(user,'username',None), "count": len(ids), "last_read_id": last_read_id})
-                except Exception:
-                    pass
-                # Broadcast chat.read once with last_read_id
-                if last_read_id:
-                    payload = { 'type': 'chat.read', 'reader': getattr(user, 'username', None), 'last_read_id': int(last_read_id) }
-                    await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': payload})
-                # Also broadcast per-message status for sender ticks (limit to first 300 to avoid flood)
+
+            # Persist / advance read marker (even if no unread messages existed now)
+            try:
+                await sync_to_async(ConversationReadMarker.objects.update_or_create)(
+                    conversation_id=self.conversation_id,
+                    user_id=user.id,
+                    defaults={"last_read_message_id": (last_read_id or 0)}
+                )
+            except Exception:
+                pass
+            try:
+                logger.info("READ on connect", extra={"event": "read_on_connect", "conv": self.group_name, "user": getattr(user,'username',None), "count": len(ids), "last_read_id": last_read_id})
+            except Exception:
+                pass
+            # Broadcast chat.read once with last_read_id (if any)
+            if last_read_id:
+                payload = { 'type': 'chat.read', 'reader': getattr(user, 'username', None), 'last_read_id': int(last_read_id) }
+                await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': payload})
+            # Broadcast per-message status updates (only if we actually upgraded some)
+            if ids:
                 for mid in ids[:300]:
                     try:
                         await self.channel_layer.group_send(self.group_name, {
@@ -208,14 +210,14 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                                     default=dj_models.F('delivery_status')
                                 )
                             )
-                            # Update read marker if newer
+                            # Update read marker even if there were no rows to update (freeze blue ticks on refresh)
                             try:
-                                if ids:
-                                    max_id = max(ids)
+                                max_id = max(ids) if ids else last_read_id
+                                if max_id:
                                     await sync_to_async(ConversationReadMarker.objects.update_or_create)(
                                         conversation_id=self.conversation_id,
                                         user_id=user.id,
-                                        defaults={"last_read_message_id": max_id}
+                                        defaults={"last_read_message_id": int(max_id)}
                                     )
                             except Exception:
                                 pass
