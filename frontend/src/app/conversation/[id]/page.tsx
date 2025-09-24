@@ -107,7 +107,17 @@ export default function ConversationPage() {
           const maxRead = ordered
             .filter((m:any) => m?.sender?.username === myUser && m?.status === 'read')
             .reduce((acc:number, m:any) => Math.max(acc, Number(m.id)||0), 0);
-          if (maxRead > 0) setLastReadByOther(maxRead);
+          // Also consider sessionStorage to freeze blue ticks across reloads
+          let stored = 0;
+          try {
+            if (typeof window !== 'undefined') {
+              const key = `conv_last_read_other_${convId}_${myUser || ''}`;
+              const raw = window.sessionStorage.getItem(key);
+              stored = raw ? Number(raw) : 0;
+            }
+          } catch {}
+          const initial = Math.max(stored || 0, maxRead || 0);
+          if (initial > 0) setLastReadByOther(initial);
         } catch {}
         // Scroll to bottom
         setTimeout(()=> listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' }), 0);
@@ -132,7 +142,16 @@ export default function ConversationPage() {
             // If the event comes from someone other than me, advance the marker
             if (!me?.username || (reader && reader !== me.username)) {
               const lr = Number(data.last_read_id || 0);
-              if (!Number.isNaN(lr)) setLastReadByOther(prev => Math.max(prev, lr));
+              if (!Number.isNaN(lr)) setLastReadByOther(prev => {
+                const next = Math.max(prev, lr);
+                try {
+                  if (typeof window !== 'undefined') {
+                    const key = `conv_last_read_other_${convId}_${me?.username || ''}`;
+                    window.sessionStorage.setItem(key, String(next));
+                  }
+                } catch {}
+                return next;
+              });
             }
             return;
           }
@@ -205,7 +224,16 @@ export default function ConversationPage() {
               return order[next] > order[curr] ? { ...m, status: next } : m;
             }));
             if (newStatus === 'read') {
-              setLastReadByOther(prev => Math.max(prev, id));
+              setLastReadByOther(prev => {
+                const next = Math.max(prev, id);
+                try {
+                  if (typeof window !== 'undefined') {
+                    const key = `conv_last_read_other_${convId}_${me?.username || ''}`;
+                    window.sessionStorage.setItem(key, String(next));
+                  }
+                } catch {}
+                return next;
+              });
             }
             return;
           }
