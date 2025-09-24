@@ -35,7 +35,8 @@ jobs:
         with:
           install: true
           driver-opts: |
-            image=ghcr.io/moby/buildkit:latest
+            image=moby/buildkit:buildx-stable-1
+            network=host
 
       - name: Docker info
         run: docker info
