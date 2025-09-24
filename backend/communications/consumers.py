@@ -1,9 +1,12 @@
 import json
+import logging
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.contrib.auth.models import AnonymousUser
 from .models import Conversation, Message, ConversationMember, TeamMember, get_conversation_viewer_ids
 from decimal import Decimal
 from .group_registry import add_channel, remove_channel, get_count
+
+logger = logging.getLogger(__name__)
 
 class ConversationConsumer(AsyncWebsocketConsumer):
     async def connect(self):
@@ -32,7 +35,7 @@ class ConversationConsumer(AsyncWebsocketConsumer):
         self.group_name = f"conv_{self.conversation_id}"
         try:
             uid = getattr(user, 'id', None)
-            print(f"[WS] connect user={uid} join group={self.group_name}")
+            logger.info("WS connect", extra={"event": "ws_connect", "user_id": uid, "conv": self.group_name})
         except Exception:
             pass
         await self.channel_layer.group_add(self.group_name, self.channel_name)
@@ -40,7 +43,7 @@ class ConversationConsumer(AsyncWebsocketConsumer):
         try:
             cnt = add_channel(self.group_name, self.channel_name)
             uid = getattr(user, 'id', None)
-            print(f"[WS] chat connected user={uid} join group={self.group_name} subscribers={cnt}")
+            logger.info("WS subscribed", extra={"event": "ws_subscribed", "user_id": uid, "conv": self.group_name, "subscribers": cnt})
         except Exception:
             pass
         await self.accept()
@@ -71,6 +74,10 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                     )
                 )
                 last_read_id = max(ids)
+                try:
+                    logger.info("READ on connect", extra={"event": "read_on_connect", "conv": self.group_name, "user": getattr(user,'username',None), "count": len(ids), "last_read_id": last_read_id})
+                except Exception:
+                    pass
                 # Broadcast chat.read once with last_read_id
                 payload = { 'type': 'chat.read', 'reader': getattr(user, 'username', None), 'last_read_id': int(last_read_id) }
                 await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': payload})
@@ -91,7 +98,7 @@ class ConversationConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
             try:
                 cnt = remove_channel(self.group_name, self.channel_name)
-                print(f"[WS] chat disconnect conv={getattr(self, 'group_name', None)} code={code} subscribers={cnt}")
+                logger.info("WS disconnect", extra={"event": "ws_disconnect", "conv": getattr(self, 'group_name', None), "code": code, "subscribers": cnt})
             except Exception:
                 pass
 
@@ -114,42 +121,45 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                 if data.get('type') == 'ack':
                     try:
                         raw_ids = data.get('message_ids') or []
-                        ids = []
+                        requested_ids = []
                         for v in (raw_ids if isinstance(raw_ids, (list, tuple)) else []):
                             try:
-                                ids.append(int(v))
+                                requested_ids.append(int(v))
                             except (TypeError, ValueError):
                                 pass
-                        if ids:
+                        if requested_ids:
                             from asgiref.sync import sync_to_async
                             from django.utils import timezone
                             from django.db import models as dj_models
-                            # Only inbound messages (sent by the other participant) are eligible
-                            qs = Message.objects.filter(conversation_id=self.conversation_id, id__in=ids).exclude(sender_id=user.id)
-                            async_update = sync_to_async(qs.filter(delivery_status__lt=1).update)
-                            now = timezone.now()
-                            applied = await async_update(
-                                delivered_at=now,
-                                delivery_status=dj_models.Case(
-                                    dj_models.When(delivery_status__lt=1, then=dj_models.Value(1)),
-                                    default=dj_models.F('delivery_status')
+                            base_qs = Message.objects.filter(conversation_id=self.conversation_id, id__in=requested_ids).exclude(sender_id=user.id)
+                            # Limit to those still <1
+                            qs = base_qs.filter(delivery_status__lt=1)
+                            ids_to_update = await sync_to_async(list)(qs.values_list('id', flat=True))
+                            applied = 0
+                            if ids_to_update:
+                                now = timezone.now()
+                                applied = await sync_to_async(Message.objects.filter(id__in=ids_to_update).update)(
+                                    delivered_at=now,
+                                    delivery_status=dj_models.Case(
+                                        dj_models.When(delivery_status__lt=1, then=dj_models.Value(1)),
+                                        default=dj_models.F('delivery_status')
+                                    )
                                 )
-                            )
-                            # Broadcast per-message delivered status (cap to 300 ids)
-                            for mid in ids[:300]:
-                                try:
-                                    await self.channel_layer.group_send(self.group_name, {
-                                        'type': 'broadcast.message',
-                                        'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 1, 'status': 'delivered' }
-                                    })
-                                except Exception:
-                                    pass
+                                # Broadcast only for those actually updated
+                                for mid in ids_to_update[:300]:
+                                    try:
+                                        await self.channel_layer.group_send(self.group_name, {
+                                            'type': 'broadcast.message',
+                                            'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 1, 'status': 'delivered' }
+                                        })
+                                    except Exception:
+                                        pass
                             try:
-                                print(f"[WS] ack applied user={getattr(user,'username',None)} conv={self.group_name} count={applied}")
+                                logger.info("ACK recv", extra={"event": "ack_recv", "conv": self.group_name, "user": getattr(user,'username',None), "requested": len(requested_ids), "updated": len(ids_to_update), "applied": applied})
                             except Exception:
                                 pass
                     except Exception:
-                        pass
+                        logger.exception("ACK processing failed")
                     return
                 # typing indicator event
                 if data.get('type') == 'typing':
@@ -196,7 +206,7 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                                 except Exception:
                                     pass
                             try:
-                                print(f"[WS] read applied user={getattr(user,'username',None)} conv={self.group_name} to_id={last_read_id} count={len(ids)})")
+                                logger.info("READ recv", extra={"event": "read_recv", "conv": self.group_name, "user": getattr(user,'username',None), "to_id": last_read_id, "updated": len(ids)})
                             except Exception:
                                 pass
                     except Exception:

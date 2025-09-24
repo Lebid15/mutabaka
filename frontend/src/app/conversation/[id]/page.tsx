@@ -164,6 +164,7 @@ export default function ConversationPage() {
         batch.forEach(id => pendingAckRef.current.delete(id));
         const sock = connRef.current?.socket ?? wsRef.current;
         if (sock && sock.readyState === WebSocket.OPEN) {
+          console.debug('[CHAT] send ACK', batch);
           sock.send(JSON.stringify({ type: 'ack', message_ids: batch }));
         } else {
           // re-queue if not open
@@ -176,7 +177,7 @@ export default function ConversationPage() {
       // Ensure ref points to latest socket and flush ACKs; also resend READ
       wsRef.current = conn.socket;
       flushAck();
-      try { wsRef.current?.send(JSON.stringify({ type: 'read', last_read_id: lastIdRef.current })); } catch {}
+      try { console.debug('[CHAT] send READ on open', lastIdRef.current); wsRef.current?.send(JSON.stringify({ type: 'read', last_read_id: lastIdRef.current })); } catch {}
     });
 
     conn.on('message', (ev: MessageEvent) => {
@@ -246,6 +247,7 @@ export default function ConversationPage() {
                     }
                   }
                   if (typeof document !== 'undefined' && !document.hidden) {
+                    console.debug('[CHAT] send READ after receiving message', lastIdRef.current);
                     wsRef.current?.send(JSON.stringify({ type: 'read', last_read_id: lastIdRef.current }));
                   }
                 }
@@ -298,7 +300,7 @@ export default function ConversationPage() {
   useEffect(() => {
     const onFocus = () => {
       apiClient.readConversation?.(convId).catch(()=>{});
-      try { wsRef.current?.send(JSON.stringify({ type: 'read', last_read_id: lastIdRef.current })); } catch {}
+      try { console.debug('[CHAT] send READ on focus', lastIdRef.current); wsRef.current?.send(JSON.stringify({ type: 'read', last_read_id: lastIdRef.current })); } catch {}
     };
     window.addEventListener('focus', onFocus);
     const id = setTimeout(onFocus, 600); // also try shortly after open
