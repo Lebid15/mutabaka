@@ -403,7 +403,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
         conv = self.get_object()
         # Mark undelivered inbound messages as delivered upon fetch (idempotent, monotonic)
         try:
-            undelivered_qs = conv.messages.filter(delivered_at__isnull=True).exclude(sender_id=request.user.id)
+            # Use delivery_status as the source of truth (not delivered_at NULLability)
+            undelivered_qs = conv.messages.filter(delivery_status__lt=1).exclude(sender_id=request.user.id)
             ids_to_broadcast = list(undelivered_qs.order_by('id').values_list('id', flat=True)[:300])
             if undelivered_qs.exists():
                 undelivered_qs.update(
@@ -531,6 +532,11 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'status': 'sent',  # legacy string for FE
                 }
                 async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': payload})
+                # Emit explicit numeric status=0 as acknowledgment (optional for FE monotonicity)
+                try:
+                    async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': { 'type': 'message.status', 'id': msg.id, 'delivery_status': 0, 'status': 'sent' }})
+                except Exception:
+                    pass
                 # Try to set delivery/read status based on connectivity
                 try:
                     from .group_registry import get_count
@@ -753,6 +759,11 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     }
                 }
                 async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': payload})
+                # Initial numeric status event (sent)
+                try:
+                    async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': { 'type': 'message.status', 'id': msg.id, 'delivery_status': 0, 'status': 'sent' }})
+                except Exception:
+                    pass
                 # Connectivity-based status
                 try:
                     from .group_registry import get_count

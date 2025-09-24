@@ -38,7 +38,7 @@ class InboxConsumer(AsyncWebsocketConsumer):
                 async_get_ids = sync_to_async(list)
                 ids = await async_get_ids(
                     Message.objects
-                        .filter(conversation_id=c.id, delivered_at__isnull=True)
+                        .filter(conversation_id=c.id, delivery_status__lt=1)
                         .exclude(sender_id=self.user_id)
                         .order_by('-id')
                         .values_list('id', flat=True)[:100]

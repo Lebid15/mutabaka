@@ -56,7 +56,7 @@ class ConversationConsumer(AsyncWebsocketConsumer):
             from .models import Message
             ids = await sync_to_async(list)(
                 Message.objects
-                    .filter(conversation_id=self.conversation_id, read_at__isnull=True)
+                    .filter(conversation_id=self.conversation_id, delivery_status__lt=2)
                     .exclude(sender_id=user.id)
                     .order_by('id')
                     .values_list('id', flat=True)
@@ -133,7 +133,7 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                             from asgiref.sync import sync_to_async
                             from django.utils import timezone
                             from django.db import models as dj_models
-                            qs = Message.objects.filter(conversation_id=self.conversation_id, id__lte=last_read_id, read_at__isnull=True).exclude(sender_id=user.id)
+                            qs = Message.objects.filter(conversation_id=self.conversation_id, id__lte=last_read_id, delivery_status__lt=2).exclude(sender_id=user.id)
                             async_update = sync_to_async(qs.update)
                             now = timezone.now()
                             await async_update(
