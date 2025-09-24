@@ -247,6 +247,28 @@ class MessageSerializer(serializers.ModelSerializer):
                 pass
         return super().create(validated_data)
 
+    def to_representation(self, instance):
+        """Guarantee monotonic delivery numeric status derived from timestamps.
+
+        Even if the stored delivery_status were stale (e.g. read_at set but delivery_status accidentally 1),
+        we upgrade it in the API response so the frontend never regresses blue ticks after refresh.
+        """
+        data = super().to_representation(instance)
+        try:
+            read_at = data.get('read_at')
+            delivered_at = data.get('delivered_at')
+            # Force numeric delivery_status based on timestamps (monotonic mapping)
+            if read_at:
+                data['delivery_status'] = 2
+                data['status'] = 'read'
+            elif delivered_at and (data.get('delivery_status') or 0) < 1:
+                data['delivery_status'] = 1
+                if data.get('status') == 'sent':
+                    data['status'] = 'delivered'
+        except Exception:
+            pass
+        return data
+
 class TransactionSerializer(serializers.ModelSerializer):
     currency = CurrencySerializer(read_only=True)
     currency_id = serializers.PrimaryKeyRelatedField(queryset=Currency.objects.all(), source='currency', write_only=True)
