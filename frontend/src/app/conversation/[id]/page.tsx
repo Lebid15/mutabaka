@@ -22,27 +22,33 @@ type Msg = {
 const HARD_WRAP_LIMIT = 28;
 function hardWrapNodes(body: string, limit: number = HARD_WRAP_LIMIT): React.ReactNode[] {
   if (!body) return [''];
-  const lines = body.split(/\r?\n/);
   const result: React.ReactNode[] = [];
-  lines.forEach((line, li) => {
-    if (line.length === 0) {
-      // Preserve empty line
-      if (li > 0) result.push(<br key={`br-empty-${li}`} />);
-      return;
+  let buffer = '';
+  let lineCount = 0;
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (ch === '\n' || ch === '\r') {
+      // Flush current buffer as a line (could be shorter than limit)
+      if (buffer) {
+        result.push(buffer);
+        buffer = '';
+      }
+      result.push(<br key={`br-explicit-${i}-${lineCount++}`} />);
+      continue;
     }
-    // Chunk line irrespective of spaces (spaces remain inside chunks naturally)
-    for (let i = 0; i < line.length; i += limit) {
-      const slice = line.slice(i, i + limit);
-      result.push(slice);
-      // Insert <wbr/> after every chunk except the last of the line to allow wrapping
-      if (i + limit < line.length) {
-        result.push(<wbr key={`wbr-${li}-${i}`} />);
+    buffer += ch;
+    if (buffer.length === limit) {
+      result.push(buffer);
+      buffer = '';
+      // Always break after each exact chunk (hard enforcement)
+      if (i < body.length - 1) {
+        result.push(<br key={`br-chunk-${i}-${lineCount++}`} />);
       }
     }
-    if (li < lines.length - 1) {
-      result.push(<br key={`br-${li}`} />);
-    }
-  });
+  }
+  if (buffer) {
+    result.push(buffer);
+  }
   return result;
 }
 
