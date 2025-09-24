@@ -350,8 +350,14 @@ export default function ConversationPage() {
           <div key={m.id} className={isMine ? 'self-end text-left' : 'self-start text-right'}>
             <div className={"inline-block max-w-[75%] border rounded-2xl px-3 py-2 " + (isMine ? 'bg-emerald-700/30 border-white/10' : 'bg-white/5 border-white/10')}>
               <div className="text-xs text-gray-300 mb-1">{m.sender?.display_name || m.sender?.username || ''}</div>
-              <div className="text-sm leading-relaxed break-words whitespace-normal" dir="auto">
-                <bdi className="min-w-0 break-words" style={{unicodeBidi:'isolate'}}>{(m.body || '')}</bdi>
+              <div
+                className="text-sm leading-relaxed whitespace-normal"
+                dir="auto"
+                style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
+              >
+                <bdi className="min-w-0 break-all" style={{unicodeBidi:'isolate'}}>
+                  {(m.body || '')}
+                </bdi>
               </div>
               <div className="mt-1 text-[11px] opacity-70 flex items-center gap-1 justify-end" dir="auto">
                 <span dir="ltr">{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
