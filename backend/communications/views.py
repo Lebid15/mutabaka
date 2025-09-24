@@ -513,31 +513,30 @@ class ConversationViewSet(viewsets.ModelViewSet):
             from .models import ConversationReadMarker, Message
             other_id = conv.user_b_id if viewer_id == conv.user_a_id else conv.user_a_id
             marker = ConversationReadMarker.objects.filter(conversation_id=conv.id, user_id=other_id).first()
-            if marker and marker.last_read_message_id:
-                other_last_read_id = int(marker.last_read_message_id)
-            if not other_last_read_id:
-                # Fallback 1: max id of viewer's messages that actually have read_at (canonical)
-                fallback = Message.objects.filter(conversation_id=conv.id, sender_id=viewer_id, read_at__isnull=False).order_by('-id').values_list('id', flat=True).first()
-                if fallback:
-                    other_last_read_id = int(fallback)
-                if not other_last_read_id:
-                    # Fallback 2: infer reading if other participant has sent later messages
-                    latest_other_msg_id = Message.objects.filter(conversation_id=conv.id, sender_id=other_id).order_by('-id').values_list('id', flat=True).first()
-                    if latest_other_msg_id:
-                        # All my messages with id <= latest_other_msg_id are considered seen
-                        latest_my_msg_before = Message.objects.filter(conversation_id=conv.id, sender_id=viewer_id, id__lte=latest_other_msg_id).order_by('-id').values_list('id', flat=True).first()
-                        if latest_my_msg_before:
-                            other_last_read_id = int(latest_my_msg_before)
-                # If we derived a value but no marker exists yet, persist it to stabilize future responses
-                if other_last_read_id and not marker:
-                    try:
-                        ConversationReadMarker.objects.update_or_create(
-                            conversation_id=conv.id,
-                            user_id=other_id,
-                            defaults={'last_read_message_id': other_last_read_id}
-                        )
-                    except Exception:
-                        pass
+            marker_val = int(marker.last_read_message_id) if (marker and marker.last_read_message_id) else 0
+            # Fallback 1 (always compute): max id of my messages with read_at
+            fallback1 = Message.objects.filter(conversation_id=conv.id, sender_id=viewer_id, read_at__isnull=False).order_by('-id').values_list('id', flat=True).first()
+            fallback1_val = int(fallback1) if fallback1 else 0
+            # Fallback 2 (always compute): if other has sent newer messages, treat my prior messages as seen
+            latest_other_msg_id = Message.objects.filter(conversation_id=conv.id, sender_id=other_id).order_by('-id').values_list('id', flat=True).first()
+            fallback2_val = 0
+            if latest_other_msg_id:
+                latest_my_before = Message.objects.filter(conversation_id=conv.id, sender_id=viewer_id, id__lte=latest_other_msg_id).order_by('-id').values_list('id', flat=True).first()
+                if latest_my_before:
+                    fallback2_val = int(latest_my_before)
+            # Effective last read is max of all signals
+            effective = max(marker_val, fallback1_val, fallback2_val)
+            other_last_read_id = effective
+            # Persist advancement if effective exceeds stored marker
+            if effective and effective > marker_val:
+                try:
+                    ConversationReadMarker.objects.update_or_create(
+                        conversation_id=conv.id,
+                        user_id=other_id,
+                        defaults={'last_read_message_id': effective}
+                    )
+                except Exception:
+                    pass
         except Exception:
             pass
         return Response(MessageSerializer(qs, many=True, context={'request': request, 'other_last_read_id': other_last_read_id, 'viewer_id': viewer_id}).data)
