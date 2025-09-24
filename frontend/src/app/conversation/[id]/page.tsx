@@ -409,8 +409,10 @@ export default function ConversationPage() {
               <div className="mt-1 text-[11px] opacity-70 flex items-center gap-1 justify-end" dir="auto">
                 <span dir="ltr">{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
                 {isMine && (m.type === 'text' || m.type === 'transaction') && (() => {
+                  // توقفت عن استخدام lastReadByOther لمنع تلوّن الرسالة بالأزرق قبل أن يُسجَّل read فعلياً في قاعدة البيانات.
+                  // الاعتماد الآن فقط على delivery_status القادم من الـ API (الذي يُجمَّد بالـ marker).
                   const ds = m.delivery_status || 1; // default to delivered
-                  const isRead = ds >= 2 || m.id <= lastReadByOther;
+                  const isRead = ds >= 2; // لا استخدام m.id <= lastReadByOther بعد الآن
                   return <Ticks state={isRead ? 'blue' : 'double'} className={isRead ? 'text-blue-400' : 'text-gray-400'} />;
                 })()}
               </div>
