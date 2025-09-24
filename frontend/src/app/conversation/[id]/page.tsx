@@ -353,7 +353,7 @@ export default function ConversationPage() {
               <div
                 className="text-sm leading-relaxed whitespace-normal"
                 dir="auto"
-                style={{ overflowWrap: 'anywhere', wordBreak: 'break-word', maxWidth: '60ch' }}
+                style={{ overflowWrap: 'anywhere', wordBreak: 'break-word', maxWidth: '28ch' }}
               >
                 <bdi className="min-w-0 break-all" style={{unicodeBidi:'isolate'}}>
                   {(m.body || '')}
