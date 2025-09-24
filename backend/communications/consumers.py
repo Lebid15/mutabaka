@@ -175,6 +175,8 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                             from django.utils import timezone
                             from django.db import models as dj_models
                             qs = Message.objects.filter(conversation_id=self.conversation_id, id__lte=last_read_id, delivery_status__lt=2).exclude(sender_id=user.id)
+                            # Capture IDs BEFORE updating, as filter changes after update (delivery_status becomes 2)
+                            ids = await sync_to_async(list)(qs.values_list('id', flat=True))
                             async_update = sync_to_async(qs.update)
                             now = timezone.now()
                             await async_update(
@@ -185,8 +187,7 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                                 )
                             )
                             # Broadcast per-message read status (cap at 300)
-                            ids = await sync_to_async(list)(qs.values_list('id', flat=True)[:300])
-                            for mid in ids:
+                            for mid in ids[:300]:
                                 try:
                                     await self.channel_layer.group_send(self.group_name, {
                                         'type': 'broadcast.message',
@@ -195,7 +196,7 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                                 except Exception:
                                     pass
                             try:
-                                print(f"[WS] read applied user={getattr(user,'username',None)} conv={self.group_name} to_id={last_read_id} count={len(ids)}")
+                                print(f"[WS] read applied user={getattr(user,'username',None)} conv={self.group_name} to_id={last_read_id} count={len(ids)})")
                             except Exception:
                                 pass
                     except Exception:

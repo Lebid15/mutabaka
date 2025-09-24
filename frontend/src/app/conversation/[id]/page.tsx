@@ -108,10 +108,17 @@ export default function ConversationPage() {
         // Initialize last read marker for my messages from persisted status
         try {
           const myUser = meInfo?.username;
-          const maxRead = ordered
+          const maxReadPersisted = ordered
             .filter((m:any) => m?.sender?.username === myUser && ((m?.delivery_status ?? 0) >= 2 || m?.status === 'read'))
             .reduce((acc:number, m:any) => Math.max(acc, Number(m.id)||0), 0);
-          const initial = maxRead || 0;
+          // Also consider sessionStorage fallback (from live WS events) to bridge any short API lag
+          let stored = 0;
+          try {
+            const key = `conv_last_read_other_${convId}_${myUser || ''}`;
+            const raw = typeof window !== 'undefined' ? window.sessionStorage.getItem(key) : null;
+            stored = raw ? Number(raw) || 0 : 0;
+          } catch {}
+          const initial = Math.max(maxReadPersisted || 0, stored || 0);
           if (initial > 0) setLastReadByOther(initial);
         } catch {}
         // Scroll to bottom

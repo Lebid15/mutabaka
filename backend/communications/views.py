@@ -429,6 +429,13 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     pass
         except Exception:
             pass
+        # Consistency guard: ensure any message already marked read_at has delivery_status=2
+        try:
+            conv.messages.filter(read_at__isnull=False, delivery_status__lt=2).update(
+                delivery_status=dj_models.Value(2)
+            )
+        except Exception:
+            pass
         since_id = request.query_params.get('since_id')
         before = request.query_params.get('before')
         try:
