@@ -110,6 +110,47 @@ class ConversationConsumer(AsyncWebsocketConsumer):
             data = json.loads(original)
             if isinstance(data, dict):
                 body = data.get('body', '')
+                # delivery ACK from recipient (idempotent, recipient-owned only)
+                if data.get('type') == 'ack':
+                    try:
+                        raw_ids = data.get('message_ids') or []
+                        ids = []
+                        for v in (raw_ids if isinstance(raw_ids, (list, tuple)) else []):
+                            try:
+                                ids.append(int(v))
+                            except (TypeError, ValueError):
+                                pass
+                        if ids:
+                            from asgiref.sync import sync_to_async
+                            from django.utils import timezone
+                            from django.db import models as dj_models
+                            # Only inbound messages (sent by the other participant) are eligible
+                            qs = Message.objects.filter(conversation_id=self.conversation_id, id__in=ids).exclude(sender_id=user.id)
+                            async_update = sync_to_async(qs.filter(delivery_status__lt=1).update)
+                            now = timezone.now()
+                            applied = await async_update(
+                                delivered_at=now,
+                                delivery_status=dj_models.Case(
+                                    dj_models.When(delivery_status__lt=1, then=dj_models.Value(1)),
+                                    default=dj_models.F('delivery_status')
+                                )
+                            )
+                            # Broadcast per-message delivered status (cap to 300 ids)
+                            for mid in ids[:300]:
+                                try:
+                                    await self.channel_layer.group_send(self.group_name, {
+                                        'type': 'broadcast.message',
+                                        'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 1, 'status': 'delivered' }
+                                    })
+                                except Exception:
+                                    pass
+                            try:
+                                print(f"[WS] ack applied user={getattr(user,'username',None)} conv={self.group_name} count={applied}")
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    return
                 # typing indicator event
                 if data.get('type') == 'typing':
                     state = data.get('state') or 'start'
@@ -153,6 +194,10 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                                     })
                                 except Exception:
                                     pass
+                            try:
+                                print(f"[WS] read applied user={getattr(user,'username',None)} conv={self.group_name} to_id={last_read_id} count={len(ids)}")
+                            except Exception:
+                                pass
                     except Exception:
                         pass
                     payload = {
@@ -178,6 +223,7 @@ class ConversationConsumer(AsyncWebsocketConsumer):
         async_create = sync_to_async(Message.objects.create)
         # Try to attach team member from token in query (if present in scope['token_payload'])
         kwargs = { 'conversation_id': self.conversation_id, 'sender_id': user.id, 'body': body, 'type': msg_type }
+        tm = None
         try:
             token_payload = self.scope.get('token_payload') if hasattr(self.scope, 'get') else None
             acting_team_id = (token_payload or {}).get('team_member_id') if isinstance(token_payload, dict) else None
@@ -187,74 +233,25 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                     kwargs['sender_team_member_id'] = tm.id
         except Exception:
             pass
+
+        # Persist the new message
         msg = await async_create(**kwargs)
+
+        # Broadcast chat.message to conversation group
+        sender_display = (getattr(tm, 'display_name', '') or getattr(tm, 'username', '')) if tm else (getattr(user, 'display_name', '') or user.username)
         payload = {
             'type': 'chat.message',
             'id': msg.id,
-            'conversation_id': int(self.conversation_id),
             'sender': user.username,
-            'senderDisplay': getattr(user, 'display_name', '') or getattr(user, 'username', ''),
-            'body': msg.body,
+            'senderDisplay': sender_display,
+            'body': body,
             'created_at': msg.created_at.isoformat(),
             'kind': msg_type,
-            'client_id': client_id,
-            'seq': msg.id,
-            'status': 'sent',
+                'client_id': client_id,
         }
-        try:
-            recipients = get_count(self.group_name)
-            print(f"[WS] broadcast chat.message conv={self.group_name} id={msg.id} from={user.username} recipients={recipients} client_id={client_id}")
-        except Exception:
-            pass
         await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': payload})
-
-        # Determine delivery/read based on recipient connectivity
-        try:
-            from asgiref.sync import sync_to_async
-            from django.utils import timezone
-            conv = await self.get_conversation()
-            recipient_id = conv.user_b_id if user.id == conv.user_a_id else conv.user_a_id
-            inbox_group = f"user_{recipient_id}"
-            conv_group = self.group_name
-            recipient_online = get_count(inbox_group) > 0
-            recipient_in_conv = get_count(conv_group) > 1  # sender + recipient present
-            # If recipient is in the same conversation: mark read immediately
-            if recipient_in_conv:
-                from django.db import models as dj_models
-                await sync_to_async(Message.objects.filter(id=msg.id).update)(
-                    read_at=timezone.now(), delivered_at=timezone.now(),
-                    delivery_status=dj_models.Case(
-                        dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)),
-                        default=dj_models.F('delivery_status')
-                    )
-                )
-                status_evt = {
-                    'type': 'message.status',
-                    'id': msg.id,
-                    'delivery_status': 2, 'status': 'read',
-                }
-                await self.channel_layer.group_send(conv_group, {'type': 'broadcast.message', 'data': status_evt})
-            elif recipient_online:
-                from django.db import models as dj_models
-                await sync_to_async(Message.objects.filter(id=msg.id).update)(
-                    delivered_at=timezone.now(),
-                    delivery_status=dj_models.Case(
-                        dj_models.When(delivery_status__lt=1, then=dj_models.Value(1)),
-                        default=dj_models.F('delivery_status')
-                    )
-                )
-                status_evt = {
-                    'type': 'message.status',
-                    'id': msg.id,
-                    'delivery_status': 1, 'status': 'delivered',
-                }
-                # Send status back to conversation group so sender updates ticks
-                await self.channel_layer.group_send(conv_group, {'type': 'broadcast.message', 'data': status_evt})
-        except Exception:
-            pass
         # Also notify recipient's inbox channel so their conversation list updates instantly
         try:
-            from asgiref.sync import sync_to_async
             conv = await self.get_conversation()
             for uid in get_conversation_viewer_ids(conv):
                 if uid == user.id:
