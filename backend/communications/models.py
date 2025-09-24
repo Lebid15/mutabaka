@@ -137,6 +137,14 @@ class Message(models.Model):
         return f"Msg({self.type}) {self.sender}: {self.body[:30]}"
     def save(self, *args, **kwargs):
         new = self.pk is None
+        # Auto-upgrade delivery_status based on timestamps (defensive)
+        try:
+            if self.read_at and (self.delivery_status or 0) < 2:
+                self.delivery_status = 2
+            elif self.delivered_at and (self.delivery_status or 0) < 1:
+                self.delivery_status = 1
+        except Exception:
+            pass
         super().save(*args, **kwargs)
         if new:
             Conversation.objects.filter(pk=self.conversation_id).update(
