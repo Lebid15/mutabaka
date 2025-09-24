@@ -17,20 +17,33 @@ type Msg = {
   delivery_status?: 0|1|2;
 };
 
-// Enforce EXACT fixed-length wrapping: insert a real newline after every N characters (regardless of spaces).
-// This guarantees no line visually exceeds ~N characters on any screen size.
+// Force wrap every HARD_WRAP_LIMIT characters even inside a single long word (Arabic / digits / Latin).
+// We output an array of segments separated by <wbr/> so the browser can break, without inserting visible characters.
 const HARD_WRAP_LIMIT = 28;
-function hardWrap(body: string, limit: number = HARD_WRAP_LIMIT): string {
-  if (!body) return '';
-  // Preserve existing newlines, but re-chunk each original line.
-  return body.split(/\r?\n/).map(line => {
-    if (line.length <= limit) return line; // short line untouched
-    const out: string[] = [];
-    for (let i = 0; i < line.length; i += limit) {
-      out.push(line.slice(i, i + limit));
+function hardWrapNodes(body: string, limit: number = HARD_WRAP_LIMIT): React.ReactNode[] {
+  if (!body) return [''];
+  const lines = body.split(/\r?\n/);
+  const result: React.ReactNode[] = [];
+  lines.forEach((line, li) => {
+    if (line.length === 0) {
+      // Preserve empty line
+      if (li > 0) result.push(<br key={`br-empty-${li}`} />);
+      return;
     }
-    return out.join('\n');
-  }).join('\n');
+    // Chunk line irrespective of spaces (spaces remain inside chunks naturally)
+    for (let i = 0; i < line.length; i += limit) {
+      const slice = line.slice(i, i + limit);
+      result.push(slice);
+      // Insert <wbr/> after every chunk except the last of the line to allow wrapping
+      if (i + limit < line.length) {
+        result.push(<wbr key={`wbr-${li}-${i}`} />);
+      }
+    }
+    if (li < lines.length - 1) {
+      result.push(<br key={`br-${li}`} />);
+    }
+  });
+  return result;
 }
 
 // Simple ticks like WhatsApp: single (not delivered), double gray (delivered), double blue (read)
@@ -374,7 +387,7 @@ export default function ConversationPage() {
                 style={{ overflowWrap: 'anywhere', wordBreak: 'break-word', maxWidth: '28ch' }}
               >
                 <bdi className="min-w-0" style={{unicodeBidi:'isolate'}}>
-                  {hardWrap(m.body || '')}
+                  {hardWrapNodes(m.body || '')}
                 </bdi>
               </div>
               <div className="mt-1 text-[11px] opacity-70 flex items-center gap-1 justify-end" dir="auto">
