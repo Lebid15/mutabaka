@@ -131,21 +131,15 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                             from asgiref.sync import sync_to_async
                             from django.utils import timezone
                             from django.db import models as dj_models
-                            base_qs = Message.objects.filter(conversation_id=self.conversation_id, id__in=requested_ids).exclude(sender_id=user.id)
-                            # Limit to those still <1
-                            qs = base_qs.filter(delivery_status__lt=1)
-                            ids_to_update = await sync_to_async(list)(qs.values_list('id', flat=True))
+                            # With status 0 removed, ACK becomes largely informational. We still stamp delivered_at if missing.
+                            base_qs = Message.objects.filter(conversation_id=self.conversation_id, id__in=requested_ids, delivered_at__isnull=True).exclude(sender_id=user.id)
+                            ids_to_update = await sync_to_async(list)(base_qs.values_list('id', flat=True))
                             applied = 0
                             if ids_to_update:
                                 now = timezone.now()
                                 applied = await sync_to_async(Message.objects.filter(id__in=ids_to_update).update)(
-                                    delivered_at=now,
-                                    delivery_status=dj_models.Case(
-                                        dj_models.When(delivery_status__lt=1, then=dj_models.Value(1)),
-                                        default=dj_models.F('delivery_status')
-                                    )
+                                    delivered_at=now
                                 )
-                                # Broadcast only for those actually updated
                                 for mid in ids_to_update[:300]:
                                     try:
                                         await self.channel_layer.group_send(self.group_name, {
@@ -245,10 +239,10 @@ class ConversationConsumer(AsyncWebsocketConsumer):
         except Exception:
             pass
 
-        # Persist the new message
+        # Persist the new message (initial status logically 1=delivered)
         msg = await async_create(**kwargs)
 
-        # Failsafe: since user is actively sending in this conversation, mark prior inbound messages as read (monotonic)
+        # Failsafe: since user is actively sending in this conversation, mark prior inbound messages as read (upgrade to 2)
         try:
             from django.utils import timezone
             from django.db import models as dj_models
@@ -267,7 +261,7 @@ class ConversationConsumer(AsyncWebsocketConsumer):
 
         # Broadcast chat.message to conversation group
         sender_display = (getattr(tm, 'display_name', '') or getattr(tm, 'username', '')) if tm else (getattr(user, 'display_name', '') or user.username)
-        payload = {
+        payload_message = {
             'type': 'chat.message',
             'id': msg.id,
             'sender': user.username,
@@ -275,9 +269,16 @@ class ConversationConsumer(AsyncWebsocketConsumer):
             'body': body,
             'created_at': msg.created_at.isoformat(),
             'kind': msg_type,
-                'client_id': client_id,
+            'client_id': client_id,
+            'delivery_status': 1,
+            'status': 'delivered',
         }
-        await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': payload})
+        await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': payload_message})
+        # Explicit status broadcast (redundant) kept for downstream listeners not capturing initial message
+        try:
+            await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': { 'type': 'message.status', 'id': msg.id, 'delivery_status': 1, 'status': 'delivered' }})
+        except Exception:
+            pass
         # Also notify recipient's inbox channel so their conversation list updates instantly
         try:
             conv = await self.get_conversation()

@@ -102,8 +102,8 @@ class Message(models.Model):
     attachment_mime = models.CharField(max_length=100, blank=True)
     attachment_size = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    # Delivery state: 0=sent, 1=delivered, 2=read (monotonic)
-    delivery_status = models.PositiveSmallIntegerField(default=0)
+    # Delivery state simplified: 1=delivered, 2=read (monotonic). Legacy 0 removed.
+    delivery_status = models.PositiveSmallIntegerField(default=1)
     delivered_at = models.DateTimeField(null=True, blank=True)
     read_at = models.DateTimeField(null=True, blank=True)
 
