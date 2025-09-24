@@ -1,5 +1,6 @@
 # Frontend Dockerfile for Mutabaka (Next.js)
-FROM node:20-alpine AS builder
+ARG BASE_NODE_IMAGE=node:20-alpine
+FROM ${BASE_NODE_IMAGE} AS builder
 WORKDIR /app
 ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY
 ARG NEXT_PUBLIC_API_PROTO
@@ -22,7 +23,7 @@ RUN npm ci || npm install
 COPY . .
 RUN npm run build
 
-FROM node:20-alpine AS runner
+FROM ${BASE_NODE_IMAGE} AS runner
 WORKDIR /app
 ENV NODE_ENV=production \
     PORT=3000 \

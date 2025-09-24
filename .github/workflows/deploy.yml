@@ -61,6 +61,8 @@ jobs:
         with:
           context: ./backend
           file: ./backend/Dockerfile
+          build-args: |
+            BASE_IMAGE=public.ecr.aws/docker/library/python:3.12-slim
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:latest
@@ -74,6 +76,7 @@ jobs:
           build-args: |
             NEXT_PUBLIC_VAPID_PUBLIC_KEY=${{ secrets.VAPID_PUBLIC_KEY }}
             NEXT_PUBLIC_SW_VERSION=${{ github.sha }}
+            BASE_NODE_IMAGE=public.ecr.aws/docker/library/node:20-alpine
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:latest
