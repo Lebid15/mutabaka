@@ -527,21 +527,28 @@ class ConversationViewSet(viewsets.ModelViewSet):
             # Effective last read is max of all signals
             effective = max(marker_val, fallback1_val, fallback2_val)
             other_last_read_id = effective
-            # Persist advancement if effective exceeds stored marker
-            if effective and effective > marker_val:
+            # Reconciliation ALWAYS:
+            # حتى إذا لم يتقدم marker (marker_val) الآن، نضمن أن جميع رسائلي حتى 'effective' تمت ترقيتها إلى READ (2)
+            # هذا يمنع اختفاء العلامتين الزرقاء بعد إعادة التحميل إذا كان marker ترقى سابقاً عبر WS لكن الرسائل نفسها لم تحدث.
+            if effective:
                 try:
-                    ConversationReadMarker.objects.update_or_create(
-                        conversation_id=conv.id,
-                        user_id=other_id,
-                        defaults={'last_read_message_id': effective}
-                    )
-                    # Also persist read status for my outbound messages up to 'effective' if still stale (DB parity with marker)
+                    if effective > marker_val:
+                        ConversationReadMarker.objects.update_or_create(
+                            conversation_id=conv.id,
+                            user_id=other_id,
+                            defaults={'last_read_message_id': effective}
+                        )
                     from django.utils import timezone
                     from django.db import models as dj_models
                     now = timezone.now()
-                    (Message.objects
-                        .filter(conversation_id=conv.id, sender_id=viewer_id, id__lte=effective, delivery_status__lt=2)
-                        .update(
+                    stale_qs = Message.objects.filter(
+                        conversation_id=conv.id,
+                        sender_id=viewer_id,
+                        id__lte=effective,
+                        delivery_status__lt=2
+                    )
+                    if stale_qs.exists():
+                        stale_qs.update(
                             read_at=now,
                             delivered_at=dj_models.Case(
                                 dj_models.When(delivered_at__isnull=True, then=dj_models.Value(now)),
@@ -551,7 +558,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                                 dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)),
                                 default=dj_models.F('delivery_status')
                             )
-                        ))
+                        )
                 except Exception:
                     pass
         except Exception:
