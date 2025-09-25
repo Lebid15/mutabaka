@@ -314,6 +314,20 @@ class ConversationConsumer(AsyncWebsocketConsumer):
             'delivery_status': 1,
             'status': 'delivered',
         }
+        # Instrumentation: log the outgoing realtime payload to diagnose missing recipient updates.
+        try:
+            logger.info("WS chat.message broadcast", extra={
+                "event": "chat_message_broadcast",
+                "conv": self.group_name,
+                "message_id": msg.id,
+                "sender": user.username,
+                "sender_display": sender_display,
+                "has_client_id": bool(client_id),
+                "kind": msg_type,
+                "body_len": len(body or ''),
+            })
+        except Exception:
+            pass
         await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': payload_message})
         # Explicit status broadcast (redundant) kept for downstream listeners not capturing initial message
         try:
