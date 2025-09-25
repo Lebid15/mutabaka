@@ -180,8 +180,31 @@ jobs:
           fi
           # Login to registry in case it is private
           echo ${REGISTRY_TOKEN} | docker login ghcr.io -u ${REGISTRY_USERNAME} --password-stdin
-          docker compose pull
-          docker compose up -d
+          # Optional Docker Hub login to avoid 401/ rate limits for library images
+          if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
+            echo "Attempting Docker Hub login..."
+            echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin || echo "Docker Hub login failed (continuing)"
+          else
+            echo "No Docker Hub creds provided; will fall back to public ECR mirror for library images if pull fails."
+          fi
+          # Pull with retries + fallback substitution to public ECR mirror if unauthorized occurs for nginx/redis/postgres
+          set +e
+          docker compose pull 2>pull.err
+          PULL_RC=$?
+          if grep -qi 'unauthorized' pull.err || [ $PULL_RC -ne 0 ]; then
+            echo "Detected unauthorized/rate-limit while pulling. Applying mirror substitutions..."
+            # Create a temp modified compose file mapping library images to public.ecr.aws mirrors
+            cp docker-compose.yml docker-compose.mirror.yml || true
+            sed -i 's|nginx:1.27-alpine|public.ecr.aws/docker/library/nginx:1.27-alpine|g; s|redis:7-alpine|public.ecr.aws/docker/library/redis:7-alpine|g; s|postgres:16-alpine|public.ecr.aws/docker/library/postgres:16-alpine|g' docker-compose.mirror.yml || true
+            echo "Retrying pull with mirrors..."
+            docker compose -f docker-compose.mirror.yml pull || true
+            echo "Bringing up services with mirror compose (will still use ghcr images for backend/frontend)."
+            docker compose -f docker-compose.mirror.yml up -d || true
+          else
+            echo "Initial pull succeeded. Proceeding to up -d."
+            docker compose up -d
+          fi
+          set -e
           docker image prune -f || true
           EOF
         env:
@@ -194,3 +217,5 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
           REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
           REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
