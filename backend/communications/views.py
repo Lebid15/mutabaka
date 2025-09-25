@@ -445,8 +445,9 @@ class ConversationViewSet(viewsets.ModelViewSet):
             try:
                 last_id = conv.messages.order_by('-id').values_list('id', flat=True).first()
                 if last_id:
+                    now = timezone.now()
                     conv.messages.exclude(sender_id=request.user.id).filter(id__lte=last_id, delivery_status__lt=2).update(
-                        read_at=timezone.now(), delivered_at=timezone.now(),
+                        read_at=now, delivered_at=now,
                         delivery_status=dj_models.Case(
                             dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)),
                             default=dj_models.F('delivery_status')
@@ -470,10 +471,11 @@ class ConversationViewSet(viewsets.ModelViewSet):
                         if channel_layer is not None:
                             group = f"conv_{conv.id}"
                             ids = list(conv.messages.exclude(sender_id=request.user.id).filter(id__lte=last_id).order_by('-id').values_list('id', flat=True)[:300])
+                            read_iso = now.isoformat()
                             for mid in ids:
                                 async_to_sync(channel_layer.group_send)(group, {
                                     'type': 'broadcast.message',
-                                    'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 2, 'status': 'read' }
+                                    'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 2, 'status': 'read', 'read_at': read_iso }
                                 })
                             async_to_sync(channel_layer.group_send)(group, {
                                 'type': 'broadcast.message',
@@ -615,21 +617,25 @@ class ConversationViewSet(viewsets.ModelViewSet):
                 pass
         msg = Message.objects.create(**msg_kwargs)
         # Persist: when user sends a message while viewing a conversation, consider prior inbound as read
+        read_timestamp = None
         try:
             from django.utils import timezone
             from django.db import models as dj_models
             inbound_qs = conv.messages.exclude(sender_id=request.user.id).filter(delivery_status__lt=2)
             ids_read = list(inbound_qs.values_list('id', flat=True)[:300])
             if ids_read:
+                read_now = timezone.now()
                 inbound_qs.update(
-                    read_at=timezone.now(), delivered_at=timezone.now(),
+                    read_at=read_now, delivered_at=read_now,
                     delivery_status=dj_models.Case(
                         dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)),
                         default=dj_models.F('delivery_status')
                     )
                 )
+                read_timestamp = read_now.isoformat()
         except Exception:
             ids_read = []
+            read_timestamp = None
         # broadcast via WS for realtime delivery
         try:
             from channels.layers import get_channel_layer
@@ -667,10 +673,11 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     pass
                 # Broadcast read updates from this sender's perspective for any prior inbound messages
                 try:
+                    read_iso = read_timestamp or timezone.now().isoformat()
                     for mid in ids_read:
                         async_to_sync(channel_layer.group_send)(group, {
                             'type': 'broadcast.message',
-                            'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 2, 'status': 'read' }
+                            'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 2, 'status': 'read', 'read_at': read_iso }
                         })
                     if ids_read:
                         async_to_sync(channel_layer.group_send)(group, {
@@ -689,10 +696,11 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     from django.utils import timezone
                     if recipient_in_conv:
                         # Upgrade to READ (2) monotonic
+                        read_now = timezone.now()
                         Message.objects.filter(id=msg.id).update(delivery_status=dj_models.Case(
                             dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)), default=dj_models.F('delivery_status')
-                        ), read_at=timezone.now(), delivered_at=timezone.now())
-                        async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'delivery_status': 2, 'status':'read'}})
+                        ), read_at=read_now, delivered_at=read_now)
+                        async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'delivery_status': 2, 'status':'read', 'read_at': read_now.isoformat()}})
                     elif recipient_online:
                         # Upgrade to DELIVERED (1) if below
                         Message.objects.filter(id=msg.id).update(delivery_status=dj_models.Case(
@@ -916,10 +924,11 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     recipient_in_conv = get_count(group) > 1
                     from django.utils import timezone
                     if recipient_in_conv:
+                        read_now = timezone.now()
                         Message.objects.filter(id=msg.id).update(delivery_status=dj_models.Case(
                             dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)), default=dj_models.F('delivery_status')
-                        ), read_at=timezone.now(), delivered_at=timezone.now())
-                        async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'delivery_status': 2, 'status':'read'}})
+                        ), read_at=read_now, delivered_at=read_now)
+                        async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'delivery_status': 2, 'status':'read', 'read_at': read_now.isoformat()}})
                     elif recipient_online:
                         Message.objects.filter(id=msg.id).update(delivery_status=dj_models.Case(
                             dj_models.When(delivery_status__lt=1, then=dj_models.Value(1)), default=dj_models.F('delivery_status')
@@ -1095,21 +1104,28 @@ class ConversationViewSet(viewsets.ModelViewSet):
         Also notifies inbox and broadcasts a chat.read event to the conversation group.
         """
         conv = self.get_object()
+        read_status_ids: list[int] = []
+        read_iso: str | None = None
         # Persist read_at for messages from the other participant up to latest id
         try:
             last_msg = conv.messages.order_by('-id').first()
             if last_msg:
                 from django.utils import timezone
                 from django.db import models as dj_models
-                conv.messages.filter(id__lte=last_msg.id).exclude(sender_id=request.user.id).update(
-                    read_at=timezone.now(), delivered_at=timezone.now(),
+                qs = conv.messages.filter(id__lte=last_msg.id).exclude(sender_id=request.user.id)
+                read_status_ids = list(qs.order_by('-id').values_list('id', flat=True)[:300])
+                read_now = timezone.now()
+                qs.update(
+                    read_at=read_now, delivered_at=read_now,
                     delivery_status=dj_models.Case(
                         dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)),
                         default=dj_models.F('delivery_status')
                     )
                 )
+                read_iso = read_now.isoformat()
         except Exception:
-            pass
+            read_status_ids = []
+            read_iso = None
         # Notify via channels/pusher so inbox badge disappears
         try:
             from channels.layers import get_channel_layer
@@ -1132,7 +1148,17 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     last_id = conv.messages.order_by('-id').values_list('id', flat=True).first()
                 except Exception:
                     last_id = None
-                async_to_sync(channel_layer.group_send)(f"conv_{conv.id}", {
+                group_name = f"conv_{conv.id}"
+                if read_status_ids and read_iso:
+                    for mid in read_status_ids:
+                        try:
+                            async_to_sync(channel_layer.group_send)(group_name, {
+                                'type': 'broadcast.message',
+                                'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 2, 'status': 'read', 'read_at': read_iso }
+                            })
+                        except Exception:
+                            pass
+                async_to_sync(channel_layer.group_send)(group_name, {
                     'type': 'broadcast.message',
                     'data': {
                         'type': 'chat.read',

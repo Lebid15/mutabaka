@@ -12,6 +12,8 @@ type Msg = {
   type: 'text'|'system'|'transaction';
   body: string;
   created_at: string;
+  read_at?: string | null;
+  delivered_at?: string | null;
   client_id?: string;
   status?: 'delivered' | 'read';
   delivery_status?: 1|2; // simplified: 1=delivered, 2=read
@@ -235,6 +237,8 @@ export default function ConversationPage() {
               type: data.kind || 'text',
               body: data.body || '',
               created_at: data.created_at || new Date().toISOString(),
+              read_at: typeof data.read_at === 'string' ? data.read_at : undefined,
+              delivered_at: typeof data.delivered_at === 'string' ? data.delivered_at : undefined,
               client_id: data.client_id,
               status: ((data.status as any) === 'read') ? 'read' : 'delivered',
               delivery_status: typeof data.delivery_status === 'number' ? ((data.delivery_status <= 1) ? 1 : 2) as 1|2 : 1,
@@ -246,7 +250,15 @@ export default function ConversationPage() {
                 if (idx !== -1) {
                   const copy = [...prev];
                   // Normalize to delivered (1) immediately (no transient single state)
-                  copy[idx] = { ...copy[idx], id: msg.id, status: (msg.delivery_status === 2 ? 'read' : 'delivered'), delivery_status: (msg.delivery_status === 2 ? 2 : 1), created_at: msg.created_at };
+                  copy[idx] = {
+                    ...copy[idx],
+                    id: msg.id,
+                    status: (msg.delivery_status === 2 ? 'read' : 'delivered'),
+                    delivery_status: (msg.delivery_status === 2 ? 2 : 1),
+                    created_at: msg.created_at,
+                    read_at: typeof msg.read_at === 'string' ? msg.read_at : copy[idx]?.read_at,
+                    delivered_at: typeof msg.delivered_at === 'string' ? msg.delivered_at : copy[idx]?.delivered_at,
+                  };
                   lastIdRef.current = msg.id;
                   setTimeout(()=> listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' }), 0);
                   return copy;
@@ -299,16 +311,28 @@ export default function ConversationPage() {
             const id = Number(data.id);
             const newStatusStr = data.status as ('delivered'|'read'|undefined);
             const ds: number = typeof data.delivery_status === 'number' ? ((data.delivery_status <=1) ? 1 : 2) : (newStatusStr === 'read' ? 2 : newStatusStr === 'delivered' ? 1 : -1);
+            const readAt = (typeof data.read_at === 'string' && data.read_at) ? data.read_at : null;
+            const deliveredAt = (typeof data.delivered_at === 'string' && data.delivered_at) ? data.delivered_at : null;
             if (!id || ds < 0) return;
             setMessages(prev => prev.map(m => {
               if (m.id !== id) return m;
               const currDs = m.delivery_status || (m.status === 'read' ? 2 : 1);
-              if (ds > currDs) {
-                return { ...m, delivery_status: (ds === 2 ? 2 : 1) as 1|2, status: ds === 2 ? 'read' : 'delivered' };
+              let nextDs = Math.max(currDs, ds);
+              const nextReadAt = readAt ? readAt : (m.read_at || null);
+              if (readAt && nextDs < 2) {
+                nextDs = 2;
               }
-              return m;
+              const nextDeliveredAt = deliveredAt || m.delivered_at || (nextDs >= 1 ? (m.delivered_at || null) : m.delivered_at);
+              const isRead = !!nextReadAt || nextDs >= 2;
+              return {
+                ...m,
+                delivery_status: (nextDs >= 2 ? 2 : 1) as 1|2,
+                status: isRead ? 'read' : nextDs >= 1 ? 'delivered' : (m.status || 'delivered'),
+                read_at: nextReadAt || undefined,
+                delivered_at: nextDeliveredAt || undefined,
+              };
             }));
-            if (ds >= 2) {
+            if (readAt && ds >= 2) {
               setLastReadByOther(prev => {
                 const next = Math.max(prev, id);
                 return next;
@@ -347,6 +371,7 @@ export default function ConversationPage() {
       client_id: clientId,
       status: 'delivered',
       delivery_status: 1,
+      read_at: null,
     };
     setMessages(prev => [...prev, temp]);
     setInput("");
@@ -363,7 +388,15 @@ export default function ConversationPage() {
           if (idx === -1) return prev;
           const copy = [...prev];
           // In two-state model we treat HTTP fallback immediate as delivered (1)
-          copy[idx] = { ...copy[idx], id: resp?.id || copy[idx].id, status: 'delivered', delivery_status: 1, created_at: resp?.created_at || copy[idx].created_at };
+          copy[idx] = {
+            ...copy[idx],
+            id: resp?.id || copy[idx].id,
+            status: 'delivered',
+            delivery_status: 1,
+            created_at: resp?.created_at || copy[idx].created_at,
+            read_at: typeof resp?.read_at === 'string' ? resp.read_at : copy[idx]?.read_at,
+            delivered_at: typeof resp?.delivered_at === 'string' ? resp.delivered_at : copy[idx]?.delivered_at,
+          };
           lastIdRef.current = copy[idx].id;
           return copy;
         });
@@ -409,10 +442,10 @@ export default function ConversationPage() {
               <div className="mt-1 text-[11px] opacity-70 flex items-center gap-1 justify-end" dir="auto">
                 <span dir="ltr">{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
                 {isMine && (m.type === 'text' || m.type === 'transaction') && (() => {
-                  // توقفت عن استخدام lastReadByOther لمنع تلوّن الرسالة بالأزرق قبل أن يُسجَّل read فعلياً في قاعدة البيانات.
-                  // الاعتماد الآن فقط على delivery_status القادم من الـ API (الذي يُجمَّد بالـ marker).
-                  const ds = m.delivery_status || 1; // default to delivered
-                  const isRead = ds >= 2; // لا استخدام m.id <= lastReadByOther بعد الآن
+                  // الاعتماد فقط على البيانات الآتية من الخادم: read_at / delivery_status.
+                  const readAt = m.read_at || null;
+                  const ds = typeof m.delivery_status === 'number' ? m.delivery_status : (readAt ? 2 : 1);
+                  const isRead = !!readAt || ds >= 2;
                   return <Ticks state={isRead ? 'blue' : 'double'} className={isRead ? 'text-blue-400' : 'text-gray-400'} />;
                 })()}
               </div>

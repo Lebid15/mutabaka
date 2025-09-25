@@ -101,11 +101,12 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                 await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': payload})
             # Broadcast per-message status updates (only if we actually upgraded some)
             if ids:
+                read_iso = now.isoformat()
                 for mid in ids[:300]:
                     try:
                         await self.channel_layer.group_send(self.group_name, {
                             'type': 'broadcast.message',
-                            'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 2, 'status': 'read' }
+                            'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 2, 'status': 'read', 'read_at': read_iso }
                         })
                     except Exception:
                         pass
@@ -222,11 +223,12 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                             except Exception:
                                 pass
                             # Broadcast per-message read status (cap at 300)
+                            read_iso = now.isoformat()
                             for mid in ids[:300]:
                                 try:
                                     await self.channel_layer.group_send(self.group_name, {
                                         'type': 'broadcast.message',
-                                        'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 2, 'status': 'read' }
+                                        'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 2, 'status': 'read', 'read_at': read_iso }
                                     })
                                 except Exception:
                                     pass
