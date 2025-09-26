@@ -876,6 +876,9 @@ export default function Home() {
     ? 'md:ml-auto ml-0 mt-1 md:mt-0 px-2 py-1 rounded border border-rose-300 hover:bg-rose-100 text-red-00 font-semibold shrink-0'
     : 'md:ml-auto ml-0 mt-1 md:mt-0 px-2 py-1 rounded border border-rose-600/40 bg-gray-500/10 hover:bg-rose-500/20 text-rose-200 font-semibold shrink-0';
   const subscriptionCtaStyle = isLightTheme ? { color: '#da6324ff' } : undefined;
+  const greenActionButtonClass = isLightTheme
+    ? 'rounded-lg border border-[#bce6cf] bg-[#ecfaf3] hover:bg-[#dbf4e7] text-[#1f7c54] shadow-sm'
+    : 'rounded-lg bg-green-500/20 hover:bg-green-500/30 backdrop-blur-sm border border-green-400/30 text-green-300';
   // أزلنا ميزة إظهار/إخفاء حقل المعاملات — ستبقى ظاهرة دائماً
   const contactsSigRef = useRef<string>('');
   const [pendingDeleteByConv, setPendingDeleteByConv] = useState<Record<number, { from: string; at: string }>>({});
@@ -2870,7 +2873,7 @@ export default function Home() {
                   <button
                     onClick={addTransaction}
                     disabled={txLoading}
-                    className="relative group w-9 h-9 flex items-center justify-center rounded-lg bg-green-500/20 hover:bg-green-500/30 disabled:opacity-50 backdrop-blur-sm border border-green-400/30 text-green-300 transition"
+                    className={`relative group w-9 h-9 flex items-center justify-center transition disabled:opacity-50 ${greenActionButtonClass}`}
                     title="حفظ المعاملة"
                   >
                     {txLoading ? (
@@ -2961,7 +2964,7 @@ export default function Home() {
                 />
                   <button
                    onClick={sendChat}
-                   className="w-10 h-10 rounded-lg bg-green-500/20 hover:bg-green-500/30 backdrop-blur-sm border border-green-400/30 flex items-center justify-center text-green-300 transition"
+                   className={`w-10 h-10 flex items-center justify-center transition ${greenActionButtonClass}`}
                    title="إرسال الرسالة"
                  >
                    <svg xmlns='http://www.w3.org/2000/svg' className='h-4 w-4' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>

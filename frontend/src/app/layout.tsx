@@ -28,16 +28,18 @@ export default async function RootLayout({
   const cookieStore = await cookies();
   const cookieTheme = cookieStore.get("app-theme")?.value;
   const initialTheme = cookieTheme === "dark" ? "dark" : "light";
+  const initialThemeColor = initialTheme === "dark" ? "#111B21" : "#FFFFFF";
+  const appleStatusBarStyle = initialTheme === "dark" ? "black" : "default";
 
   return (
     <html lang="ar" dir="rtl" className="h-full" data-theme={initialTheme} suppressHydrationWarning>
       <head>
         <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#0A2E6D" />
-        <meta name="theme-color" media="(prefers-color-scheme: light)" content="#0A2E6D" />
-        <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0A2E6D" />
+        <meta name="theme-color" content={initialThemeColor} />
+        <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FFFFFF" />
+        <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#111B21" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-status-bar-style" content={appleStatusBarStyle} />
       </head>
       <body suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} h-full antialiased transition-colors duration-500`}>
         <ThemeProvider defaultTheme={initialTheme}>
