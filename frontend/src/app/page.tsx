@@ -2489,18 +2489,18 @@ export default function Home() {
               </div>
             )}
             {searchOpen && (
-              <div className="bg-chatPanel/90 border-b border-chatDivider px-4 py-2 flex items-center gap-2">
+              <div className="bg-chatPanel/90 border-b border-chatDivider px-3 py-2 flex items-center gap-1">
                 <input
                   id="inchat_search_input"
                   value={searchQuery}
                   onChange={(e)=>{ setSearchQuery(e.target.value); setActiveMatchIdx(0); }}
                   placeholder="ابحث داخل هذه الدردشة"
-                  className="flex-1 bg-chatBg border border-chatDivider rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-600 text-gray-100"
+                  className="flex-1 min-w-0 bg-chatBg border border-chatDivider rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-600 text-gray-100"
                 />
-                <span className="text-[10px] text-gray-400 min-w-[4rem] text-center">
+                <span className="text-[10px] text-gray-400 min-w-[3rem] text-center px-1">
                   {searchQuery.trim() ? (searchMatches.length ? `${(activeMatchIdx+1)}/${searchMatches.length}` : 'لا نتائج') : ''}
                 </span>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-0.5">
                   {/* removed info button by request */}
                   <button
                     onClick={()=> setActiveMatchIdx(i=> (i-1+Math.max(1,searchMatches.length)) % Math.max(1,searchMatches.length))}
@@ -2508,7 +2508,7 @@ export default function Home() {
                     className="w-7 h-7 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 disabled:opacity-40 border border-white/10 backdrop-blur-sm"
                     title="السابق"
                   >
-                    <svg xmlns='http://www.w3.org/2000/svg' className='h-3.5 w-3.5' viewBox='0 0 20 20' fill='currentColor'><path d='M12.293 16.293a1 1 0 010 1.414l-1.414 1.414a1 1 0 01-1.414 0L2.586 12l6.879-6.879a1 1 0 011.414 0l1.414 1.414a1 1 0 010 1.414L7.414 12l4.879 4.879z'/></svg>
+                    <svg xmlns='http://www.w3.org/2000/svg' className='h-3.5 w-3.5' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'><path d='M15 5l-7 7 7 7'/></svg>
                   </button>
                   <button
                     onClick={()=> setActiveMatchIdx(i=> (i+1) % Math.max(1,searchMatches.length))}
@@ -2516,7 +2516,7 @@ export default function Home() {
                     className="w-7 h-7 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 disabled:opacity-40 border border-white/10 backdrop-blur-sm"
                     title="التالي"
                   >
-                    <svg xmlns='http://www.w3.org/2000/svg' className='h-3.5 w-3.5' viewBox='0 0 20 20' fill='currentColor'><path d='M7.707 3.707a1 1 0 010-1.414L9.121.879a1 1 0 011.414 0L17.414 7l-6.879 6.879a1 1 0 01-1.414 0l-1.414-1.414a1 1 0 010-1.414L12.586 7 7.707 3.707z'/></svg>
+                    <svg xmlns='http://www.w3.org/2000/svg' className='h-3.5 w-3.5' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'><path d='M9 5l7 7-7 7'/></svg>
                   </button>
                   <button onClick={()=>{ setSearchOpen(false); setSearchQuery(''); }} className="w-7 h-7 flex items-center justify-center rounded-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300" title="إغلاق">✕</button>
                 </div>
