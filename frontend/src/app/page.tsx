@@ -455,7 +455,7 @@ export default function Home() {
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [summary, setSummary] = useState<any[]|null>(null);
   const [netBalance, setNetBalance] = useState<any[]|null>(null);
-  const [ws, setWs] = useState<WebSocket|null>(null);
+  const wsRef = useRef<WebSocket|null>(null);
   const [outgoingText, setOutgoingText] = useState('');
   const [pendingAttachment, setPendingAttachment] = useState<File|null>(null);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
@@ -750,7 +750,9 @@ export default function Home() {
       // أضف فقاعة تفاؤلية للمرفق
       const clientId = `attach_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
       const previewText = caption || f.name;
+      const previewLabel = previewFromMessage(caption, { name: f.name });
   setMessages(prev => [...prev, { sender: 'current', text: previewText, client_id: clientId, status: 'sending', delivery_status: 0, kind: 'text', senderDisplay: currentSenderDisplay, attachment: { name: f.name, mime: f.type, size: f.size }, read_at: null }]);
+      applyConversationPreview(selectedConversationId, previewLabel, new Date().toISOString());
       const doUpload = async (maybeOtp?: string) => {
         try {
           const res = await apiClient.uploadConversationAttachment(selectedConversationId, f, caption || undefined, maybeOtp);
@@ -795,7 +797,9 @@ export default function Home() {
     setOutgoingText('');
   resetTextareaHeight();
     const clientId = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+    const previewLabel = previewFromMessage(text);
   setMessages(prev => [...prev, { sender: 'current', text, client_id: clientId, delivery_status: 1, status: 'delivered', kind: 'text', senderDisplay: currentSenderDisplay, read_at: null }]);
+    applyConversationPreview(selectedConversationId, previewLabel, new Date().toISOString());
     try {
       try {
         await apiClient.sendMessage(selectedConversationId, text);
@@ -825,8 +829,9 @@ export default function Home() {
   const onChangeOutgoing = (val: string) => {
     setOutgoingText(val);
     const now = Date.now();
-    if (ws && ws.readyState === WebSocket.OPEN && now - lastTypingSentRef.current > 1200) {
-      try { ws.send(JSON.stringify({ type: 'typing', state: 'start' })); lastTypingSentRef.current = now; } catch {}
+    const socket = wsRef.current;
+    if (socket && socket.readyState === WebSocket.OPEN && now - lastTypingSentRef.current > 1200) {
+      try { socket.send(JSON.stringify({ type: 'typing', state: 'start' })); lastTypingSentRef.current = now; } catch {}
     }
   };
   const [noteModalOpen, setNoteModalOpen] = useState(false);
@@ -921,6 +926,40 @@ export default function Home() {
       pushToast({ type: 'error', msg: 'تعذر تحديث جهات الاتصال' });
     }
   };
+  const previewFromMessage = useCallback((body?: string | null, attachment?: { name?: string | null }) => {
+    const text = (body ?? '').toString().trim();
+    if (text) return text;
+    const name = typeof attachment?.name === 'string' ? attachment.name.trim() : '';
+    if (name) return `📎 ${name}`;
+    return attachment ? '📎 ملف مرفق' : '';
+  }, []);
+
+  const applyConversationPreview = useCallback((convId: number, preview: string, createdAt?: string) => {
+    if (!convId) return;
+    const ts = createdAt || new Date().toISOString();
+    const value = (preview ?? '').toString();
+    const finalPreview = value.trim() || value;
+    setContacts(prev => {
+      if (!Array.isArray(prev) || prev.length === 0) return prev;
+      let changed = false;
+      const next = prev.map(contact => {
+        if (contact.id !== convId) return contact;
+        changed = true;
+        return { ...contact, last_message_preview: finalPreview, last_message_at: ts };
+      });
+      return changed ? next : prev;
+    });
+    setConversations(prev => {
+      if (!Array.isArray(prev) || prev.length === 0) return prev;
+      let changed = false;
+      const next = prev.map(conv => {
+        if (!conv || conv.id !== convId) return conv;
+        changed = true;
+        return { ...conv, last_message_preview: finalPreview, last_message_at: ts };
+      });
+      return changed ? next : prev;
+    });
+  }, [setContacts, setConversations]);
   // أرصدة المحافظ (مثال مبدئي)
   const initialWallet = { USD: 0, TRY: 0, EUR: 0, SYP: 0 };
   const [wallet, setWallet] = useState(initialWallet);
@@ -1421,16 +1460,35 @@ export default function Home() {
   const senderDisplay = incomingDisplay;
   const readAtPayload = (typeof data?.read_at === 'string' && data.read_at) ? data.read_at : null;
   const deliveredAtPayload = (typeof data?.delivered_at === 'string' && data.delivered_at) ? data.delivered_at : null;
+        const messageIdNum = typeof data?.id === 'number' ? data.id : (typeof data?.message_id === 'number' ? data.message_id : null);
         const tx = parseTransaction(txt);
   if (isCurrent) {
           // Reconcile with optimistic 'sending' bubble instead of appending a duplicate
           setMessages(prev => {
             const copy = [...prev];
+            if (messageIdNum) {
+              const existingIdx = copy.findIndex(m => (m.id || 0) === messageIdNum);
+              if (existingIdx !== -1) {
+                const existing = copy[existingIdx];
+                copy[existingIdx] = {
+                  ...existing,
+                  text: txt,
+                  kind: tx ? 'transaction' : (data?.kind === 'system' ? 'system' : 'text'),
+                  tx: tx || undefined,
+                  delivery_status: Math.max(existing.delivery_status || 0, readAtPayload ? 2 : 1),
+                  status: readAtPayload ? 'read' : ((existing.delivery_status || 0) >= 2 ? 'read' : 'delivered'),
+                  read_at: readAtPayload || existing.read_at || null,
+                  delivered_at: deliveredAtPayload || existing.delivered_at || null,
+                } as any;
+                return copy;
+              }
+            }
             for (let i = copy.length - 1; i >= 0; i--) {
               const m = copy[i];
               if (m.sender === 'current' && m.text === txt) {
                 copy[i] = {
                   ...m,
+                  id: messageIdNum ?? m.id,
                   created_at: m.created_at || new Date().toISOString(),
                   kind: tx ? 'transaction' : 'text',
                   tx: tx || undefined,
@@ -1456,26 +1514,49 @@ export default function Home() {
                 read_at: readAtPayload,
                 delivered_at: deliveredAtPayload,
                 senderDisplay: senderDisplay || undefined,
+                id: messageIdNum ?? undefined,
               } as any,
             ];
           });
   } else {
           // Receiver: append the incoming message
-          setMessages(prev => ([
-            ...prev,
-            {
-              sender: 'other',
-              text: txt,
-              created_at: new Date().toISOString(),
-              kind: tx ? 'transaction' : (data?.kind === 'system' ? 'system' : 'text'),
-              tx: tx || undefined,
-              status: readAtPayload ? 'read' : 'delivered',
-              delivery_status: readAtPayload ? 2 : 1,
-              read_at: readAtPayload,
-              delivered_at: deliveredAtPayload,
-              senderDisplay: senderDisplay || undefined,
-            } as any,
-          ]));
+          setMessages(prev => {
+            if (messageIdNum) {
+              const existingIdx = prev.findIndex(m => (m.id || 0) === messageIdNum);
+              if (existingIdx !== -1) {
+                const copy = [...prev];
+                const existing = copy[existingIdx];
+                copy[existingIdx] = {
+                  ...existing,
+                  text: txt,
+                  kind: tx ? 'transaction' : (data?.kind === 'system' ? 'system' : 'text'),
+                  tx: tx || undefined,
+                  status: readAtPayload ? 'read' : 'delivered',
+                  delivery_status: readAtPayload ? 2 : 1,
+                  read_at: readAtPayload,
+                  delivered_at: deliveredAtPayload,
+                  senderDisplay: senderDisplay || existing.senderDisplay || undefined,
+                } as any;
+                return copy;
+              }
+            }
+            return [
+              ...prev,
+              {
+                sender: 'other',
+                text: txt,
+                created_at: new Date().toISOString(),
+                kind: tx ? 'transaction' : (data?.kind === 'system' ? 'system' : 'text'),
+                tx: tx || undefined,
+                status: readAtPayload ? 'read' : 'delivered',
+                delivery_status: readAtPayload ? 2 : 1,
+                read_at: readAtPayload,
+                delivered_at: deliveredAtPayload,
+                senderDisplay: senderDisplay || undefined,
+                id: messageIdNum ?? undefined,
+              } as any,
+            ];
+          });
           // Show centered alert for add/remove member events
           const mc = detectMemberChange(txt);
           if (mc) {
@@ -1636,20 +1717,50 @@ export default function Home() {
           try { console.debug('[CHAT WS]', payload.type, { conversation_id: payload.conversation_id, id: payload.id, client_id: payload.client_id, created_at: payload.created_at }); } catch {}
         }
         // Fallback: if Pusher is not configured, use WS chat.message to update the thread
-  if (payload.type === 'chat.message' && !PUSHER_ENABLED) {
+  if (payload.type === 'chat.message') {
           const incDisplay = (payload?.senderDisplay || payload?.display_name || '').toString();
           const isMine = !!(profile?.username && payload?.sender === profile.username && (!incDisplay || !currentSenderDisplay ? true : incDisplay === (currentSenderDisplay || '')));
           const txt = (payload?.body ?? '').toString();
+          const messageIdNum = typeof payload.id === 'number' ? payload.id : null;
           const tx = parseTransaction(txt);
+          const previewLabel = previewFromMessage(txt, payload?.attachment);
+          const previewConvId = typeof payload.conversation_id === 'number' ? payload.conversation_id : selectedConversationId;
+          if (previewConvId) {
+            applyConversationPreview(previewConvId, previewLabel, payload?.created_at || new Date().toISOString());
+          }
           if (isMine) {
             setMessages(prev => {
               const copy = [...prev];
+              if (messageIdNum) {
+                const existingIdx = copy.findIndex(m => (m.id || 0) === messageIdNum);
+                if (existingIdx !== -1) {
+                  const existing = copy[existingIdx];
+                  copy[existingIdx] = {
+                    ...existing,
+                    text: txt,
+                    kind: tx ? 'transaction' : 'text',
+                    tx: tx || undefined,
+                    senderDisplay: (payload.senderDisplay || payload.display_name || existing.senderDisplay) || undefined,
+                    attachment: payload.attachment ? {
+                      name: payload.attachment.name,
+                      mime: payload.attachment.mime,
+                      size: payload.attachment.size,
+                      url: payload.attachment.url || existing.attachment?.url || undefined,
+                    } : existing.attachment,
+                    read_at: typeof payload.read_at === 'string' ? payload.read_at : existing.read_at,
+                    delivered_at: typeof payload.delivered_at === 'string' ? payload.delivered_at : existing.delivered_at,
+                    delivery_status: Math.max(existing.delivery_status || 0, typeof payload.delivery_status === 'number' ? payload.delivery_status : (payload.read_at ? 2 : 1)),
+                    status: (typeof payload.read_at === 'string' && payload.read_at) ? 'read' : ((existing.delivery_status || 0) >= 2 ? 'read' : 'delivered'),
+                  } as any;
+                  return copy;
+                }
+              }
               for (let i = copy.length - 1; i >= 0; i--) {
                 const m = copy[i];
                 if (m.sender === 'current' && m.text === txt) {
                   copy[i] = {
                     ...m,
-                    id: typeof payload.id === 'number' ? payload.id : m.id,
+                    id: messageIdNum ?? m.id,
                     // keep status; delivery status will be updated by message.status events
                     created_at: m.created_at || payload.created_at || new Date().toISOString(),
                     kind: tx ? 'transaction' : 'text',
@@ -1677,7 +1788,7 @@ export default function Home() {
                   tx: tx || undefined,
                   status: 'delivered',
                   delivery_status: 1,
-                  id: typeof payload.id === 'number' ? payload.id : undefined,
+                  id: messageIdNum ?? undefined,
                   senderDisplay: (profile?.display_name || profile?.username) || undefined,
                   attachment: payload.attachment ? {
                     name: payload.attachment.name,
@@ -1691,28 +1802,55 @@ export default function Home() {
               ];
             });
           } else {
-            setMessages(prev => ([
-              ...prev,
-              {
-                sender: 'other',
-                text: txt,
-                created_at: payload.created_at || new Date().toISOString(),
-                kind: tx ? 'transaction' : 'text',
-                tx: tx || undefined,
-                status: 'delivered',
-                delivery_status: 1,
-                id: typeof payload.id === 'number' ? payload.id : undefined,
-                senderDisplay: (payload.senderDisplay || payload.display_name) || undefined,
-                attachment: payload.attachment ? {
-                  name: payload.attachment.name,
-                  mime: payload.attachment.mime,
-                  size: payload.attachment.size,
-                  url: payload.attachment.url || undefined,
-                } : undefined,
-                read_at: typeof payload.read_at === 'string' ? payload.read_at : null,
-                delivered_at: typeof payload.delivered_at === 'string' ? payload.delivered_at : null,
-              } as any,
-            ]));
+            setMessages(prev => {
+              if (messageIdNum) {
+                const existingIdx = prev.findIndex(m => (m.id || 0) === messageIdNum);
+                if (existingIdx !== -1) {
+                  const copy = [...prev];
+                  const existing = copy[existingIdx];
+                  copy[existingIdx] = {
+                    ...existing,
+                    text: txt,
+                    kind: tx ? 'transaction' : 'text',
+                    tx: tx || undefined,
+                    status: 'delivered',
+                    delivery_status: Math.max(existing.delivery_status || 0, 1),
+                    senderDisplay: (payload.senderDisplay || payload.display_name || existing.senderDisplay) || undefined,
+                    attachment: payload.attachment ? {
+                      name: payload.attachment.name,
+                      mime: payload.attachment.mime,
+                      size: payload.attachment.size,
+                      url: payload.attachment.url || existing.attachment?.url || undefined,
+                    } : existing.attachment,
+                    read_at: typeof payload.read_at === 'string' ? payload.read_at : existing.read_at || null,
+                    delivered_at: typeof payload.delivered_at === 'string' ? payload.delivered_at : existing.delivered_at || null,
+                  } as any;
+                  return copy;
+                }
+              }
+              return [
+                ...prev,
+                {
+                  sender: 'other',
+                  text: txt,
+                  created_at: payload.created_at || new Date().toISOString(),
+                  kind: tx ? 'transaction' : 'text',
+                  tx: tx || undefined,
+                  status: 'delivered',
+                  delivery_status: 1,
+                  id: messageIdNum ?? undefined,
+                  senderDisplay: (payload.senderDisplay || payload.display_name) || undefined,
+                  attachment: payload.attachment ? {
+                    name: payload.attachment.name,
+                    mime: payload.attachment.mime,
+                    size: payload.attachment.size,
+                    url: payload.attachment.url || undefined,
+                  } : undefined,
+                  read_at: typeof payload.read_at === 'string' ? payload.read_at : null,
+                  delivered_at: typeof payload.delivered_at === 'string' ? payload.delivered_at : null,
+                } as any,
+              ];
+            });
             if (tx && selectedConversationId) {
               refreshConvAggregates(selectedConversationId);
             }
@@ -1766,8 +1904,9 @@ export default function Home() {
               try {
                 const idNum = typeof payload.id === 'number' ? payload.id : 0;
                 if (idNum > lastMsgIdRef.current) lastMsgIdRef.current = idNum;
-                if (ws && ws.readyState === WebSocket.OPEN && idNum > 0) {
-                  ws.send(JSON.stringify({ type: 'read', last_read_id: lastMsgIdRef.current }));
+                const socket = wsRef.current || (controller as any).socket || null;
+                if (socket && socket.readyState === WebSocket.OPEN && idNum > 0) {
+                  socket.send(JSON.stringify({ type: 'read', last_read_id: lastMsgIdRef.current }));
                 }
               } catch {}
             }
@@ -1783,6 +1922,26 @@ export default function Home() {
           }
         }
         if (payload.type === 'chat.read') {
+          const reader = typeof payload.reader === 'string' ? payload.reader : null;
+          const lastReadRaw = payload.last_read_id ?? payload.lastReadId ?? payload.lastReadID;
+          const lastReadId = typeof lastReadRaw === 'number' ? lastReadRaw : Number(lastReadRaw);
+          const isFromMe = reader && profile?.username && reader === profile.username;
+          if (!isFromMe && Number.isFinite(lastReadId) && lastReadId > 0) {
+            const readAt = typeof payload.read_at === 'string' ? payload.read_at : (typeof payload.timestamp === 'string' ? payload.timestamp : undefined);
+            setMessages(prev => prev.map(m => {
+              const mid = typeof m.id === 'number' ? m.id : 0;
+              if (mid <= lastReadId && m.sender === 'current') {
+                const nextStatus = m.delivery_status === 2 && m.status === 'read' ? m : {
+                  ...m,
+                  delivery_status: 2,
+                  status: 'read',
+                  read_at: readAt || m.read_at || new Date().toISOString(),
+                };
+                return nextStatus;
+              }
+              return m;
+            }));
+          }
           return;
         }
         // Uniform status updates: message.status from backend
@@ -1817,25 +1976,26 @@ export default function Home() {
         }
       } catch {}
     });
-    controller.on('open', () => { setWs((controller as any).socket || null); });
-    controller.on('close', () => { setWs(null); });
+    controller.on('open', () => { wsRef.current = (controller as any).socket || null; });
+    controller.on('close', () => { wsRef.current = null; });
     // initialize reference immediately in case 'open' fires very fast
-    setWs((controller as any).socket || null);
-    return () => { try { controller.close(); } catch {} };
-  }, [isAuthed, selectedConversationId, profile?.username, mobileView]);
+    wsRef.current = (controller as any).socket || null;
+    return () => { wsRef.current = null; try { controller.close(); } catch {} };
+  }, [isAuthed, selectedConversationId, profile?.username, mobileView, currentSenderDisplay, applyConversationPreview, previewFromMessage]);
 
   // Emit read when window gains focus (if WS is open and we have a last id)
   useEffect(() => {
     const onFocus = () => {
       try {
-        if (ws && ws.readyState === WebSocket.OPEN && lastMsgIdRef.current > 0) {
-          ws.send(JSON.stringify({ type: 'read', last_read_id: lastMsgIdRef.current }));
+        const socket = wsRef.current;
+        if (socket && socket.readyState === WebSocket.OPEN && lastMsgIdRef.current > 0) {
+          socket.send(JSON.stringify({ type: 'read', last_read_id: lastMsgIdRef.current }));
         }
       } catch {}
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [ws]);
+  }, []);
 
   // Zero-polling: لا يوجد استعلام دوري للرسائل؛ WS هو المصدر الوحيد بعد الجلب الأولي.
 
@@ -2776,7 +2936,7 @@ export default function Home() {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
                       sendChat();
-                      setTimeout(()=>{ try{ ws && ws.readyState===WebSocket.OPEN && ws.send(JSON.stringify({ type:'typing', state:'stop'})); }catch{} }, 100);
+                      setTimeout(()=>{ try{ const socket = wsRef.current; if (socket && socket.readyState===WebSocket.OPEN) socket.send(JSON.stringify({ type:'typing', state:'stop'})); }catch{} }, 100);
                     }
                   }}
                   placeholder="اكتب رسالة"
