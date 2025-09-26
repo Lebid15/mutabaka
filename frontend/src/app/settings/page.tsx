@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { apiClient } from '@/lib/api';
 import { VAPID_PUBLIC_KEY } from '@/lib/config';
 import { isSoundEnabled, setSoundEnabled, attachPrimingListeners, setRuntimeSoundUrl, tryPlayMessageSound } from '@/lib/sound';
@@ -17,6 +17,8 @@ export default function SettingsPage() {
   const [otpInput, setOtpInput] = useState('');
   const [totpBusy, setTotpBusy] = useState(false);
   const { isLight, toggleTheme } = useThemeMode();
+  const deferredPromptRef = useRef<any>(null);
+  const [installPromptVisible, setInstallPromptVisible] = useState(false);
 
   const containerClass = isLight
     ? 'min-h-screen bg-[rgb(var(--color-chat-bg))] text-[#3c3127] p-4'
@@ -139,6 +141,36 @@ export default function SettingsPage() {
     } catch (e:any) { alert(e?.message || 'تعذر الإلغاء'); }
   };
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleBeforeInstallPrompt = (event: any) => {
+      event.preventDefault();
+      deferredPromptRef.current = event;
+      setInstallPromptVisible(true);
+    };
+    const handleAppInstalled = () => {
+      deferredPromptRef.current = null;
+      setInstallPromptVisible(false);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
+  const triggerInstallPrompt = useCallback(async () => {
+    const promptEvent = deferredPromptRef.current;
+    if (!promptEvent) return;
+    promptEvent.prompt();
+    try {
+      await promptEvent.userChoice;
+    } catch {}
+    deferredPromptRef.current = null;
+    setInstallPromptVisible(false);
+  }, []);
+
   return (
     <div className={containerClass}>
       <div className={panelClass}>
@@ -211,6 +243,23 @@ export default function SettingsPage() {
               >
                 {isLight ? 'تفعيل الوضع الداكن' : 'تفعيل الوضع الفاتح'}
               </button>
+            </div>
+          </div>
+          <div className={cardClass}>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div>
+                <div className={headingColor}>تثبيت التطبيق</div>
+                <div className={subTextColor}>أضف التطبيق إلى شاشتك الرئيسية لتجربة تشبه التطبيقات الأصلية.</div>
+              </div>
+              {installPromptVisible && (
+                <button
+                  id="installBtn"
+                  onClick={triggerInstallPrompt}
+                  className={pillButton('primary')}
+                >
+                  تثبيت التطبيق
+                </button>
+              )}
             </div>
           </div>
           <div className={cardClass}>

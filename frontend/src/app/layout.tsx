@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { cookies } from "next/headers";
 import "./globals.css";
 import { ThemeProvider } from "./theme-context";
+import ThemeColorUpdater from "./theme-color-updater";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,9 +33,15 @@ export default async function RootLayout({
     <html lang="ar" dir="rtl" className="h-full" data-theme={initialTheme} suppressHydrationWarning>
       <head>
         <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#0A2E6D" />
+        <meta name="theme-color" media="(prefers-color-scheme: light)" content="#0A2E6D" />
+        <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0A2E6D" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
       <body suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} h-full antialiased transition-colors duration-500`}>
         <ThemeProvider defaultTheme={initialTheme}>
+          <ThemeColorUpdater />
           {children}
         </ThemeProvider>
       </body>
