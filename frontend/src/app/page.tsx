@@ -165,7 +165,14 @@ function TransactionBubble({ sender, tx, createdAt, isLight, noteContent }: { se
         <span className={`px-2.5 py-0.5 rounded-full text-[11px] md:text-xs font-semibold ${badgeClass}`}>{tx.direction === 'lna' ? 'لنا' : 'لكم'}</span>
       </div>
       <div className="font-semibold tabular-nums text-sm md:text-base" dir="ltr">{amountLabel} {tx.symbol}</div>
-  {tx.note && <div className="text-[10px] text-gray-200/90 mt-1 whitespace-pre-wrap" dir="rtl">{noteContent ?? tx.note}</div>}
+  {tx.note && (
+        <div
+          className={`text-[10px] mt-1 whitespace-pre-wrap ${isLight ? 'text-gray-700' : 'text-gray-200/90'}`}
+          dir="rtl"
+        >
+          {noteContent ?? tx.note}
+        </div>
+      )}
       {dateLabel && (
         <div className="mt-1 text-[10px] text-gray-400 flex items-center justify-end" dir="ltr">{dateLabel}</div>
       )}
