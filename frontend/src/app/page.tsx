@@ -2339,7 +2339,10 @@ export default function Home() {
             {/* قائمة الدردشات نسخة للجوال */}
             {mobileView === 'list' && (
               <div className="flex flex-col md:hidden h-full">
-                <div className="border-b border-chatDivider bg-chatPanel">
+                <div
+                  className="border-b border-chatDivider bg-chatPanel sticky top-0 z-30"
+                  style={{ top: 'env(safe-area-inset-top, 0px)' }}
+                >
                   <SidebarHeaderAddContact isTeamActor={isTeamActor} onAdded={async (newConv:any)=>{
                     const convs = await apiClient.listConversations();
                     const convArr = Array.isArray(convs) ? convs : [];
@@ -2454,7 +2457,10 @@ export default function Home() {
             {/* واجهة المحادثة */}
             {(selectedConversationId != null && currentContact) && (
               <div className={(mobileView === 'chat' ? 'flex' : 'hidden') + ' md:flex flex-col h-full'}>
-                        <div className="bg-chatPanel px-6 py-3 font-bold border-b border-chatDivider text-sm flex items-center gap-6 flex-wrap relative">
+                        <div
+              className="bg-chatPanel px-6 py-3 font-bold border-b border-chatDivider text-sm flex items-center gap-6 flex-wrap relative sticky top-0 z-30 md:static"
+              style={{ top: 'env(safe-area-inset-top, 0px)' }}
+            >
               {/* شريط أرصدة سريع من منظور هذه المحادثة فقط (موجب = لنا، سالب = لكم) — مخفي عند الدردشة مع admin (أو حسابات إدارية مشابهة) أو عند كون المستخدم الحالي أدمن */}
               {(!isAdminLike(profile?.username) && !isAdminLike(currentContact?.otherUsername)) && (
                 <div dir="rtl" className="flex gap-4 text-xs md:text-sm order-2 md:order-1 w-full md:w-auto justify-between md:justify-start">
@@ -2851,8 +2857,8 @@ export default function Home() {
             </div>
             {/* شريط سفلي موحد (معاملات + رسالة) */}
             <div
-              className="border-t border-chatDivider bg-chatPanel fixed bottom-0 left-0 right-0 md:sticky md:left-auto md:right-auto md:bottom-0 z-50 flex flex-col gap-2 p-3 mb-1"
-              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 4px)' }}
+              className="border-t border-chatDivider bg-chatPanel sticky bottom-0 z-50 flex flex-col gap-2 p-3"
+              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 4px)' }}
             >
               {(!isAdminLike(profile?.username) && !isAdminLike(currentContact?.otherUsername)) && (
                 <div className="flex flex-wrap items-center gap-2 text-xs md:text-sm">
