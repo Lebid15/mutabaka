@@ -30,6 +30,9 @@ export default async function RootLayout({
 
   return (
     <html lang="ar" dir="rtl" className="h-full" data-theme={initialTheme} suppressHydrationWarning>
+      <head>
+        <link rel="manifest" href="/manifest.json" />
+      </head>
       <body suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} h-full antialiased transition-colors duration-500`}>
         <ThemeProvider defaultTheme={initialTheme}>
           {children}

@@ -306,7 +306,7 @@ function SidebarHeaderAddContact({ onAdded, existingUsernames, currentUsername, 
               {!isTeamActor && <a href="/subscriptions" className="block px-3 py-2 text-sm text-gray-100 hover:bg-white/5">الاشتراك</a>}
               {!isTeamActor && <a href="/team" className="block px-3 py-2 text-sm text-gray-100 hover:bg-white/5">فريق العمل</a>}
               <button onClick={() => { onRefreshContacts && onRefreshContacts(); setMenuOpen(false); }} className="w-full text-right px-3 py-2 text-sm text-gray-100 hover:bg-white/5">تحديث جهات الاتصال</button>
-              <button onClick={logout} className="w-full text-right px-3 py-2 text-sm text-red-300 hover:bg-red-500/10">خروج</button>
+              <button onClick={logout} className="w-full text-right px-3 py-2 text-sm text-red-500  hover:bg-[#ef5350]/10">تسجيل الخروج</button>
             </div>
           )}
         </div>
@@ -2317,7 +2317,12 @@ export default function Home() {
             {showSubBanner && (
               <div className="bg-amber-500/15 border-b border-amber-400/40 text-amber-200 px-4 py-2 text-xs flex items-center gap-2 flex-wrap md:flex-nowrap">
                 <span className="flex-1 min-w-0 whitespace-normal break-words leading-5">{subBannerMsg || 'للوصول الكامل لميزات المنصة يرجى الاشتراك. يمكنك مراسلة الأدمن دون قيود.'}</span>
-                <a href="/subscriptions" className="md:ml-auto ml-0 mt-1 md:mt-0 px-2 py-1 rounded bg-amber-500/30 hover:bg-amber-500/40 text-amber-50 border border-amber-400/40 shrink-0">اذهب لصفحة الاشتراك</a>
+                <a
+                  href="/subscriptions"
+                  className="md:ml-auto ml-0 mt-1 md:mt-0 px-2 py-1 rounded border border-rose-300 hover:bg-rose-100 text-red-00 font-semibold shrink-0"
+                >
+                  اذهب لصفحة الاشتراك
+                </a>
                 <button onClick={()=> setShowSubBanner(false)} className="text-amber-200 hover:text-white shrink-0">✕</button>
               </div>
             )}
@@ -2519,7 +2524,7 @@ export default function Home() {
                       }
                     }
                   }}
-                  className="hover:text-white transition"
+                  className="hover:text-orange-500 transition"
                   title="أعضاء المحادثة"
                 >
                   <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' className='h-4 w-4' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
@@ -2529,7 +2534,7 @@ export default function Home() {
                     <path d='M16 3.13a4 4 0 010 7.75' />
                   </svg>
                 </button>
-                <button onClick={()=>{ setSearchOpen(s=>!s); if (!searchOpen) setTimeout(()=>{ const el = document.getElementById('inchat_search_input'); el && (el as HTMLInputElement).focus(); }, 50); }} className="hover:text-white transition" title="بحث">
+                <button onClick={()=>{ setSearchOpen(s=>!s); if (!searchOpen) setTimeout(()=>{ const el = document.getElementById('inchat_search_input'); el && (el as HTMLInputElement).focus(); }, 50); }} className="hover:text-orange-500 transition" title="بحث">
                   <svg xmlns='http://www.w3.org/2000/svg' className='h-4 w-4' viewBox='0 0 20 20' fill='currentColor'><path fillRule='evenodd' d='M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z' clipRule='evenodd'/></svg>
                 </button>
                 {/* info button removed by request */}
