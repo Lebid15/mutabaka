@@ -141,11 +141,11 @@ function Ticks({ read, className }: { read: boolean; className?: string }) {
   );
 }
 
-function TransactionBubble({ sender, tx, createdAt, isLight }: { sender: 'current'|'other'; tx: { direction: 'lna'|'lkm'; amount: number; currency: string; symbol: string; note?: string }, createdAt?: string; isLight?: boolean }) {
+function TransactionBubble({ sender, tx, createdAt, isLight, noteContent }: { sender: 'current'|'other'; tx: { direction: 'lna'|'lkm'; amount: number; currency: string; symbol: string; note?: string }, createdAt?: string; isLight?: boolean; noteContent?: React.ReactNode }) {
   const isMine = sender === 'current';
   const wrapClass = isMine
-    ? `self-start bg-bubbleSent ${isLight ? 'text-gray-900' : 'text-gray-100'} px-3 py-2 rounded-2xl rounded-bl-sm w-full max-w-[180px] md:max-w-[220px] text-xs shadow break-words`
-    : `self-end bg-bubbleReceived ${isLight ? 'text-gray-900' : 'text-white'} px-3 py-2 rounded-2xl rounded-br-sm w-full max-w-[180px] md:max-w-[220px] text-xs shadow break-words`;
+    ? `self-start bg-bubbleSent ${isLight ? 'text-gray-900' : 'text-gray-100'} px-3 py-2 rounded-2xl rounded-bl-sm inline-flex flex-col w-fit max-w-[180px] md:max-w-[220px] text-xs shadow break-words`
+    : `self-end bg-bubbleReceived ${isLight ? 'text-gray-900' : 'text-white'} px-3 py-2 rounded-2xl rounded-br-sm inline-flex flex-col w-fit max-w-[180px] md:max-w-[220px] text-xs shadow break-words`;
   const badgeClass = tx.direction === 'lna'
     ? (isLight ? 'bg-green-100 text-green-700' : 'bg-green-600/30 text-green-200')
     : (isLight ? 'bg-red-100 text-red-700' : 'bg-red-600/30 text-red-200');
@@ -162,10 +162,10 @@ function TransactionBubble({ sender, tx, createdAt, isLight }: { sender: 'curren
           <path d='M5 5h14v14H5z'/>
         </svg>
         <span className="font-bold">معاملة</span>
-        <span className={`px-2 py-0.5 rounded-full text-[10px] ${badgeClass}`}>{tx.direction === 'lna' ? 'لنا' : 'لكم'}</span>
+        <span className={`px-2.5 py-0.5 rounded-full text-[11px] md:text-xs font-semibold ${badgeClass}`}>{tx.direction === 'lna' ? 'لنا' : 'لكم'}</span>
       </div>
-      <div className="font-semibold tabular-nums" dir="ltr">{amountLabel} {tx.symbol}</div>
-  {tx.note && <div className="text-[10px] text-gray-200/90 mt-1 whitespace-pre-wrap" dir="rtl">{tx.note}</div>}
+      <div className="font-semibold tabular-nums text-sm md:text-base" dir="ltr">{amountLabel} {tx.symbol}</div>
+  {tx.note && <div className="text-[10px] text-gray-200/90 mt-1 whitespace-pre-wrap" dir="rtl">{noteContent ?? tx.note}</div>}
       {dateLabel && (
         <div className="mt-1 text-[10px] text-gray-400 flex items-center justify-end" dir="ltr">{dateLabel}</div>
       )}
@@ -943,14 +943,55 @@ export default function Home() {
     const re = new RegExp(escapeRegExp(q), 'i');
     const matches: { key: string; index: number }[] = [];
     messages.forEach((m, idx) => {
-      const content = (m.kind === 'transaction' && m.tx?.note) ? m.tx.note : m.text;
-      if (content && re.test(content)) {
+      const surfaces: string[] = [];
+      if (m.kind === 'transaction' && m.tx) {
+        if (typeof m.tx.note === 'string') surfaces.push(m.tx.note);
+        const amount = Number.isFinite(m.tx.amount) ? Math.abs(m.tx.amount) : null;
+        if (amount !== null) {
+          surfaces.push(`${amount} ${m.tx.symbol || ''}`.trim());
+        }
+        if (typeof m.text === 'string') surfaces.push(m.text);
+      } else if (typeof m.text === 'string') {
+        surfaces.push(m.text);
+      }
+      if (surfaces.some(surface => surface && re.test(surface))) {
         const key = String(m.id ?? `i_${idx}`);
         matches.push({ key, index: idx });
       }
     });
     return matches;
   }, [messages, searchQuery]);
+
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      if (activeMatchIdx !== 0) setActiveMatchIdx(0);
+      return;
+    }
+    if (searchMatches.length === 0) {
+      if (activeMatchIdx !== 0) setActiveMatchIdx(0);
+      return;
+    }
+    if (activeMatchIdx >= searchMatches.length) {
+      setActiveMatchIdx(0);
+    }
+  }, [activeMatchIdx, searchMatches, searchQuery]);
+
+  useEffect(() => {
+    if (!searchQuery.trim() || searchMatches.length === 0) return;
+    const idx = Math.min(activeMatchIdx, searchMatches.length - 1);
+    const targetKey = searchMatches[idx]?.key;
+    if (!targetKey) return;
+    const node = messageRefs.current[targetKey];
+    if (!node) return;
+    try {
+      node.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      node.classList.add('ring-2', 'ring-yellow-300/60');
+      const tid = window.setTimeout(() => {
+        node.classList.remove('ring-2', 'ring-yellow-300/60');
+      }, 1200);
+      return () => window.clearTimeout(tid);
+    } catch {}
+  }, [activeMatchIdx, searchMatches, searchQuery]);
   
   useEffect(()=>{
     if(!isAuthed) return;
@@ -2533,7 +2574,13 @@ export default function Home() {
                         {m.senderDisplay && (
                           <div className="text-[10px] text-gray-400 mb-1">{m.senderDisplay}</div>
                         )}
-                        <TransactionBubble sender={m.sender} tx={m.tx} createdAt={m.created_at} isLight={isLightTheme} />
+                        <TransactionBubble
+                          sender={m.sender}
+                          tx={m.tx}
+                          createdAt={m.created_at}
+                          isLight={isLightTheme}
+                          noteContent={searchQuery ? highlightText(m.tx.note || '', searchQuery) : undefined}
+                        />
                         {searchQuery && m.tx.note && (
                           <div className="sr-only">{m.tx.note}</div>
                         )}
@@ -2550,7 +2597,7 @@ export default function Home() {
                     const key = String(m.id ?? (m.client_id ? `c_${m.client_id}` : `i_${i}`));
                     const content = m.text;
                     const showHighlight = !!searchQuery.trim();
-                    const bubbleMax = 'w-full max-w-[200px] md:max-w-[300px] xl:max-w-[360px]';
+                    const bubbleMax = 'inline-flex flex-col w-fit max-w-[200px] md:max-w-[300px] xl:max-w-[360px]';
                     const mineBubbleClass = isLightTheme
                       ? `self-start bg-bubbleSent text-gray-900 px-3 py-2 rounded-2xl rounded-bl-sm ${bubbleMax} text-xs shadow whitespace-pre-line break-words`
                       : `self-start bg-bubbleSent text-gray-100 px-3 py-2 rounded-2xl rounded-bl-sm ${bubbleMax} text-xs shadow whitespace-pre-line break-words`;
