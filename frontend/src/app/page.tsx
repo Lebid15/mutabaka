@@ -116,6 +116,9 @@ const truncateContactPreview = (raw: string) => {
   return Array.from(raw).slice(0, limit).join('');
 };
 
+const MOBILE_HEADER_SPACER = 'calc(env(safe-area-inset-top, 0px) + 4.75rem)';
+const MOBILE_COMPOSER_SPACER = 'calc(env(safe-area-inset-bottom, 0px) + 11.5rem)';
+
 // استخراج معاملة من نص الرسالة المولّد من الخادم
 function parseTransaction(body: string): null | { direction: 'lna'|'lkm'; amount: number; currency: string; symbol: string; note?: string } {
   try {
@@ -2456,9 +2459,9 @@ export default function Home() {
             )}
             {/* واجهة المحادثة */}
             {(selectedConversationId != null && currentContact) && (
-              <div className={(mobileView === 'chat' ? 'flex' : 'hidden') + ' md:flex flex-col h-full'}>
+              <div className={(mobileView === 'chat' ? 'flex' : 'hidden') + ' md:flex flex-col h-full relative'}>
                         <div
-              className="bg-chatPanel px-6 py-3 font-bold border-b border-chatDivider text-sm flex items-center gap-6 flex-wrap relative sticky top-0 z-30 md:static"
+              className="bg-chatPanel px-4 md:px-6 py-3 font-bold border-b border-chatDivider text-sm flex items-center gap-6 flex-wrap fixed top-0 left-1/2 w-full max-w-7xl -translate-x-1/2 z-40 md:static md:left-auto md:translate-x-0"
               style={{ top: 'env(safe-area-inset-top, 0px)' }}
             >
               {/* شريط أرصدة سريع من منظور هذه المحادثة فقط (موجب = لنا، سالب = لكم) — مخفي عند الدردشة مع admin (أو حسابات إدارية مشابهة) أو عند كون المستخدم الحالي أدمن */}
@@ -2554,9 +2557,14 @@ export default function Home() {
                 {/* info button removed by request */}
               </div>
             </div>
+            <div className="md:hidden" style={{ height: MOBILE_HEADER_SPACER }} aria-hidden />
             {/* Members side panel */}
             {membersPanelOpen && (
-              <div ref={membersPanelRef} className="absolute right-0 top-12 md:top-14 z-30 w-full md:w-[420px] max-h-[65vh] overflow-y-auto bg-chatBg border border-chatDivider rounded-lg shadow-2xl p-3">
+              <div
+                ref={membersPanelRef}
+                className="absolute right-0 w-full md:w-[420px] max-h-[65vh] overflow-y-auto bg-chatBg border border-chatDivider rounded-lg shadow-2xl p-3 z-40"
+                style={{ top: `calc(${MOBILE_HEADER_SPACER} + 0.5rem)` }}
+              >
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-xs font-bold text-gray-100">أعضاء المحادثة</div>
                   <button onClick={()=> setMembersPanelOpen(false)} className="text-gray-300 hover:text-white text-xs">إغلاق ✕</button>
@@ -2710,11 +2718,11 @@ export default function Home() {
             )}
             <div
               ref={scrollRef}
-              className={`flex-1 p-6 pb-56 md:pb-44 flex flex-col gap-2 overflow-y-auto overflow-x-hidden custom-scrollbar transition-colors duration-500 ${isLightTheme ? 'bg-[radial-gradient(circle_at_top,_rgba(255,241,224,0.92),_rgba(255,255,255,0.98))]' : 'bg-[#0f1f25]'}`}
+              className={`flex-1 px-4 md:px-6 py-6 pb-40 md:pb-44 flex flex-col gap-2 overflow-y-auto overflow-x-hidden custom-scrollbar transition-colors duration-500 ${isLightTheme ? 'bg-[radial-gradient(circle_at_top,_rgba(255,241,224,0.92),_rgba(255,255,255,0.98))]' : 'bg-[#0f1f25]'}`}
               dir="rtl"
               id="chatScrollRegion"
-              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 13.5rem)' }}
-            >{/* pb-48 للجوال كي لا يغطي الشريط الثابت الرسائل + safe-area */}
+              style={{ paddingBottom: MOBILE_COMPOSER_SPACER }}
+            >
               {(function(){
                 const parts: React.ReactNode[] = [];
                 let lastDayKey = '';
@@ -2857,7 +2865,7 @@ export default function Home() {
             </div>
             {/* شريط سفلي موحد (معاملات + رسالة) */}
             <div
-              className="border-t border-chatDivider bg-chatPanel sticky bottom-0 z-50 flex flex-col gap-2 p-3"
+              className="border-t border-chatDivider bg-chatPanel fixed bottom-0 left-1/2 w-full max-w-7xl -translate-x-1/2 z-50 flex flex-col gap-2 p-3 md:static md:left-auto md:translate-x-0"
               style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 4px)' }}
             >
               {(!isAdminLike(profile?.username) && !isAdminLike(currentContact?.otherUsername)) && (
