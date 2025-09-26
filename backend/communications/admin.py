@@ -4,7 +4,7 @@ from django.urls import reverse
 from django import forms
 from django.http import HttpRequest
 from django.db import models
-from .models import ContactRelation, Conversation, ConversationInbox, Message, Transaction, PushSubscription, NotificationSetting, TeamMember, ConversationMember
+from .models import ContactRelation, Conversation, ConversationInbox, Message, Transaction, PushSubscription, NotificationSetting, BrandingSetting, TeamMember, ConversationMember
 
 @admin.register(ContactRelation)
 class ContactRelationAdmin(admin.ModelAdmin):
@@ -152,6 +152,32 @@ class PushSubscriptionAdmin(admin.ModelAdmin):
 class NotificationSettingAdmin(admin.ModelAdmin):
     list_display = ("id", "active", "updated_at")
     list_filter = ("active",)
+
+
+@admin.register(BrandingSetting)
+class BrandingSettingAdmin(admin.ModelAdmin):
+    list_display = ("id", "active", "updated_at", "logo_thumbnail")
+    list_filter = ("active",)
+    readonly_fields = ("logo_preview",)
+    fields = ("active", "logo", "logo_preview")
+
+    def logo_thumbnail(self, obj):
+        try:
+            if obj.logo:
+                return format_html('<img src="{}" style="max-height:40px;" />', obj.logo.url)
+        except Exception:
+            pass
+        return "-"
+    logo_thumbnail.short_description = "Logo"
+
+    def logo_preview(self, obj):
+        try:
+            if obj.logo:
+                return format_html('<img src="{}" style="max-height:160px;" />', obj.logo.url)
+        except Exception:
+            pass
+        return "-"
+    logo_preview.short_description = "Preview"
 
 @admin.register(TeamMember)
 class TeamMemberAdmin(admin.ModelAdmin):

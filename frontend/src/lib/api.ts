@@ -400,18 +400,27 @@ class APIClient {
     });
   }
 
-  updateProfile(patch: { first_name?: string; last_name?: string; phone?: string }): Promise<any> {
+  updateProfile(patch: { first_name?: string; last_name?: string; phone?: string; display_name?: string }): Promise<any> {
     return this.authFetch('/api/auth/me/', {
       method: 'PATCH',
       body: JSON.stringify(patch)
     }).then((r: Response) => r.json());
   }
 
-  changePassword(old_password: string, new_password: string): Promise<any> {
-    return this.authFetch('/api/auth/me/?action=change_password', {
+  async changePassword(old_password: string, new_password: string): Promise<any> {
+    const res = await this.authFetch('/api/auth/me/', {
       method: 'POST',
-      body: JSON.stringify({ old_password, new_password })
-    }).then((r: Response) => r.json());
+      body: JSON.stringify({ action: 'change_password', old_password, new_password })
+    });
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok) {
+      const msg = (data && (data.detail || data.message)) || 'فشل تغيير كلمة السر';
+      const err: any = new Error(msg);
+      err.status = res.status;
+      err.response = data;
+      throw err;
+    }
+    return data;
   }
 
   // TOTP endpoints
@@ -604,7 +613,19 @@ class APIClient {
     } catch (e) { return null; }
   }
 
-  // Fetch notification sound URL managed by admin (if any)
+  // Public configuration endpoints (branding, notification sound)
+  async getBranding(): Promise<{ logo_url: string | null }> {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/branding`);
+      if (!res.ok) return { logo_url: null };
+      const data = await res.json().catch(()=>({}));
+      const logo = (data && typeof data.logo_url === 'string' && data.logo_url) ? data.logo_url : null;
+      return { logo_url: logo };
+    } catch {
+      return { logo_url: null };
+    }
+  }
+
   async getNotificationSoundUrl(): Promise<string|null> {
     try {
       const res = await fetch(`${this.baseUrl}/api/notification/sound`);

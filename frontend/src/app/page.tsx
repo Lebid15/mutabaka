@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { apiClient } from '../lib/api';
 import { listTeam, listConversationMembers, addTeamMemberToConversation, removeMemberFromConversation, TeamMember } from '../lib/api-team';
 import { attachPrimingListeners, tryPlayMessageSound, setRuntimeSoundUrl } from '../lib/sound';
+import { useThemeMode } from './theme-context';
 
 // قائمة احتياطية (fallback) في حال تأخر تحميل العملات من الخادم
 const fallbackCurrencies = [
@@ -26,6 +27,17 @@ const formatTimeShort = (iso?: string) => {
   try {
     const d = iso ? new Date(iso) : new Date();
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return '';
+  }
+};
+const formatDateShort = (iso?: string) => {
+  try {
+    const d = iso ? new Date(iso) : new Date();
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
   } catch {
     return '';
   }
@@ -69,6 +81,41 @@ const normalizeNumberString = (raw: string) => {
   return s.trim();
 };
 
+const DEFAULT_BRANDING_LOGO = '/logo-default.svg';
+const EMOJI_PALETTE = ['😀','😂','😍','👍','🙏','🎉','💰','📌','❤️','😢','😎','🤔','✅','❌','🔥','🌟','🥰','😮','💡','📈','🤥'];
+const EMOJI_CLUSTER_REGEX = /^[\p{Extended_Pictographic}\u200d\uFE0F]+$/u;
+
+const isEmojiGrapheme = (segment: string) => {
+  if (!segment) return false;
+  const compact = segment.replace(/\s+/g, '');
+  if (!compact) return false;
+  return EMOJI_CLUSTER_REGEX.test(compact);
+};
+
+const truncateContactPreview = (raw: string) => {
+  if (!raw) return '';
+  try {
+    if (typeof Intl !== 'undefined' && typeof (Intl as any).Segmenter === 'function') {
+      const seg = new (Intl as any).Segmenter(undefined, { granularity: 'grapheme' });
+      const segments: string[] = [];
+      let allEmoji = true;
+      for (const item of seg.segment(raw)) {
+        const segment = (item && typeof item === 'object' && 'segment' in item) ? (item as any).segment as string : String(item ?? '');
+        segments.push(segment);
+        if (segment && segment.trim() && !isEmojiGrapheme(segment)) {
+          allEmoji = false;
+        }
+      }
+      const limit = allEmoji ? 7 : 20;
+      return segments.slice(0, limit).join('');
+    }
+  } catch {}
+  const compact = raw.replace(/\s+/g, '');
+  const allEmoji = compact.length > 0 && EMOJI_CLUSTER_REGEX.test(compact);
+  const limit = allEmoji ? 7 : 20;
+  return Array.from(raw).slice(0, limit).join('');
+};
+
 // استخراج معاملة من نص الرسالة المولّد من الخادم
 function parseTransaction(body: string): null | { direction: 'lna'|'lkm'; amount: number; currency: string; symbol: string; note?: string } {
   try {
@@ -94,13 +141,19 @@ function Ticks({ read, className }: { read: boolean; className?: string }) {
   );
 }
 
-function TransactionBubble({ sender, tx, createdAt }: { sender: 'current'|'other'; tx: { direction: 'lna'|'lkm'; amount: number; currency: string; symbol: string; note?: string }, createdAt?: string }) {
+function TransactionBubble({ sender, tx, createdAt, isLight }: { sender: 'current'|'other'; tx: { direction: 'lna'|'lkm'; amount: number; currency: string; symbol: string; note?: string }, createdAt?: string; isLight?: boolean }) {
   const isMine = sender === 'current';
-  const sign = tx.direction === 'lna' ? '+' : '-';
   const wrapClass = isMine
-    ? 'self-start bg-bubbleSent text-gray-100 px-3 py-2 rounded-2xl rounded-bl-sm w-11/12 text-xs shadow'
-    : 'self-end bg-bubbleReceived text-white px-3 py-2 rounded-2xl rounded-br-sm w-11/12 text-xs shadow';
-  const badgeClass = tx.direction === 'lna' ? 'bg-green-600/30 text-green-200' : 'bg-red-600/30 text-red-200';
+    ? `self-start bg-bubbleSent ${isLight ? 'text-gray-900' : 'text-gray-100'} px-3 py-2 rounded-2xl rounded-bl-sm w-full max-w-[180px] md:max-w-[220px] text-xs shadow break-words`
+    : `self-end bg-bubbleReceived ${isLight ? 'text-gray-900' : 'text-white'} px-3 py-2 rounded-2xl rounded-br-sm w-full max-w-[180px] md:max-w-[220px] text-xs shadow break-words`;
+  const badgeClass = tx.direction === 'lna'
+    ? (isLight ? 'bg-green-100 text-green-700' : 'bg-green-600/30 text-green-200')
+    : (isLight ? 'bg-red-100 text-red-700' : 'bg-red-600/30 text-red-200');
+  const rawAmount = typeof tx.amount === 'number' ? tx.amount : parseFloat(String(tx.amount ?? 0));
+  const amountValue = Number.isFinite(rawAmount) ? Math.abs(rawAmount) : 0;
+  const amountLabel = amountValue.toFixed(2);
+  const dateLabel = formatDateShort(createdAt);
+  const timeLabel = formatTimeShort(createdAt);
   return (
     <div className={wrapClass}>
       <div className="flex items-center gap-2 mb-1">
@@ -111,10 +164,39 @@ function TransactionBubble({ sender, tx, createdAt }: { sender: 'current'|'other
         <span className="font-bold">معاملة</span>
         <span className={`px-2 py-0.5 rounded-full text-[10px] ${badgeClass}`}>{tx.direction === 'lna' ? 'لنا' : 'لكم'}</span>
       </div>
-      <div className="font-semibold tabular-nums" dir="ltr">{sign} {tx.amount.toFixed(2)} {tx.symbol}</div>
+      <div className="font-semibold tabular-nums" dir="ltr">{amountLabel} {tx.symbol}</div>
       {tx.note && <div className="text-[10px] text-gray-200/90 mt-1 whitespace-pre-wrap">{tx.note}</div>}
-      <div className="mt-1 text-[10px] text-gray-300 flex items-center justify-end" dir="ltr">{formatTimeShort(createdAt)}</div>
+      {dateLabel && (
+        <div className="mt-1 text-[10px] text-gray-400 flex items-center justify-end" dir="ltr">{dateLabel}</div>
+      )}
+      {timeLabel && (
+        <div className="mt-0.5 text-[10px] text-gray-300 flex items-center justify-end" dir="ltr">{timeLabel}</div>
+      )}
     </div>
+  );
+}
+
+function SunIcon({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className={className}>
+      <circle cx="12" cy="12" r="5" />
+      <line x1="12" y1="1" x2="12" y2="3" strokeLinecap="round" />
+      <line x1="12" y1="21" x2="12" y2="23" strokeLinecap="round" />
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" strokeLinecap="round" />
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" strokeLinecap="round" />
+      <line x1="1" y1="12" x2="3" y2="12" strokeLinecap="round" />
+      <line x1="21" y1="12" x2="23" y2="12" strokeLinecap="round" />
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" strokeLinecap="round" />
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function MoonIcon({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className={className}>
+      <path d="M21 12.79A9 9 0 0 1 11.21 3 7 7 0 0 0 21 12.79Z" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
@@ -258,33 +340,58 @@ function SidebarHeaderAddContact({ onAdded, existingUsernames, currentUsername, 
   );
 }
 
-function PasswordField({ value, onChange }: { value: string; onChange: (v:string)=>void }) {
+function PasswordField({ value, onChange, tone = 'dark', inputClassName }: { value: string; onChange: (v:string)=>void; tone?: 'light'|'dark'; inputClassName?: string }) {
   const [show, setShow] = useState(false);
+  const iconClasses = tone === 'light'
+    ? 'text-orange-300 hover:text-orange-400'
+    : 'text-gray-400 hover:text-gray-200';
+  const finalInputClass = inputClassName || (tone === 'light'
+    ? 'w-full pl-9 pr-3 bg-white/80 border border-orange-200 rounded py-2 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-300 transition'
+    : 'w-full pl-9 pr-3 bg-chatBg border border-chatDivider rounded py-2 text-sm text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-green-600');
   return (
     <div className="relative">
-      <input
-        value={value}
-        onChange={e=>onChange(e.target.value)}
-        placeholder="كلمة المرور"
-        type={show ? 'text' : 'password'}
-        className="w-full pr-9 pl-3 bg-chatBg border border-chatDivider rounded py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-600"
-      />
       <button
         type="button"
-        onClick={()=>setShow(s=>!s)}
-        className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-200"
+        onClick={() => setShow((s) => !s)}
+        className={`absolute inset-y-0 left-0 pl-3 flex items-center transition-colors ${iconClasses}`}
+        title={show ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
         aria-label={show ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
       >
         {show ? (
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-            <path d="M12 5c-7.633 0-11 7-11 7s3.367 7 11 7 11-7 11-7-3.367-7-11-7zm0 12a5 5 0 1 1 .001-10.001A5 5 0 0 1 12 17z"/>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            className="w-4 h-4"
+            strokeWidth="1.6"
+          >
+            <path d="M1 1l22 22" strokeLinecap="round" />
+            <path d="M10.58 10.58a2 2 0 0 0 2.84 2.84" />
+            <path d="M9.88 5.12A10.37 10.37 0 0 1 12 5c7 0 10 7 10 7a18.68 18.68 0 0 1-3.16 4.38" />
+            <path d="M6.53 6.53C3.85 8.36 2 12 2 12a18.5 18.5 0 0 0 5.17 5.88" />
           </svg>
         ) : (
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-            <path d="M3.707 2.293 2.293 3.707 6.3 7.714A12.62 12.62 0 0 0 1 12s3.367 7 11 7c2.226 0 4.154-.55 5.77-1.375l3.23 3.23 1.414-1.414-18.707-18.148zM12 17c-2.761 0-5-2.239-5-5 0-.633.12-1.237.336-1.791l6.455 6.455c-.554.216-1.158.336-1.791.336zm8.664-3.209c.22-.57.336-1.174.336-1.791 0-1.003-.222-1.954-.619-2.814-1.71-3.68-5.132-5.186-8.381-5.186-1.422 0-2.746.274-3.934.75l1.57 1.57c.786-.24 1.623-.37 2.492-.37 4.239 0 7.495 3.399 8.036 6.007-.19.828-.543 1.601-1.058 2.308l1.558 1.526z"/>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            className="w-4 h-4"
+            strokeWidth="1.6"
+          >
+            <path d="M1 12s3-7 11-7 11 7 11 7-3 7-11 7S1 12 1 12Z" />
+            <circle cx="12" cy="12" r="3" />
           </svg>
         )}
       </button>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="كلمة المرور"
+        type={show ? 'text' : 'password'}
+        className={finalInputClass}
+      />
     </div>
   );
 }
@@ -293,6 +400,23 @@ export default function Home() {
   const scrollRef = useRef<HTMLDivElement|null>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const lastMsgIdRef = useRef<number>(0);
+  const contactMenuRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const TEXTAREA_MIN_HEIGHT = 40;
+  const TEXTAREA_MAX_HEIGHT = 160;
+
+  const adjustTextareaHeight = useCallback(() => {
+    const el = textAreaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const next = Math.min(TEXTAREA_MAX_HEIGHT, Math.max(TEXTAREA_MIN_HEIGHT, el.scrollHeight));
+    el.style.height = `${next}px`;
+  }, []);
+
+  const resetTextareaHeight = useCallback(() => {
+    const el = textAreaRef.current;
+    if (!el) return;
+    el.style.height = `${TEXTAREA_MIN_HEIGHT}px`;
+  }, []);
   // قائمة العملات من الخادم
   const [serverCurrencies, setServerCurrencies] = useState<any[]>([]);
   // Auth/session
@@ -308,7 +432,9 @@ export default function Home() {
   const [teamUsername, setTeamUsername] = useState('');
   const [error, setError] = useState<string|null>(null);
   const [loading, setLoading] = useState(false);
+  const [brandingLogo, setBrandingLogo] = useState<string>(DEFAULT_BRANDING_LOGO);
   const [profile, setProfile] = useState<any|null>(null);
+  const { isLight: isLightTheme, toggleTheme } = useThemeMode();
 
   // Contacts & conversations
   const [contacts, setContacts] = useState<any[]>([]);
@@ -333,6 +459,10 @@ export default function Home() {
   const [outgoingText, setOutgoingText] = useState('');
   const [pendingAttachment, setPendingAttachment] = useState<File|null>(null);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
+  const [showOnlyTransactions, setShowOnlyTransactions] = useState(false);
+  const [emojiPanelOpen, setEmojiPanelOpen] = useState(false);
+  const emojiPanelRef = useRef<HTMLDivElement|null>(null);
+  const emojiButtonRef = useRef<HTMLButtonElement|null>(null);
   // Members panel state
   const [membersPanelOpen, setMembersPanelOpen] = useState(false);
   const membersPanelRef = useRef<HTMLDivElement|null>(null);
@@ -344,6 +474,27 @@ export default function Home() {
   const lastTypingSentRef = useRef<number>(0);
   const lastMessageIdRef = useRef<number>(0);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await apiClient.getBranding();
+        if (cancelled) return;
+        if (data && typeof data.logo_url === 'string' && data.logo_url.trim()) {
+          setBrandingLogo(data.logo_url);
+        } else {
+          setBrandingLogo(DEFAULT_BRANDING_LOGO);
+        }
+      } catch {
+        if (!cancelled) {
+          setBrandingLogo(DEFAULT_BRANDING_LOGO);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   // Decode JWT access payload
   const getJwtPayload = useCallback((): any | null => {
     try {
@@ -391,6 +542,62 @@ export default function Home() {
       document.removeEventListener('touchstart', onDocPointer, true);
     };
   }, [membersPanelOpen]);
+
+  useEffect(() => {
+    if (!emojiPanelOpen) return;
+    const onDocPointer = (ev: MouseEvent | TouchEvent) => {
+      const target = ev.target as Node | null;
+      const pane = emojiPanelRef.current;
+      const btn = emojiButtonRef.current;
+      if (!target) return;
+      if (pane && pane.contains(target)) return;
+      if (btn && btn.contains(target)) return;
+      setEmojiPanelOpen(false);
+    };
+    document.addEventListener('mousedown', onDocPointer, true);
+    document.addEventListener('touchstart', onDocPointer, true);
+    return () => {
+      document.removeEventListener('mousedown', onDocPointer, true);
+      document.removeEventListener('touchstart', onDocPointer, true);
+    };
+  }, [emojiPanelOpen]);
+
+  useEffect(() => {
+    setEmojiPanelOpen(false);
+    setShowOnlyTransactions(false);
+  }, [selectedConversationId]);
+
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [outgoingText, adjustTextareaHeight]);
+
+  useEffect(() => {
+    if (openMenuForConvId == null) return;
+    const handleOutside = (ev: MouseEvent | TouchEvent) => {
+      const target = ev.target as Node | null;
+      if (!target) return;
+      const container = contactMenuRefs.current[openMenuForConvId];
+      if (container && container.contains(target)) return;
+      setOpenMenuForConvId(null);
+    };
+    document.addEventListener('mousedown', handleOutside, true);
+    document.addEventListener('touchstart', handleOutside, true);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside, true);
+      document.removeEventListener('touchstart', handleOutside, true);
+    };
+  }, [openMenuForConvId]);
+
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') {
+        setEmojiPanelOpen(false);
+        setMembersPanelOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // هل الحساب الحالي هو عضو فريق؟ احسبها في كل رندر لضمان التزامن مع تغيّر التوكن
   const isTeamActor = (() => {
@@ -564,6 +771,7 @@ export default function Home() {
           // نظّف الحقول بعد النجاح
           setPendingAttachment(null);
           setOutgoingText('');
+          resetTextareaHeight();
         } catch (err:any) {
           if (err && err.otp_required) {
             const code = typeof window !== 'undefined' ? window.prompt('أدخل رمز المصادقة الثنائية (OTP)') : '';
@@ -585,6 +793,7 @@ export default function Home() {
     if (!outgoingText.trim()) return;
     const text = outgoingText.trim();
     setOutgoingText('');
+  resetTextareaHeight();
     const clientId = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
   setMessages(prev => [...prev, { sender: 'current', text, client_id: clientId, delivery_status: 1, status: 'delivered', kind: 'text', senderDisplay: currentSenderDisplay, read_at: null }]);
     try {
@@ -625,6 +834,28 @@ export default function Home() {
   const [currentContactIndex, setCurrentContactIndex] = useState<number|null>(null);
   const textAreaRef = useRef<HTMLTextAreaElement|null>(null);
   const currentContact = currentContactIndex !== null ? contacts[currentContactIndex] : null;
+  const appendEmoji = useCallback((emoji: string) => {
+    setOutgoingText(prev => {
+      const el = textAreaRef.current;
+      if (!el) return prev + emoji;
+      const start = typeof el.selectionStart === 'number' ? el.selectionStart : prev.length;
+      const end = typeof el.selectionEnd === 'number' ? el.selectionEnd : prev.length;
+      const next = prev.slice(0, start) + emoji + prev.slice(end);
+      requestAnimationFrame(() => {
+        try {
+          el.focus();
+          const caret = start + emoji.length;
+          el.selectionStart = caret;
+          el.selectionEnd = caret;
+          el.style.height = 'auto';
+          el.style.height = Math.min(160, el.scrollHeight) + 'px';
+        } catch {
+          try { el.focus(); } catch {}
+        }
+      });
+      return next;
+    });
+  }, []);
   const [lastSeenMessageId, setLastSeenMessageId] = useState<number | null>(null);
   const [unreadDividerId, setUnreadDividerId] = useState<number | null>(null);
   const [showSidebar, setShowSidebar] = useState(false); // إظهار/إخفاء القائمة على الموبايل
@@ -640,6 +871,10 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeMatchIdx, setActiveMatchIdx] = useState(0);
 
+  const visibleMessages = useMemo(() => {
+    if (!showOnlyTransactions) return messages;
+    return messages.filter(m => m?.kind === 'transaction');
+  }, [messages, showOnlyTransactions]);
   const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const highlightText = (text: string, query: string): React.ReactNode => {
     if (!query) return text;
@@ -1645,62 +1880,103 @@ export default function Home() {
   }
 
   if (!isAuthed) {
+    const inputClass = isLightTheme
+      ? 'w-full pl-9 pr-3 bg-white/80 border border-orange-200/70 rounded-lg py-2 text-sm text-gray-800 placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-300 transition'
+      : 'w-full pl-9 pr-3 bg-chatBg border border-chatDivider rounded py-2 text-sm text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-green-600';
+    const formClass = isLightTheme
+      ? 'w-full max-w-sm bg-white/80 border border-orange-100/80 backdrop-blur-md rounded-3xl p-12 pt-14 flex flex-col gap-8 shadow-[0_35px_60px_-15px_rgba(255,153,51,0.35)] text-gray-700'
+      : 'w-full max-w-sm bg-chatPanel border border-chatDivider rounded-2xl p-12 pt-14 flex flex-col gap-8 shadow-2xl/40';
+    const checkboxClasses = isLightTheme
+      ? 'accent-orange-400'
+      : 'accent-green-600';
+    const labelTextClass = isLightTheme ? 'text-gray-600' : '';
+    const inputIconClass = isLightTheme ? 'text-orange-300' : 'text-gray-400';
+    const submitClass = isLightTheme
+      ? 'bg-gradient-to-r from-orange-400 via-orange-500 to-orange-600 hover:from-orange-500 hover:to-orange-700 text-white shadow-lg disabled:opacity-60 rounded-lg py-2 font-semibold text-sm transition'
+      : 'bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded py-2 font-semibold text-sm';
+    const toggleButtonClass = isLightTheme
+      ? 'text-orange-400 hover:text-orange-500 bg-white/70 border border-orange-200/60 shadow-sm'
+      : 'text-yellow-300 hover:text-yellow-200 bg-chatPanel/60 border border-chatDivider shadow-lg';
+    const toggleIcon = isLightTheme ? <MoonIcon className="w-5 h-5" /> : <SunIcon className="w-5 h-5" />;
+
     return (
-      <div className="min-h-screen flex items-center justify-center bg-chatBg text-gray-100 p-4">
-        <form onSubmit={handleLogin} className="w-full max-w-sm bg-chatPanel border border-chatDivider rounded-lg p-6 flex flex-col gap-4">
-          <h1 className="font-bold text-lg text-center">تسجيل الدخول</h1>
-          {error && <div className="text-red-400 text-xs text-center">{error}</div>}
-            <div className="flex items-center justify-between text-xs">
-              <label className="flex items-center gap-2 cursor-pointer select-none">
+      <div className={`relative min-h-screen flex items-center justify-center p-6 md:p-8 transition-colors duration-500 ${isLightTheme ? 'bg-gradient-to-br from-white via-orange-50 to-orange-100 text-gray-900' : 'bg-chatBg text-gray-100'}`}>
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className={`absolute top-6 right-6 md:top-8 md:right-8 grid place-items-center w-11 h-11 rounded-full backdrop-blur transition ${toggleButtonClass}`}
+          aria-label={isLightTheme ? 'تفعيل الوضع الداكن' : 'تفعيل الوضع الفاتح'}
+          title={isLightTheme ? 'تفعيل الوضع الداكن' : 'تفعيل الوضع الفاتح'}
+        >
+          {toggleIcon}
+        </button>
+        <form onSubmit={handleLogin} className={`${formClass} transition-all duration-500`}>
+          <div className="flex flex-col items-center gap-5">
+            <img
+              src={brandingLogo || DEFAULT_BRANDING_LOGO}
+              alt="شعار التطبيق"
+              className="h-48 md:h-64 w-auto object-contain drop-shadow-xl transition-all duration-200"
+              onError={(e)=>{
+                const target = e.currentTarget as HTMLImageElement & { dataset: DOMStringMap & { fallbackApplied?: string } };
+                if (target.dataset.fallbackApplied !== '1') {
+                  target.dataset.fallbackApplied = '1';
+                  target.src = DEFAULT_BRANDING_LOGO;
+                }
+              }}
+            />
+          </div>
+          {error && <div className={`${isLightTheme ? 'text-red-500' : 'text-red-400'} text-xs text-center`}>{error}</div>}
+          <div className="flex items-center justify-between text-xs">
+            <label className={`flex items-center gap-2 cursor-pointer select-none ${labelTextClass}`}>
               <input
                 type="checkbox"
-                className="accent-green-600"
+                className={checkboxClasses}
                 checked={useTeamLogin}
                 onChange={e=>{ setUseTeamLogin(e.target.checked); try { localStorage.setItem('useTeamLogin', e.target.checked ? '1' : '0'); } catch {} }}
               />
-                <span>تسجيل دخول عضو فريق</span>
-              </label>
-            </div>
+              <span>تسجيل دخول عضو فريق</span>
+            </label>
+          </div>
 
-            {useTeamLogin ? (
-              <>
-                {/* Owner username */}
-                <div className="relative">
-                  <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-                      <path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm0 2c-3.866 0-7 3.134-7 7h2a5 5 0 0 1 10 0h2c0-3.866-3.134-7-7-7z" />
-                    </svg>
-                  </span>
-                  <input value={ownerUsername} onChange={e=>setOwnerUsername(e.target.value)} placeholder="اسم مستخدم المالك" className="w-full pl-9 pr-3 bg-chatBg border border-chatDivider rounded py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-600" />
-                </div>
-                {/* Team username */}
-                <div className="relative">
-                  <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-                      <path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm0 2c-3.866 0-7 3.134-7 7h2a5 5 0 0 1 10 0h2c0-3.866-3.134-7-7-7z" />
-                    </svg>
-                  </span>
-                  <input value={teamUsername} onChange={e=>setTeamUsername(e.target.value)} placeholder="اسم مستخدم عضو الفريق" className="w-full pl-9 pr-3 bg-chatBg border border-chatDivider rounded py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-600" />
-                </div>
-                {/* Password with eye toggle */}
-                <PasswordField value={password} onChange={setPassword} />
-              </>
-            ) : (
-              <>
-                {/* Username with icon */}
-                <div className="relative">
-                  <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-                      <path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm0 2c-3.866 0-7 3.134-7 7h2a5 5 0 0 1 10 0h2c0-3.866-3.134-7-7-7z" />
-                    </svg>
-                  </span>
-                  <input value={identifier} onChange={e=>setIdentifier(e.target.value)} placeholder="اسم المستخدم أو البريد" className="w-full pl-9 pr-3 bg-chatBg border border-chatDivider rounded py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-600" />
-                </div>
-                {/* Password with eye toggle */}
-                <PasswordField value={password} onChange={setPassword} />
-              </>
-            )}
-            <button disabled={loading} className="bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded py-2 font-semibold text-sm">{loading ? '...' : 'دخول'}</button>
+          {useTeamLogin ? (
+            <>
+              {/* Owner username */}
+              <div className="relative">
+                <span className={`pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 ${inputIconClass}`}>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                    <path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm0 2c-3.866 0-7 3.134-7 7h2a5 5 0 0 1 10 0h2c0-3.866-3.134-7-7-7z" />
+                  </svg>
+                </span>
+                <input value={ownerUsername} onChange={e=>setOwnerUsername(e.target.value)} placeholder="اسم مستخدم المالك" className={inputClass} />
+              </div>
+              {/* Team username */}
+              <div className="relative">
+                <span className={`pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 ${inputIconClass}`}>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                    <path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm0 2c-3.866 0-7 3.134-7 7h2a5 5 0 0 1 10 0h2c0-3.866-3.134-7-7-7z" />
+                  </svg>
+                </span>
+                <input value={teamUsername} onChange={e=>setTeamUsername(e.target.value)} placeholder="اسم مستخدم عضو الفريق" className={inputClass} />
+              </div>
+              {/* Password with eye toggle */}
+              <PasswordField value={password} onChange={setPassword} tone={isLightTheme ? 'light' : 'dark'} inputClassName={inputClass} />
+            </>
+          ) : (
+            <>
+              {/* Username with icon */}
+              <div className="relative">
+                <span className={`pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 ${inputIconClass}`}>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                    <path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm0 2c-3.866 0-7 3.134-7 7h2a5 5 0 0 1 10 0h2c0-3.866-3.134-7-7-7z" />
+                  </svg>
+                </span>
+                <input value={identifier} onChange={e=>setIdentifier(e.target.value)} placeholder="اسم المستخدم أو البريد" className={inputClass} />
+              </div>
+              {/* Password with eye toggle */}
+              <PasswordField value={password} onChange={setPassword} tone={isLightTheme ? 'light' : 'dark'} inputClassName={inputClass} />
+            </>
+          )}
+          <button disabled={loading} className={submitClass}>{loading ? '...' : 'دخول'}</button>
         </form>
       </div>
     );
@@ -1763,27 +2039,17 @@ export default function Home() {
                     </div>
                     {(() => {
                       const raw = contact.last_message_preview || '';
-                      let truncated = raw;
-                      try {
-                        // Grapheme-aware slice to 20 clusters
-                        // @ts-ignore
-                        if (typeof Intl !== 'undefined' && Intl.Segmenter) {
-                          // @ts-ignore
-                          const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
-                          const it = seg.segment(raw);
-                          const arr: string[] = [];
-                          // @ts-ignore
-                          for (const p of it) { if (arr.length >= 20) break; arr.push(p.segment); }
-                          truncated = arr.join('');
-                        } else {
-                          const codepoints = Array.from(raw);
-                          truncated = codepoints.slice(0,20).join('');
-                        }
-                      } catch { truncated = raw.slice(0,20); }
+                      const truncated = truncateContactPreview(raw);
                       return <span className="text-sm text-gray-400">{truncated}</span>;
                     })()}
                   </div>
-                  <div className="relative flex items-center gap-2" onClick={(e)=> e.stopPropagation()}>
+                  <div
+                    className="relative flex items-center gap-2"
+                    onClick={(e)=> e.stopPropagation()}
+                    ref={(el)=>{
+                      if (el) contactMenuRefs.current[contact.id] = el; else delete contactMenuRefs.current[contact.id];
+                    }}
+                  >
                     {unreadByConv[contact.id] > 0 && (
                       <span className="bg-green-600 text-white rounded-full px-2 py-0.5 text-[11px] leading-none">{unreadByConv[contact.id]}</span>
                     )}
@@ -1898,7 +2164,13 @@ export default function Home() {
                         </div>
                         <span className="text-sm text-gray-400 truncate">{contact.last_message_preview || ''}</span>
                       </div>
-                      <div className="relative flex items-center gap-2" onClick={(e)=> e.stopPropagation()}>
+                      <div
+                        className="relative flex items-center gap-2"
+                        onClick={(e)=> e.stopPropagation()}
+                        ref={(el)=>{
+                          if (el) contactMenuRefs.current[contact.id] = el; else delete contactMenuRefs.current[contact.id];
+                        }}
+                      >
                         {unreadByConv[contact.id] > 0 && (
                           <span className="bg-green-600 text-white rounded-full px-2 py-0.5 text-[11px] leading-none">{unreadByConv[contact.id]}</span>
                         )}
@@ -1994,6 +2266,20 @@ export default function Home() {
                 )}
               </div>
               <div className="ml-auto flex items-center gap-3 text-gray-300">
+                <button
+                  onClick={()=> setShowOnlyTransactions(v => !v)}
+                  className={`w-9 h-9 rounded-full flex items-center justify-center border transition ${showOnlyTransactions
+                    ? (isLightTheme ? 'border-green-300 bg-green-50 text-green-600 shadow-sm' : 'border-green-400/60 bg-green-500/20 text-green-200')
+                    : (isLightTheme ? 'border-orange-100 bg-white/70 text-orange-400 hover:bg-orange-100' : 'border-chatDivider bg-chatPanel/60 hover:bg-chatDivider/40')}`}
+                  title={showOnlyTransactions ? 'عرض جميع الرسائل' : 'فلترة المعاملات فقط'}
+                  aria-pressed={showOnlyTransactions}
+                >
+                  <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' className='h-4 w-4' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
+                    <path d='M3 4h18' />
+                    <path d='M6 12h12' />
+                    <path d='M10 20h4' />
+                  </svg>
+                </button>
                 {/* Members button */}
                 <button
                   ref={membersBtnRef}
@@ -2193,19 +2479,44 @@ export default function Home() {
             )}
             <div
               ref={scrollRef}
-              className="flex-1 p-6 pb-48 md:pb-40 flex flex-col gap-2 overflow-y-auto overflow-x-hidden bg-[#0f1f25] custom-scrollbar"
+              className={`flex-1 p-6 pb-56 md:pb-44 flex flex-col gap-2 overflow-y-auto overflow-x-hidden custom-scrollbar transition-colors duration-500 ${isLightTheme ? 'bg-[radial-gradient(circle_at_top,_rgba(255,241,224,0.92),_rgba(255,255,255,0.98))]' : 'bg-[#0f1f25]'}`}
               dir="rtl"
               id="chatScrollRegion"
-              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12rem)' }}
+              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 13.5rem)' }}
             >{/* pb-48 للجوال كي لا يغطي الشريط الثابت الرسائل + safe-area */}
               {(function(){
                 const parts: React.ReactNode[] = [];
                 let lastDayKey = '';
-                messages.forEach((m, i) => {
+                const dayChipClass = isLightTheme
+                  ? 'mx-auto my-3 text-[10px] px-3 py-1 bg-orange-200/70 text-orange-800 border border-orange-300/60 rounded-full shadow-sm'
+                  : 'mx-auto my-3 text-[10px] px-3 py-1 bg-gray-700/60 border border-chatDivider rounded-full text-gray-200';
+                const systemBubbleClass = isLightTheme
+                  ? 'self-center bg-orange-200/70 text-orange-900 px-3 py-1.5 rounded-full text-[11px] border border-orange-300/60 shadow-sm'
+                  : 'self-center bg-gray-700/60 text-gray-100 px-3 py-1.5 rounded-full text-[11px] border border-white/10';
+                if (showOnlyTransactions) {
+                  parts.push(
+                    <div key="filter_badge" className="mx-auto mt-1 mb-0 text-[11px] px-3 py-1 rounded-full border border-green-400/40 bg-green-500/15 text-green-300 flex items-center gap-2">
+                      <span>عرض المعاملات فقط</span>
+                      <span className="font-semibold" dir="ltr">{visibleMessages.length}</span>
+                      <button onClick={()=> setShowOnlyTransactions(false)} className="ml-2 text-[10px] underline decoration-dotted">
+                        إلغاء
+                      </button>
+                    </div>
+                  );
+                }
+                if (visibleMessages.length === 0) {
+                  parts.push(
+                    <div key="empty_state" className={`mx-auto mt-10 text-sm ${isLightTheme ? 'text-gray-500 bg-white/70' : 'text-gray-300 bg-white/5'} border ${isLightTheme ? 'border-orange-200/60' : 'border-white/10'} px-4 py-2 rounded-2xl shadow-sm`}>
+                      {showOnlyTransactions ? 'لا توجد معاملات محفوظة بعد في هذه المحادثة.' : 'ابدأ المحادثة بكتابة رسالة في الأسفل.'}
+                    </div>
+                  );
+                  return parts;
+                }
+                visibleMessages.forEach((m, i) => {
                   const dk = dayKeyOf(m.created_at);
                   if (dk !== lastDayKey && dk !== 'unknown') {
                     parts.push(
-                      <div key={`sep_${dk}`} className="mx-auto my-3 text-[10px] px-3 py-1 bg-gray-700/60 border border-chatDivider rounded-full text-gray-200">
+                      <div key={`sep_${dk}`} className={dayChipClass}>
                         {dayLabelOf(m.created_at)}
                       </div>
                     );
@@ -2218,7 +2529,7 @@ export default function Home() {
                         {m.senderDisplay && (
                           <div className="text-[10px] text-gray-400 mb-1">{m.senderDisplay}</div>
                         )}
-                        <TransactionBubble sender={m.sender} tx={m.tx} createdAt={m.created_at} />
+                        <TransactionBubble sender={m.sender} tx={m.tx} createdAt={m.created_at} isLight={isLightTheme} />
                         {searchQuery && m.tx.note && (
                           <div className="sr-only">{m.tx.note}</div>
                         )}
@@ -2227,7 +2538,7 @@ export default function Home() {
                   } else if (m.kind === 'system') {
                     const key = String(m.id ?? `sys_${i}`);
                     parts.push(
-                      <div key={key} ref={(el)=>{ messageRefs.current[key] = el; }} className="self-center bg-gray-700/60 text-gray-100 px-3 py-1.5 rounded-full text-[11px] border border-white/10">
+                      <div key={key} ref={(el)=>{ messageRefs.current[key] = el; }} className={systemBubbleClass}>
                         {m.text}
                       </div>
                     );
@@ -2235,15 +2546,18 @@ export default function Home() {
                     const key = String(m.id ?? (m.client_id ? `c_${m.client_id}` : `i_${i}`));
                     const content = m.text;
                     const showHighlight = !!searchQuery.trim();
+                    const bubbleMax = 'w-full max-w-[200px] md:max-w-[300px] xl:max-w-[360px]';
+                    const mineBubbleClass = isLightTheme
+                      ? `self-start bg-bubbleSent text-gray-900 px-3 py-2 rounded-2xl rounded-bl-sm ${bubbleMax} text-xs shadow whitespace-pre-line break-words`
+                      : `self-start bg-bubbleSent text-gray-100 px-3 py-2 rounded-2xl rounded-bl-sm ${bubbleMax} text-xs shadow whitespace-pre-line break-words`;
+                    const theirsBubbleClass = isLightTheme
+                      ? `self-end bg-bubbleReceived text-gray-900 px-3 py-2 rounded-2xl rounded-br-sm ${bubbleMax} text-xs shadow whitespace-pre-line break-words`
+                      : `self-end bg-bubbleReceived text-white px-3 py-2 rounded-2xl rounded-br-sm ${bubbleMax} text-xs shadow whitespace-pre-line break-words`;
                     parts.push(
                       <div
                         key={key}
                         ref={(el)=>{ messageRefs.current[key] = el; }}
-                        className={
-                          m.sender === 'current'
-                            ? 'self-start bg-bubbleSent text-gray-100 px-3 py-2 rounded-2xl rounded-bl-sm max-w-[60%] text-xs shadow whitespace-pre-line'
-                            : 'self-end bg-bubbleReceived text-white px-3 py-2 rounded-2xl rounded-br-sm max-w-[60%] text-xs shadow whitespace-pre-line'
-                        }
+                        className={m.sender === 'current' ? mineBubbleClass : theirsBubbleClass}
                       >
                         {m.senderDisplay && (
                           <div className="text-[10px] text-gray-300 mb-1">{m.senderDisplay}</div>
@@ -2260,7 +2574,7 @@ export default function Home() {
                                   <img
                                     src={url}
                                     alt={m.attachment.name || 'image'}
-                                    className="block h-auto max-w-[min(100%,240px)] md:max-w-[min(100%,360px)] object-contain rounded border border-white/10 cursor-zoom-in hover:opacity-90 transition"
+                                    className="block h-auto max-w-[min(100%,220px)] md:max-w-[min(100%,320px)] object-contain rounded border border-white/10 cursor-zoom-in hover:opacity-90 transition"
                                     onClick={(e)=>{ e.stopPropagation(); openImageAt(url); }}
                                   />
                                 );
@@ -2368,11 +2682,45 @@ export default function Home() {
                   } catch {}
                 }} />
                 <button className="text-gray-400 hover:text-white" title="إرفاق" onClick={()=>{ const el = document.getElementById('chat_file_input') as HTMLInputElement|null; el?.click(); }}><svg xmlns='http://www.w3.org/2000/svg' className='h-5 w-5' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M15.172 7l-6.586 6.586a2 2 0 102.828 2.828L18 9.828a4 4 0 10-5.656-5.656L6.343 10.172'/></svg></button>
+                <div className="relative">
+                  <button
+                    ref={emojiButtonRef}
+                    className={`w-9 h-9 flex items-center justify-center rounded-lg border transition ${isLightTheme ? 'border-orange-100 bg-white/70 text-orange-400 hover:bg-orange-100' : 'border-white/10 bg-white/5 hover:bg-white/10 text-yellow-200'}`}
+                    title="إضافة إيموجي"
+                    onClick={()=> setEmojiPanelOpen(o => !o)}
+                    aria-haspopup="dialog"
+                    aria-expanded={emojiPanelOpen}
+                  >
+                    <span className="text-lg" aria-hidden="true">😊</span>
+                    <span className="sr-only">إضافة رمز تعبيري</span>
+                  </button>
+                  {emojiPanelOpen && (
+                    <div
+                      ref={emojiPanelRef}
+                      className={`absolute bottom-12 right-0 z-50 w-56 rounded-2xl border shadow-2xl p-3 backdrop-blur ${isLightTheme ? 'bg-white/95 border-orange-100 text-gray-700' : 'bg-[#102028]/95 border-chatDivider text-gray-100'}`}
+                    >
+                      <div className="text-[10px] text-gray-400 mb-2">اختر رمزاً لإضافته</div>
+                      <div className="grid grid-cols-6 gap-1">
+                        {EMOJI_PALETTE.map(emoji => (
+                          <button
+                            key={emoji}
+                            onClick={()=> appendEmoji(emoji)}
+                            className={`h-8 w-8 flex items-center justify-center rounded-lg transition text-lg ${isLightTheme ? 'hover:bg-orange-100' : 'hover:bg-white/10'}`}
+                            title={emoji}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="mt-2 text-[10px] text-gray-400 text-center">اضغط خارج اللوحة للإغلاق</div>
+                    </div>
+                  )}
+                </div>
                 <textarea
                   ref={textAreaRef}
                   rows={1}
                   value={outgoingText}
-                  onChange={(e)=>{ onChangeOutgoing(e.target.value); try{ if(textAreaRef.current){ textAreaRef.current.style.height='auto'; textAreaRef.current.style.height = Math.min(160, textAreaRef.current.scrollHeight) + 'px'; } }catch{} }}
+                  onChange={(e)=>{ onChangeOutgoing(e.target.value); adjustTextareaHeight(); }}
                   onKeyDown={(e)=>{
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();

@@ -8,7 +8,8 @@ from django.core.files.storage import default_storage
 from django.db.models import Q
 from django.db import models as dj_models
 from django.contrib.auth import get_user_model
-from .models import ContactRelation, Conversation, Message, Transaction, PushSubscription, ConversationMute, TeamMember, ConversationMember, get_conversation_viewer_ids
+import re
+from .models import ContactRelation, Conversation, Message, Transaction, PushSubscription, ConversationMute, TeamMember, ConversationMember, BrandingSetting, get_conversation_viewer_ids
 from .serializers import (
     PublicUserSerializer, ContactRelationSerializer, ConversationSerializer,
     MessageSerializer, TransactionSerializer, PushSubscriptionSerializer,
@@ -58,6 +59,45 @@ def _plan_contact_limit(user) -> int | None:
     # خلال النسخة التجريبية نمنح نفس صلاحيات المدفوعة (بدون حد)
     if code == 'trial':
         return None
+
+
+_ATTACHMENT_FILENAME_RE = re.compile(r"\.(?:jpe?g|png|gif|webp|svg|bmp|ico|heic|heif|pdf)(?:[?#].*)?$", re.IGNORECASE)
+
+
+def _normalize_bubble_text(value) -> str:
+    if value is None:
+        return ''
+    try:
+        text = str(value)
+    except Exception:
+        return ''
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
+    text = text.replace('\n', ' ')
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
+
+def _sanitize_attachment_body(body, attachment_name=None) -> str:
+    if not body:
+        return ''
+    normalized_text = _normalize_bubble_text(body)
+    if not normalized_text:
+        return ''
+    normalized_name = _normalize_bubble_text(attachment_name) if attachment_name else ''
+    if normalized_name and normalized_text.casefold() == normalized_name.casefold():
+        return ''
+    return body
+
+
+def _attachment_preview_label(preview) -> str:
+    if not preview:
+        return ''
+    normalized = _normalize_bubble_text(preview)
+    if not normalized:
+        return ''
+    if _ATTACHMENT_FILENAME_RE.search(normalized):
+        return '📎 مرفق'
+    return preview
     if code == 'silver':
         return 5
     if code == 'golden':
@@ -659,6 +699,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'sender': request.user.username,
                     'senderDisplay': sender_display,
                     'body': msg.body,
+                    'message': msg.body,
                     'created_at': msg.created_at.isoformat(),
                     'kind': 'text',
                     'seq': msg.id,
@@ -738,13 +779,23 @@ class ConversationViewSet(viewsets.ModelViewSet):
                         sender_display = getattr(request.user, 'display_name', '') or request.user.username
                 except Exception:
                     sender_display = getattr(request.user, 'display_name', '') or request.user.username
-                pusher_client.trigger(f"chat_{conv.id}", 'message', {
+                pusher_payload = {
+                    'type': payload.get('type', 'chat.message'),
+                    'id': payload.get('id'),
+                    'conversation_id': conv.id,
                     'username': request.user.username,
+                    'sender': request.user.username,
                     'display_name': sender_display,
                     'senderDisplay': sender_display,
-                    'message': msg.body,
-                    'conversation_id': conv.id,
-                })
+                    'body': payload.get('body', ''),
+                    'message': payload.get('body', ''),
+                    'created_at': payload.get('created_at'),
+                    'kind': payload.get('kind'),
+                    'seq': payload.get('seq'),
+                    'status': payload.get('status'),
+                    'delivery_status': payload.get('delivery_status'),
+                }
+                pusher_client.trigger(f"chat_{conv.id}", 'message', pusher_payload)
                 # notify all viewers
                 for uid in get_conversation_viewer_ids(conv):
                     if uid == request.user.id:
@@ -856,14 +907,16 @@ class ConversationViewSet(viewsets.ModelViewSet):
             mime, size = self._validate_attachment(file_obj)
         except ValidationError as ve:
             return Response({'detail': ve.message_dict.get('detail') if hasattr(ve, 'message_dict') else 'Invalid file'}, status=400)
-        caption = (request.data.get('body') or '').strip()
+        caption_raw = (request.data.get('body') or '').strip()
+        attachment_name = getattr(file_obj, 'name', '')
+        sanitized_caption = _sanitize_attachment_body(caption_raw, attachment_name)
         msg_kwargs = {
             'conversation': conv,
             'sender': request.user,
-            'body': caption,
+            'body': sanitized_caption,
             'type': 'text',  # keep as text type; attachment fields indicate presence
             'attachment': file_obj,
-            'attachment_name': getattr(file_obj, 'name', ''),
+            'attachment_name': attachment_name,
             'attachment_mime': mime or '',
             'attachment_size': size,
         }
@@ -875,6 +928,25 @@ class ConversationViewSet(viewsets.ModelViewSet):
             except Exception:
                 pass
         msg = Message.objects.create(**msg_kwargs)
+        sanitized_body = _sanitize_attachment_body(msg.body, msg.attachment_name)
+        preview_source = sanitized_body or (msg.attachment_name or '')
+        preview_label = _attachment_preview_label(preview_source) or '📎 مرفق'
+        attachment_payload = {
+            'name': msg.attachment_name,
+            'mime': msg.attachment_mime,
+            'size': msg.attachment_size,
+        }
+        attachment_url = None
+        try:
+            att = getattr(msg, 'attachment', None)
+            if att:
+                attachment_url = att.url
+                if attachment_url and hasattr(request, 'build_absolute_uri'):
+                    attachment_url = request.build_absolute_uri(attachment_url)
+        except Exception:
+            attachment_url = None
+        if attachment_url:
+            attachment_payload['url'] = attachment_url
         # Realtime broadcast via channels (if configured)
         try:
             from channels.layers import get_channel_layer
@@ -897,17 +969,14 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'conversation_id': conv.id,
                     'sender': request.user.username,
                     'senderDisplay': sender_display,
-                    'body': msg.body,
+                    'body': sanitized_body,
+                    'message': sanitized_body,
                     'created_at': msg.created_at.isoformat(),
                     'kind': 'text',
                     'seq': msg.id,
                     'status': 'delivered',
                     'delivery_status': 1,
-                    'attachment': {
-                        'name': msg.attachment_name,
-                        'mime': msg.attachment_mime,
-                        'size': msg.attachment_size,
-                    }
+                    'attachment': attachment_payload,
                 }
                 async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': payload})
                 # Initial numeric status event (delivered)
@@ -944,7 +1013,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                         'data': {
                             'type': 'inbox.update',
                             'conversation_id': conv.id,
-                            'last_message_preview': (caption or msg.attachment_name or 'مرفق')[:80],
+                            'last_message_preview': preview_label[:80],
                             'last_message_at': msg.created_at.isoformat(),
                             'unread_count': 1,
                         }
@@ -964,13 +1033,24 @@ class ConversationViewSet(viewsets.ModelViewSet):
                         sender_display = getattr(request.user, 'display_name', '') or request.user.username
                 except Exception:
                     sender_display = getattr(request.user, 'display_name', '') or request.user.username
-                pusher_client.trigger(f"chat_{conv.id}", 'message', {
+                pusher_payload = {
+                    'type': 'chat.message',
+                    'id': msg.id,
+                    'conversation_id': conv.id,
                     'username': request.user.username,
+                    'sender': request.user.username,
                     'display_name': sender_display,
                     'senderDisplay': sender_display,
-                    'message': caption or (msg.attachment_name or 'مرفق'),
-                    'conversation_id': conv.id,
-                })
+                    'body': sanitized_body,
+                    'message': sanitized_body,
+                    'created_at': msg.created_at.isoformat(),
+                    'kind': 'text',
+                    'seq': msg.id,
+                    'status': 'delivered',
+                    'delivery_status': 1,
+                    'attachment': attachment_payload,
+                }
+                pusher_client.trigger(f"chat_{conv.id}", 'message', pusher_payload)
                 for uid in get_conversation_viewer_ids(conv):
                     if uid == request.user.id:
                         continue
@@ -978,7 +1058,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                         'type': 'message',
                         'conversation_id': conv.id,
                         'from': getattr(request.user, 'display_name', '') or request.user.username,
-                        'preview': (caption or msg.attachment_name or 'مرفق')[:80],
+                        'preview': preview_label[:80],
                         'last_message_at': msg.created_at.isoformat(),
                     })
         except Exception:
@@ -986,7 +1066,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
         # Web Push notification
         try:
             display = getattr(request.user, 'display_name', '') or request.user.username
-            preview = (caption or msg.attachment_name or 'مرفق')[:60]
+            preview = preview_label[:60]
             try:
                 avatar = request.build_absolute_uri(request.user.logo.url) if getattr(request.user, 'logo', None) else None
             except Exception:
@@ -1446,7 +1526,7 @@ class TransactionViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, viewset
 
 
 from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.urls import reverse
 from .models import NotificationSetting
 from django.contrib.auth.hashers import check_password
@@ -1486,6 +1566,23 @@ class NotificationSoundView(APIView):
             except Exception:
                 url = None
         return Response({ 'sound_url': url })
+
+
+class BrandingView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        branding = BrandingSetting.objects.filter(active=True).order_by('-updated_at', '-id').first()
+        url = None
+        if branding and branding.logo:
+            try:
+                url = request.build_absolute_uri(branding.logo.url)
+            except Exception:
+                try:
+                    url = branding.logo.url
+                except Exception:
+                    url = None
+        return Response({'logo_url': url})
 
 
 class TeamLoginView(APIView):

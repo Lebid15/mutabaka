@@ -27,6 +27,21 @@ class NotificationSetting(models.Model):
     def __str__(self):  # pragma: no cover
         return f"NotificationSetting(active={self.active})"
 
+
+class BrandingSetting(models.Model):
+    """Branding assets (logo) configurable from the admin panel."""
+
+    logo = models.ImageField(upload_to='branding/', null=True, blank=True)
+    active = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-updated_at', '-id']
+
+    def __str__(self):  # pragma: no cover
+        return f"BrandingSetting(active={self.active})"
+
 class ContactRelation(models.Model):
     STATUS_CHOICES = [
         ("pending", "Pending"),
@@ -252,7 +267,7 @@ class Transaction(models.Model):
 
             display_amount = format_display_amount(amount)
             # Create a chat message reflecting the transaction
-            Message.objects.create(
+            chat_message = Message.objects.create(
                 conversation=conversation,
                 sender=actor,
                 sender_team_member=sender_team_member,
@@ -271,19 +286,29 @@ class Transaction(models.Model):
                 if channel_layer is not None:
                     group = f"conv_{conversation.id}"
                     preview_body = f"معاملة: {( 'لنا' if direction=='lna' else 'لكم')} {display_amount} {currency.symbol or currency.code}{(' - ' + note) if note else ''}".strip()
+                    delivered_at = chat_message.delivered_at.isoformat() if chat_message.delivered_at else None
+                    read_at = chat_message.read_at.isoformat() if chat_message.read_at else None
                     async_to_sync(channel_layer.group_send)(group, {
                         'type': 'broadcast.message',
                         'data': {
                             'type': 'chat.message',
-                            'id': txn.id,
+                            'conversation_id': conversation.id,
+                            'id': chat_message.id,
+                            'message_id': chat_message.id,
+                            'seq': chat_message.id,
                             'sender': actor.username,
                             'senderDisplay': sender_display,
                             'body': preview_body,
-                            'created_at': timezone.now().isoformat(),
+                            'created_at': chat_message.created_at.isoformat(),
                             'kind': 'transaction',
+                            'delivery_status': chat_message.delivery_status,
+                            'status': 'delivered' if (chat_message.delivery_status or 0) >= 1 else 'sent',
+                            'delivered_at': delivered_at,
+                            'read_at': read_at,
                         }
                     })
                     from .models import get_conversation_viewer_ids  # local import
+                    last_msg_iso = chat_message.created_at.isoformat()
                     for uid in get_conversation_viewer_ids(conversation):
                         if uid == actor.id:
                             continue
@@ -293,7 +318,7 @@ class Transaction(models.Model):
                                 'type': 'inbox.update',
                                 'conversation_id': conversation.id,
                                 'last_message_preview': preview_body[:80],
-                                'last_message_at': timezone.now().isoformat(),
+                                'last_message_at': last_msg_iso,
                                 'unread_count': 1,
                             }
                         })
@@ -312,8 +337,14 @@ class Transaction(models.Model):
                         'senderDisplay': sender_display,
                         'message': preview_body,
                         'conversation_id': conversation.id,
+                        'id': chat_message.id,
+                        'message_id': chat_message.id,
+                        'seq': chat_message.id,
+                        'delivered_at': chat_message.delivered_at.isoformat() if chat_message.delivered_at else None,
+                        'read_at': chat_message.read_at.isoformat() if chat_message.read_at else None,
                     })
                     from .models import get_conversation_viewer_ids  # local import
+                    last_msg_iso = chat_message.created_at.isoformat()
                     for uid in get_conversation_viewer_ids(conversation):
                         if uid == actor.id:
                             continue
@@ -322,7 +353,7 @@ class Transaction(models.Model):
                             'conversation_id': conversation.id,
                             'from': getattr(actor, 'display_name', '') or actor.username,
                             'preview': preview_body[:80],
-                            'last_message_at': timezone.now().isoformat(),
+                            'last_message_at': last_msg_iso,
                         })
             except Exception:
                 pass

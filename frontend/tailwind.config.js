@@ -7,11 +7,11 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        chatBg: '#0b141a',
-        chatPanel: '#111b21',
-        chatDivider: '#233138',
-        bubbleSent: '#005c4b',
-        bubbleReceived: '#202c33',
+        chatBg: 'rgb(var(--color-chat-bg) / <alpha-value>)',
+        chatPanel: 'rgb(var(--color-chat-panel) / <alpha-value>)',
+        chatDivider: 'rgb(var(--color-chat-divider) / <alpha-value>)',
+        bubbleSent: 'rgb(var(--color-bubble-sent) / <alpha-value>)',
+        bubbleReceived: 'rgb(var(--color-bubble-received) / <alpha-value>)',
       },
     },
   },

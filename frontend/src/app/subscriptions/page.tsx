@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { apiClient } from '@/lib/api';
+import { useThemeMode } from '../theme-context';
 
 type PlanCode = 'silver'|'golden'|'king';
 
@@ -23,14 +24,6 @@ const planNameOrLabel = (plan?: { name?: string; code?: string }) => {
 }
 
 // Render status with Arabic labels; "active" shown as green "نشط"
-const statusLabel = (s?: string) => {
-  if (!s) return <span className="text-gray-300">غير معروف</span>;
-  if (s === 'active') return <span className="text-green-400 font-semibold">نشط</span>;
-  if (s === 'expired') return <span className="text-red-400">منتهي</span>;
-  if (s === 'cancelled') return <span className="text-gray-400">ملغي</span>;
-  return <span className="text-gray-300">{s}</span>;
-}
-
 // Format date/time in English with day-month-year order and 24h time
 const formatDateTimeEn = (iso?: string) => {
   if (!iso) return '—';
@@ -59,6 +52,54 @@ export default function SubscriptionsPage() {
   const [plans, setPlans] = useState<any[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<PlanCode>('silver');
   const [busy, setBusy] = useState(false);
+  const { isLight } = useThemeMode();
+
+  const statusLabel = (s?: string) => {
+    if (!s) return <span className={isLight ? 'text-[#9f8c7c]' : 'text-gray-300'}>غير معروف</span>;
+    if (s === 'active') return <span className={isLight ? 'text-[#207650] font-semibold' : 'text-green-400 font-semibold'}>نشط</span>;
+    if (s === 'expired') return <span className={isLight ? 'text-[#d1433f]' : 'text-red-400'}>منتهي</span>;
+    if (s === 'cancelled') return <span className={isLight ? 'text-[#9f8c7c]' : 'text-gray-400'}>ملغي</span>;
+    return <span className={isLight ? 'text-[#9f8c7c]' : 'text-gray-300'}>{s}</span>;
+  };
+
+  const containerClass = isLight
+    ? 'min-h-screen bg-[rgb(var(--color-chat-bg))] text-[#3c3127] p-4'
+    : 'min-h-screen bg-chatBg text-gray-100 p-4';
+  const panelClass = isLight
+    ? 'max-w-2xl mx-auto bg-white/95 border border-[#f2cdaa] rounded-2xl p-5 shadow-sm'
+    : 'max-w-2xl mx-auto bg-chatPanel border border-chatDivider rounded-lg p-4';
+  const backLinkClass = isLight ? 'text-[#9a836f] hover:text-[#5d4838] transition' : 'text-gray-300 hover:text-white transition';
+  const titleClass = isLight ? 'font-bold text-lg text-[#3b2f24]' : 'font-bold text-lg';
+  const tableWrapperClass = isLight
+    ? 'rounded-2xl overflow-hidden border border-[#f1c8a4] bg-white shadow-sm'
+    : 'rounded-lg overflow-hidden border border-chatDivider bg-[#0e1b22]/70 backdrop-blur-sm';
+  const tableHeaderClass = isLight
+    ? 'grid grid-cols-3 text-center bg-[#fff3e4] border-b border-[#f1c8a4] text-[13px]'
+    : 'grid grid-cols-3 text-center bg-white/10 border-b border-chatDivider text-[13px]';
+  const tableRowClass = isLight
+    ? 'grid grid-cols-3 text-center border-b border-[#f3d8bb] text-xs divide-x divide-[#f3d8bb]'
+    : 'grid grid-cols-3 text-center border-b border-chatDivider text-xs divide-x divide-chatDivider/60';
+  const tableRowLastClass = isLight
+    ? 'grid grid-cols-3 text-center text-xs divide-x divide-[#f3d8bb]'
+    : 'grid grid-cols-3 text-center text-xs divide-x divide-chatDivider/60';
+  const metaCardClass = isLight
+    ? 'p-4 rounded-2xl border border-[#f1c8a4] bg-white/95 shadow-sm'
+    : 'p-3 rounded border border-chatDivider';
+  const metaLabelClass = isLight ? 'text-[#7f6958]' : 'text-gray-400';
+  const selectClass = `rounded-lg px-3 py-2 text-sm transition focus:outline-none focus:ring-2 ${isLight
+    ? 'bg-white border border-[#f1c59c] text-[#3d3227] focus:border-[#eb9f5d] focus:ring-[#f8d5b3]/60 shadow-sm'
+    : 'bg-chatBg border border-chatDivider text-gray-100 focus:border-emerald-500/50 focus:ring-emerald-500/20'}`;
+  const buttonClass = (variant: 'primary' | 'secondary') => {
+    const base = 'px-3 py-2 rounded-lg text-sm font-semibold transition shadow-sm disabled:opacity-60 inline-flex items-center gap-2';
+    if (variant === 'primary') {
+      return `${base} ${isLight ? 'bg-[#2f9d73] text-white border border-[#bde5d1] hover:bg-[#258660]' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`;
+    }
+    return `${base} ${isLight ? 'bg-[#3d82f6] text-white border border-[#c5d9ff] hover:bg-[#2f6ee5]' : 'bg-blue-600 hover:bg-blue-700 text-white'}`;
+  };
+  const pendingBadgeClass = isLight
+    ? 'mb-3 text-xs inline-flex items-center gap-2 bg-[#fff4e0] text-[#8a6b44] border border-[#f2cfae] px-2 py-1 rounded'
+    : 'mb-3 text-xs inline-flex items-center gap-2 bg-amber-600/20 text-amber-300 border border-amber-600/40 px-2 py-1 rounded';
+  const summaryCardWrapper = isLight ? 'space-y-1 text-sm text-[#3c3127]' : 'space-y-1 text-sm';
 
   // Currently selected plan info (to read yearly discount, etc.).
   const selectedPlanInfo = useMemo(() => plans.find(p => p.code === selectedPlan), [plans, selectedPlan]);
@@ -150,46 +191,53 @@ export default function SubscriptionsPage() {
     } finally { setBusy(false); }
   };
 
+  if (!mounted) {
+    return (
+      <div className={containerClass}>
+        <div className={`${panelClass} text-center text-sm ${isLight ? 'text-[#8d7a69]' : 'text-gray-300'}`}>
+          جارٍ التحقق من حالة الاشتراك…
+        </div>
+      </div>
+    );
+  }
+
   if (!apiClient.access || blocked) {
     return (
-      <div className="min-h-screen bg-chatBg text-gray-100 flex items-center justify-center p-6">
-        <div className="bg-chatPanel border border-chatDivider rounded-lg p-6 max-w-md w-full text-center">
-          <div className="font-bold mb-2">{blocked ? 'هذه الصفحة متاحة فقط للمالك' : 'الرجاء تسجيل الدخول أولاً'}</div>
-          <a href="/" className="text-sm text-green-400 hover:underline">الانتقال للصفحة الرئيسية</a>
+      <div className={`${containerClass} flex items-center justify-center`}>
+        <div className={isLight ? 'bg-white/95 border border-[#f2cdaa] rounded-2xl p-6 max-w-md w-full text-center shadow-sm' : 'bg-chatPanel border border-chatDivider rounded-lg p-6 max-w-md w-full text-center'}>
+          <div className={`font-bold mb-2 ${isLight ? 'text-[#3b2f24]' : ''}`}>{blocked ? 'هذه الصفحة متاحة فقط للمالك' : 'الرجاء تسجيل الدخول أولاً'}</div>
+          <a href="/" className={isLight ? 'text-sm text-[#27825b] hover:underline' : 'text-sm text-green-400 hover:underline'}>الانتقال للصفحة الرئيسية</a>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-chatBg text-gray-100 p-4">
-      <div className="max-w-2xl mx-auto bg-chatPanel border border-chatDivider rounded-lg p-4">
+    <div className={containerClass}>
+      <div className={panelClass}>
         <div className="flex items-center gap-3 mb-4">
-          <Link href="/" className="text-gray-300 hover:text-white" title="رجوع">
+          <Link href="/" className={backLinkClass} title="رجوع">
             <svg xmlns='http://www.w3.org/2000/svg' className='h-6 w-6' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
               <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M15 19l-7-7 7-7'/>
             </svg>
           </Link>
-          <h1 className="font-bold text-lg">الاشتراك</h1>
+          <h1 className={titleClass}>الاشتراك</h1>
         </div>
 
         {/* Plans snapshot table (top of page) */}
         <div className="mb-4">
-          <div className="rounded-lg overflow-hidden border border-chatDivider bg-[#0e1b22]/70 backdrop-blur-sm">
-            {/* Row 1: plan names */}
-            <div className="grid grid-cols-3 text-center bg-white/10 border-b border-chatDivider text-[13px]">
+          <div className={tableWrapperClass}>
+            <div className={tableHeaderClass}>
               <div className="px-2 py-1.5 font-semibold">فضي</div>
               <div className="px-2 py-1.5 font-semibold">ذهبي</div>
               <div className="px-2 py-1.5 font-semibold">ملكي</div>
             </div>
-            {/* Row 2: contacts */}
-            <div className="grid grid-cols-3 text-center border-b border-chatDivider text-xs divide-x divide-chatDivider/60">
+            <div className={tableRowClass}>
               <div className="px-2 py-1.5">5 جهات اتصال</div>
               <div className="px-2 py-1.5">30 جهة اتصال</div>
               <div className="px-2 py-1.5">غير محدود</div>
             </div>
-            {/* Row 3: price */}
-            <div className="grid grid-cols-3 text-center text-xs divide-x divide-chatDivider/60">
+            <div className={tableRowLastClass}>
               <div className="px-2 py-1.5">20 دولار</div>
               <div className="px-2 py-1.5">30 دولار</div>
               <div className="px-2 py-1.5">50 دولار</div>
@@ -198,48 +246,48 @@ export default function SubscriptionsPage() {
         </div>
 
         {loading ? (
-          <div className="text-sm text-gray-400">جارٍ التحميل…</div>
+          <div className={`text-sm ${isLight ? 'text-[#9a8878]' : 'text-gray-400'}`}>جارٍ التحميل…</div>
         ) : error ? (
-          <div className="text-sm text-red-400">{error}</div>
+          <div className={`text-sm ${isLight ? 'text-[#d1433f]' : 'text-red-400'}`}>{error}</div>
         ) : (
           <div className="space-y-3">
-            <div className="p-3 rounded border border-chatDivider">
+            <div className={metaCardClass}>
               {pending && (
-                <div className="mb-3 text-xs inline-flex items-center gap-2 bg-amber-600/20 text-amber-300 border border-amber-600/40 px-2 py-1 rounded">
-                  <span className="h-2 w-2 bg-amber-400 rounded-full" />
-                  طلبك قيد المراجعة
+                <div className={pendingBadgeClass}>
+                  <span className={`h-2 w-2 rounded-full ${isLight ? 'bg-[#e6a23c]' : 'bg-amber-400'}`} />
+                  <span>طلبك قيد المراجعة</span>
                 </div>
               )}
               {/* Single-column layout on all screen sizes (match mobile design) */}
-              <div className="grid grid-cols-1 gap-2 text-sm">
-                <div className="flex justify-between"><span className="text-gray-400">الباقة الحالية</span><span className="font-semibold">{planNameOrLabel(sub?.plan)}</span></div>
-                <div className="flex justify-between"><span className="text-gray-400">نوع الاشتراك</span><span className="font-semibold">{periodLabel}</span></div>
-                <div className="flex justify-between"><span className="text-gray-400">تاريخ آخر اشتراك</span><span>{formatDateTimeEn(sub?.start_at)}</span></div>
-                <div className="flex justify-between"><span className="text-gray-400">تاريخ الانتهاء</span><span>{formatDateTimeEn(sub?.end_at)}</span></div>
-                <div className="flex justify-between"><span className="text-gray-400">الحالة</span><span>{statusLabel(sub?.status)}</span></div>
-                <div className="flex justify-between"><span className="text-gray-400">الأيام المتبقية</span><span>{remainingDays}</span></div>
+              <div className={summaryCardWrapper}>
+                <div className="flex justify-between"><span className={metaLabelClass}>الباقة الحالية</span><span className="font-semibold">{planNameOrLabel(sub?.plan)}</span></div>
+                <div className="flex justify-between"><span className={metaLabelClass}>نوع الاشتراك</span><span className="font-semibold">{periodLabel}</span></div>
+                <div className="flex justify-between"><span className={metaLabelClass}>تاريخ آخر اشتراك</span><span>{formatDateTimeEn(sub?.start_at)}</span></div>
+                <div className="flex justify-between"><span className={metaLabelClass}>تاريخ الانتهاء</span><span>{formatDateTimeEn(sub?.end_at)}</span></div>
+                <div className="flex justify-between"><span className={metaLabelClass}>الحالة</span><span>{statusLabel(sub?.status)}</span></div>
+                <div className="flex justify-between"><span className={metaLabelClass}>الأيام المتبقية</span><span>{remainingDays}</span></div>
               </div>
             </div>
 
-            <div className="p-3 rounded border border-chatDivider space-y-3">
+            <div className={`${metaCardClass} space-y-3`}>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="text-sm text-gray-300">ترقية الباقة</div>
-                <select disabled={!!pending || busy} value={selectedPlan} onChange={e=>setSelectedPlan(e.target.value as PlanCode)} className="bg-chatBg border border-chatDivider rounded px-2 py-1 text-sm">
+                <div className={`text-sm ${isLight ? 'text-[#6f5b4a]' : 'text-gray-300'}`}>ترقية الباقة</div>
+                <select disabled={!!pending || busy} value={selectedPlan} onChange={e=>setSelectedPlan(e.target.value as PlanCode)} className={selectClass}>
                   {sortedPlans.map(p => (
                     <option key={p.code} value={p.code}>{planNameOrLabel(p)}</option>
                   ))}
                 </select>
               </div>
               <div className="flex items-center gap-2">
-                <button disabled={!!pending || busy} onClick={()=>renew('monthly')} className={(!!pending||busy? 'bg-emerald-600/60':'bg-emerald-600 hover:bg-emerald-700')+" px-3 py-1 rounded text-sm"}>تجديد شهري</button>
+                <button disabled={!!pending || busy} onClick={()=>renew('monthly')} className={buttonClass('primary')}>تجديد شهري</button>
                 <button
                   disabled={!!pending || busy}
                   onClick={()=>renew('yearly')}
-                  className={(!!pending||busy? 'bg-blue-600/60':'bg-blue-600 hover:bg-blue-700')+" px-3 py-1 rounded text-sm inline-flex items-center gap-2"}
+                  className={buttonClass('secondary')}
                 >
                   <span>تجديد سنوي</span>
                   {!!selectedPlanInfo?.yearly_discount_percent && (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-300 text-yellow-900 shadow-sm">
+                    <span className={isLight ? 'px-2 py-0.5 rounded text-[10px] font-bold bg-[#fcd34d] text-[#854d0e] shadow-sm border border-[#f8c66c]' : 'px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-300 text-yellow-900 shadow-sm'}>
                       خصم {selectedPlanInfo.yearly_discount_percent} %
                     </span>
                   )}

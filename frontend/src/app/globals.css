@@ -3,10 +3,56 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+	color-scheme: light;
+	--color-chat-bg: 255 249 244;
+	--color-chat-panel: 255 255 255;
+	--color-chat-divider: 248 221 200;
+	--color-bubble-sent: 255 188 120;
+	--color-bubble-received: 255 236 220;
+}
+
+[data-theme='dark'] {
+	color-scheme: dark;
+	--color-chat-bg: 11 20 26;
+	--color-chat-panel: 17 27 33;
+	--color-chat-divider: 35 49 56;
+	--color-bubble-sent: 0 92 75;
+	--color-bubble-received: 32 44 51;
+}
+
+body {
+	background-color: rgb(var(--color-chat-bg));
+	color: #2d241a;
+	transition: background-color 0.4s ease, color 0.4s ease;
+}
+
+[data-theme='dark'] body {
+	color: #e2e8f0;
+}
+
 /* تخصيص شريط التمرير */
 .custom-scrollbar::-webkit-scrollbar { width: 8px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: #2a3942; border-radius: 4px; }
-.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #3b4a52; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 184, 120, 0.6); border-radius: 4px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 184, 120, 0.9); }
+
+[data-theme='dark'] .custom-scrollbar::-webkit-scrollbar-thumb { background: #2a3942; }
+[data-theme='dark'] .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #3b4a52; }
+
+[data-theme='light'] .text-gray-100 { color: #2d241a !important; }
+[data-theme='light'] .text-gray-200 { color: #3c3127 !important; }
+[data-theme='light'] .text-gray-300 { color: #50453b !important; }
+[data-theme='light'] .text-gray-400 { color: #6b6057 !important; }
+[data-theme='light'] .text-gray-500 { color: #857a72 !important; }
+[data-theme='light'] .text-gray-600 { color: #9e948d !important; }
+[data-theme='light'] .text-amber-200 { color: #b45309 !important; }
+
+[data-theme='light'] .bg-white\/5 { background-color: rgba(255, 196, 140, 0.15); }
+[data-theme='light'] .hover\:bg-white\/10:hover { background-color: rgba(255, 196, 140, 0.22); }
+[data-theme='light'] .border-white\/10 { border-color: rgba(255, 196, 140, 0.25); }
+
+[data-theme='light'] .shadow-2xl\/40 { box-shadow: 0 35px 60px -15px rgba(255, 176, 102, 0.2) !important; }
+[data-theme='light'] .shadow-xl { box-shadow: 0 25px 50px -12px rgba(255, 176, 102, 0.2); }
 
 html, body { height: 100%; }

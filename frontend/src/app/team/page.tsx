@@ -1,5 +1,5 @@
 "use client";
-import { ChangeEvent, useEffect, useState } from "react";
+import { ChangeEvent, Fragment, useEffect, useState } from "react";
 import { createTeamMember, deleteTeamMember, listTeam, updateTeamMember, TeamMember } from "@/lib/api-team";
 
 export default function TeamPage() {
@@ -11,7 +11,7 @@ export default function TeamPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editDraft, setEditDraft] = useState<{ display_name: string; phone: string }>({ display_name: "", phone: "" });
+  const [editDraft, setEditDraft] = useState<{ display_name: string; phone: string; password: string }>({ display_name: "", phone: "", password: "" });
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -59,7 +59,7 @@ export default function TeamPage() {
     } finally { setLoading(false); }
   };
 
-  const update = async (id: number, patch: Partial<{ display_name: string; phone: string }>) => {
+  const update = async (id: number, patch: Partial<{ display_name: string; phone: string; password: string }>) => {
     if (!token) return;
     const updated = await updateTeamMember(token, id, patch);
     setItems(items.map((it: TeamMember) => (it.id === id ? updated : it)));
@@ -67,19 +67,31 @@ export default function TeamPage() {
 
   const startEdit = (it: TeamMember) => {
     setEditingId(it.id);
-    setEditDraft({ display_name: it.display_name || "", phone: it.phone || "" });
+    setEditDraft({ display_name: it.display_name || "", phone: it.phone || "", password: "" });
   };
 
   const saveEdit = async () => {
     if (!token || editingId === null) return;
     try {
-      await update(editingId, { display_name: editDraft.display_name, phone: editDraft.phone });
+      const patch: Partial<{ display_name: string; phone: string; password: string }> = {
+        display_name: editDraft.display_name,
+        phone: editDraft.phone,
+      };
+      const pwd = editDraft.password.trim();
+      if (pwd.length > 0) {
+        patch.password = pwd;
+      }
+      await update(editingId, patch);
     } finally {
       setEditingId(null);
+      setEditDraft({ display_name: "", phone: "", password: "" });
     }
   };
 
-  const cancelEdit = () => setEditingId(null);
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditDraft({ display_name: "", phone: "", password: "" });
+  };
 
   const remove = async (id: number) => {
     if (!token) return;
@@ -188,41 +200,65 @@ export default function TeamPage() {
             </thead>
             <tbody className="divide-y divide-chatDivider/50">
               {items.map((it: TeamMember) => (
-                <tr key={it.id} className="text-xs text-gray-100">
-                  <td className="px-3 py-2">{it.username}</td>
-                  <td className="px-3 py-2">
-                    <input
-                      className="w-full bg-chatBg border border-chatDivider rounded px-2 py-1 text-xs text-gray-100 disabled:opacity-60"
-                      value={editingId === it.id ? editDraft.display_name : (it.display_name || "")}
-                      readOnly={editingId !== it.id}
-                      disabled={editingId !== it.id}
-                      onChange={(e: ChangeEvent<HTMLInputElement>) => setEditDraft((d) => ({ ...d, display_name: e.target.value }))}
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      className="w-full bg-chatBg border border-chatDivider rounded px-2 py-1 text-xs text-gray-100 disabled:opacity-60"
-                      value={editingId === it.id ? editDraft.phone : (it.phone || "")}
-                      readOnly={editingId !== it.id}
-                      disabled={editingId !== it.id}
-                      onChange={(e: ChangeEvent<HTMLInputElement>) => setEditDraft((d) => ({ ...d, phone: e.target.value }))}
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-left space-x-2 space-x-reverse">
-                    {editingId === it.id ? (
-                      <>
-                        <button className="px-3 py-1 rounded bg-green-600 hover:bg-green-700 text-white ml-2" onClick={saveEdit}>حفظ</button>
-                        <button className="px-3 py-1 rounded bg-gray-600/80 hover:bg-gray-600 text-white ml-2" onClick={cancelEdit}>إلغاء</button>
-                        <button className="px-3 py-1 rounded bg-red-600/80 hover:bg-red-600 text-white" onClick={() => remove(it.id)}>حذف</button>
-                      </>
-                    ) : (
-                      <>
-                        <button className="px-3 py-1 rounded bg-blue-600/80 hover:bg-blue-600 text-white ml-2" onClick={() => startEdit(it)}>تعديل</button>
-                        <button className="px-3 py-1 rounded bg-red-600/80 hover:bg-red-600 text-white" onClick={() => remove(it.id)}>حذف</button>
-                      </>
-                    )}
-                  </td>
-                </tr>
+                <Fragment key={it.id}>
+                  <tr key={it.id} className="text-xs text-gray-100">
+                    <td className="px-3 py-2">{it.username}</td>
+                    <td className="px-3 py-2">
+                      <input
+                        className="w-full bg-chatBg border border-chatDivider rounded px-2 py-1 text-xs text-gray-100 disabled:opacity-60"
+                        value={editingId === it.id ? editDraft.display_name : (it.display_name || "")}
+                        readOnly={editingId !== it.id}
+                        disabled={editingId !== it.id}
+                        onChange={(e: ChangeEvent<HTMLInputElement>) => setEditDraft((d) => ({ ...d, display_name: e.target.value }))}
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        className="w-full bg-chatBg border border-chatDivider rounded px-2 py-1 text-xs text-gray-100 disabled:opacity-60"
+                        value={editingId === it.id ? editDraft.phone : (it.phone || "")}
+                        readOnly={editingId !== it.id}
+                        disabled={editingId !== it.id}
+                        onChange={(e: ChangeEvent<HTMLInputElement>) => setEditDraft((d) => ({ ...d, phone: e.target.value }))}
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-left space-x-2 space-x-reverse">
+                      {editingId === it.id ? (
+                        <>
+                          <button className="px-3 py-1 rounded bg-green-600 hover:bg-green-700 text-white ml-2" onClick={saveEdit}>حفظ</button>
+                          <button className="px-3 py-1 rounded bg-gray-600/80 hover:bg-gray-600 text-white ml-2" onClick={cancelEdit}>إلغاء</button>
+                          <button className="px-3 py-1 rounded bg-red-600/80 hover:bg-red-600 text-white" onClick={() => remove(it.id)}>حذف</button>
+                        </>
+                      ) : (
+                        <>
+                          <button className="px-3 py-1 rounded bg-blue-600/80 hover:bg-blue-600 text-white ml-2" onClick={() => startEdit(it)}>تعديل</button>
+                          <button className="px-3 py-1 rounded bg-red-600/80 hover:bg-red-600 text-white" onClick={() => remove(it.id)}>حذف</button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                  {editingId === it.id && (
+                    <tr className="bg-chatBg/40 text-xs text-gray-100">
+                      <td colSpan={4} className="px-3 pb-4 pt-0">
+                        <div className="flex flex-col md:flex-row md:items-end md:gap-4 gap-2">
+                          <div className="flex-1">
+                            <label className="block text-[11px] text-gray-300 mb-1">كلمة المرور الجديدة</label>
+                            <input
+                              type="password"
+                              className="w-full bg-chatBg border border-chatDivider rounded px-3 py-2 text-xs text-gray-100"
+                              placeholder="اترك الحقل فارغاً للإبقاء على كلمة المرور الحالية"
+                              autoComplete="new-password"
+                              value={editDraft.password}
+                              onChange={(e: ChangeEvent<HTMLInputElement>) => setEditDraft((d) => ({ ...d, password: e.target.value }))}
+                            />
+                          </div>
+                          <p className="text-[10px] text-gray-400 md:max-w-xs">
+                            بإمكان المالك تحديث كلمة مرور العضو مباشرة. سيحتفظ النظام بكلمة المرور الحالية إذا بقي الحقل فارغًا.
+                          </p>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
               {items.length === 0 && (
                 <tr>

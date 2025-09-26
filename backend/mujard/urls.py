@@ -27,7 +27,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.http import JsonResponse
 from rest_framework import status
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.contrib.auth import get_user_model
 from accounts.totp_views import TOTPStatusView, TOTPSetupView, TOTPEnableView, TOTPDisableView
 from accounts.pin_views import (
@@ -43,7 +43,7 @@ class MeView(APIView):
     Minimal payload used by frontend for avatar/initials.
     """
     permission_classes = [IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get(self, request, *args, **kwargs):  # pragma: no cover - simple serialization
         u = request.user
@@ -69,22 +69,34 @@ class MeView(APIView):
         })
 
     def patch(self, request, *args, **kwargs):
-        """Allow updating first_name, last_name, and phone"""
+        """Allow updating first_name, last_name, phone, and display_name"""
         u = request.user
-        # display_name is intentionally NOT updatable here; admin only via Django Admin.
-        allowed = ['first_name', 'last_name', 'phone']
-        for k in allowed:
-            if k in request.data:
-                setattr(u, k, request.data.get(k))
+        allowed = ['first_name', 'last_name', 'phone', 'display_name']
+        for key in allowed:
+            if key not in request.data:
+                continue
+            value = request.data.get(key)
+            if isinstance(value, str):
+                value = value.strip()
+            if key == 'display_name' and value:
+                if len(value) > 150:
+                    return Response({'detail': 'الاسم الظاهر يجب ألا يتجاوز 150 حرفاً'}, status=status.HTTP_400_BAD_REQUEST)
+            setattr(u, key, value)
         u.save()
         return self.get(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
         action = request.query_params.get('action') or request.data.get('action')
+        if isinstance(action, str):
+            action = action.strip().lower()
         u = request.user
         if action == 'change_password':
             old = request.data.get('old_password')
             new = request.data.get('new_password')
+            if isinstance(old, str):
+                old = old.strip()
+            if isinstance(new, str):
+                new = new.strip()
             if not old or not new:
                 return Response({'detail': 'old_password and new_password required'}, status=status.HTTP_400_BAD_REQUEST)
             if not u.check_password(old):

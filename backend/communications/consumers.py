@@ -70,8 +70,9 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                     read_at=now,
                     delivered_at=now,
                     delivery_status=dj_models.Case(
-                        dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)),
-                        default=dj_models.F('delivery_status')
+                        dj_models.When(delivery_status__lt=2, then=dj_models.Value(2, output_field=dj_models.PositiveSmallIntegerField())),
+                        default=dj_models.F('delivery_status'),
+                        output_field=dj_models.PositiveSmallIntegerField()
                     )
                 )
                 last_read_id = max(ids)
@@ -97,7 +98,7 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                 pass
             # Broadcast chat.read once with last_read_id (if any)
             if last_read_id:
-                payload = { 'type': 'chat.read', 'reader': getattr(user, 'username', None), 'last_read_id': int(last_read_id) }
+                payload = { 'type': 'chat.read', 'conversation_id': int(self.conversation_id), 'reader': getattr(user, 'username', None), 'last_read_id': int(last_read_id) }
                 await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': payload})
             # Broadcast per-message status updates (only if we actually upgraded some)
             if ids:
@@ -106,12 +107,12 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                     try:
                         await self.channel_layer.group_send(self.group_name, {
                             'type': 'broadcast.message',
-                            'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 2, 'status': 'read', 'read_at': read_iso }
+                            'data': { 'type': 'message.status', 'conversation_id': int(self.conversation_id), 'id': int(mid), 'message_id': int(mid), 'delivery_status': 2, 'status': 'read', 'read_at': read_iso }
                         })
                     except Exception:
                         pass
         except Exception:
-            pass
+            logger.exception("Failed to mark messages as read on connect", extra={"event": "read_on_connect_error", "conv": getattr(self, 'group_name', None)})
 
     async def disconnect(self, code):
         if hasattr(self, 'group_name'):
@@ -164,7 +165,7 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                                     try:
                                         await self.channel_layer.group_send(self.group_name, {
                                             'type': 'broadcast.message',
-                                            'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 1, 'status': 'delivered' }
+                                            'data': { 'type': 'message.status', 'conversation_id': int(self.conversation_id), 'id': int(mid), 'message_id': int(mid), 'delivery_status': 1, 'status': 'delivered' }
                                         })
                                     except Exception:
                                         pass
@@ -182,6 +183,7 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                         'type': 'chat.typing',
                         'user': user.username,
                         'state': 'start' if state not in ['stop', 'end'] else 'stop',
+                        'conversation_id': int(self.conversation_id),
                     }
                     await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': payload})
                     return
@@ -207,8 +209,9 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                                 read_at=now,
                                 delivered_at=now,
                                 delivery_status=dj_models.Case(
-                                    dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)),
-                                    default=dj_models.F('delivery_status')
+                                    dj_models.When(delivery_status__lt=2, then=dj_models.Value(2, output_field=dj_models.PositiveSmallIntegerField())),
+                                    default=dj_models.F('delivery_status'),
+                                    output_field=dj_models.PositiveSmallIntegerField()
                                 )
                             )
                             # Update read marker even if there were no rows to update (freeze blue ticks on refresh)
@@ -221,25 +224,26 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                                         defaults={"last_read_message_id": int(max_id)}
                                     )
                             except Exception:
-                                pass
+                                logger.exception("Failed to update ConversationReadMarker", extra={"event": "read_marker_error", "conv": self.group_name, "user": getattr(user,'id',None)})
                             # Broadcast per-message read status (cap at 300)
                             read_iso = now.isoformat()
                             for mid in ids[:300]:
                                 try:
                                     await self.channel_layer.group_send(self.group_name, {
                                         'type': 'broadcast.message',
-                                        'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 2, 'status': 'read', 'read_at': read_iso }
+                                        'data': { 'type': 'message.status', 'conversation_id': int(self.conversation_id), 'id': int(mid), 'message_id': int(mid), 'delivery_status': 2, 'status': 'read', 'read_at': read_iso }
                                     })
                                 except Exception:
-                                    pass
+                                    logger.exception("Failed broadcasting message.status", extra={"event": "broadcast_status_error", "conv": self.group_name, "message_id": mid})
                             try:
                                 logger.info("READ recv", extra={"event": "read_recv", "conv": self.group_name, "user": getattr(user,'username',None), "to_id": last_read_id, "updated": len(ids)})
                             except Exception:
                                 pass
                     except Exception:
-                        pass
+                        logger.exception("Failed processing read event", extra={"event": "read_event_error", "conv": self.group_name})
                     payload = {
                         'type': 'chat.read',
+                        'conversation_id': int(self.conversation_id),
                         'reader': user.username,
                         'last_read_id': last_read_id,
                     }
@@ -286,8 +290,9 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                 read_at=now,
                 delivered_at=now,
                 delivery_status=dj_models.Case(
-                    dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)),
-                    default=dj_models.F('delivery_status')
+                    dj_models.When(delivery_status__lt=2, then=dj_models.Value(2, output_field=dj_models.PositiveSmallIntegerField())),
+                    default=dj_models.F('delivery_status'),
+                    output_field=dj_models.PositiveSmallIntegerField()
                 )
             )
             # Update read marker as well (msg.id covers all prior inbound)
@@ -306,11 +311,16 @@ class ConversationConsumer(AsyncWebsocketConsumer):
         sender_display = (getattr(tm, 'display_name', '') or getattr(tm, 'username', '')) if tm else (getattr(user, 'display_name', '') or user.username)
         payload_message = {
             'type': 'chat.message',
+            'conversation_id': int(self.conversation_id),
             'id': msg.id,
+            'message_id': msg.id,
+            'seq': msg.id,
             'sender': user.username,
             'senderDisplay': sender_display,
             'body': body,
             'created_at': msg.created_at.isoformat(),
+            'delivered_at': msg.created_at.isoformat(),
+            'read_at': None,
             'kind': msg_type,
             'client_id': client_id,
             'delivery_status': 1,
@@ -333,7 +343,29 @@ class ConversationConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': payload_message})
         # Explicit status broadcast (redundant) kept for downstream listeners not capturing initial message
         try:
-            await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': { 'type': 'message.status', 'id': msg.id, 'delivery_status': 1, 'status': 'delivered' }})
+            await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': { 'type': 'message.status', 'conversation_id': int(self.conversation_id), 'id': msg.id, 'message_id': msg.id, 'delivery_status': 1, 'status': 'delivered' }})
+        except Exception:
+            pass
+        # Mirror to Pusher so deployments using Pusher-only listeners remain in sync
+        try:
+            from .pusher_client import pusher_client
+            if pusher_client:
+                from asgiref.sync import sync_to_async
+                await sync_to_async(pusher_client.trigger)(
+                    f"chat_{self.conversation_id}",
+                    'message',
+                    {
+                        'username': user.username,
+                        'display_name': sender_display,
+                        'senderDisplay': sender_display,
+                        'message': body,
+                        'conversation_id': int(self.conversation_id),
+                        'id': msg.id,
+                        'message_id': msg.id,
+                        'delivered_at': msg.created_at.isoformat(),
+                        'read_at': None,
+                    }
+                )
         except Exception:
             pass
         # Also notify recipient's inbox channel so their conversation list updates instantly

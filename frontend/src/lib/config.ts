@@ -16,10 +16,13 @@ function inferFromWindow() {
 }
 
 const inferred = inferFromWindow();
-const API_PROTO = process.env.NEXT_PUBLIC_API_PROTO || inferred?.proto || 'http';
-const API_HOST = process.env.NEXT_PUBLIC_API_HOST || inferred?.host || '127.0.0.1';
-const API_PORT = process.env.NEXT_PUBLIC_API_PORT || inferred?.port || '8000';
-const WS_PROTO = process.env.NEXT_PUBLIC_WS_PROTO || inferred?.wsProto || (API_PROTO === 'https' ? 'wss' : 'ws');
+const isDev = process.env.NODE_ENV !== 'production';
+const devFallback = isDev ? { proto: 'http', host: '127.0.0.1', port: '8000', wsProto: 'ws' } : null;
+
+const API_PROTO = process.env.NEXT_PUBLIC_API_PROTO || devFallback?.proto || inferred?.proto || 'http';
+const API_HOST = process.env.NEXT_PUBLIC_API_HOST || devFallback?.host || inferred?.host || '127.0.0.1';
+const API_PORT = process.env.NEXT_PUBLIC_API_PORT || devFallback?.port || inferred?.port || (API_PROTO === 'https' ? '443' : '80');
+const WS_PROTO = process.env.NEXT_PUBLIC_WS_PROTO || devFallback?.wsProto || inferred?.wsProto || (API_PROTO === 'https' ? 'wss' : 'ws');
 
 export const API_BASE = `${API_PROTO}://${API_HOST}:${API_PORT}`.replace(/:\d+$/,(m)=> (m===':80' && API_PROTO==='http') || (m===':443' && API_PROTO==='https') ? '' : m);
 export const WS_BASE = `${WS_PROTO}://${API_HOST}:${API_PORT}`;

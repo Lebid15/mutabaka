@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiClient } from '../../lib/api';
 
 type Row = { name: string; avatar?: string; usd: number; tryy: number; syp: number; eur: number };
@@ -103,14 +103,62 @@ export default function MatchesPage() {
     return () => { active = false; };
   }, [mounted]);
 
+  const displayRows = useMemo(() => rows.filter(r => !isAdminLike(r.name)), [rows]);
+
   const totals = useMemo(() => {
-    return rows.reduce((t, r) => ({
+    return displayRows.reduce((t, r) => ({
       usd: t.usd + r.usd,
       tryy: t.tryy + r.tryy,
       syp: t.syp + r.syp,
       eur: t.eur + r.eur,
     }), { usd: 0, tryy: 0, syp: 0, eur: 0 });
-  }, [rows]);
+  }, [displayRows]);
+
+  const exportToExcel = useCallback(() => {
+    if (!displayRows.length) return;
+    const headers = ['الجهة', 'دولار', 'تركي', 'سوري', 'يورو'];
+    const totalsSection = [
+      ['ملخص', 'القيمة'],
+      ['دولار', totals.usd.toFixed(5)],
+      ['تركي', totals.tryy.toFixed(5)],
+      ['سوري', totals.syp.toFixed(5)],
+      ['يورو', totals.eur.toFixed(5)],
+    ];
+    const tableData = displayRows.map((row) => [
+      row.name,
+      row.usd.toFixed(5),
+      row.tryy.toFixed(5),
+      row.syp.toFixed(5),
+      row.eur.toFixed(5),
+    ]);
+
+    const lines = [
+      ...totalsSection,
+      [''],
+      headers,
+      ...tableData,
+    ];
+
+    const csv = '\ufeff' + lines
+      .map((line) => line
+        .map((cell) => {
+          const value = cell ?? '';
+          const str = typeof value === 'string' ? value : String(value);
+          return `"${str.replace(/"/g, '""')}"`;
+        })
+        .join(','))
+      .join('\r\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `matches-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [displayRows, totals]);
 
   // Render a stable placeholder during SSR and before mount to prevent hydration mismatch
   if (!mounted) {
@@ -145,7 +193,14 @@ export default function MatchesPage() {
             <svg xmlns='http://www.w3.org/2000/svg' className='h-5 w-5' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M15 19l-7-7 7-7'/></svg>
           </a>
           <div className="font-bold">مطابقاتي</div>
-          <div className="ml-auto text-xs text-gray-400">{profile?.display_name || profile?.username}</div>
+          <button
+            onClick={exportToExcel}
+            disabled={!displayRows.length}
+            className="ml-auto text-xs md:text-sm px-3 py-1.5 rounded border border-teal-500 text-teal-200 hover:bg-teal-600/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            تصدير إلى إكسل
+          </button>
+          <div className="ml-3 text-xs text-gray-400">{profile?.display_name || profile?.username}</div>
         </div>
 
         <div className="p-4 md:p-6">
@@ -188,9 +243,7 @@ export default function MatchesPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows
-                  .filter(r => !isAdminLike(r.name))
-                  .map((r, idx) => (
+                {displayRows.map((r, idx) => (
                   <tr key={idx} className="border-b border-chatDivider/50 hover:bg-white/5">
                     <td className="px-3 py-2 text-left first:border-l-0 rtl:first:border-r-0 border-l rtl:border-r border-chatDivider/40">
                       <div className="flex items-center justify-start gap-2">
@@ -204,7 +257,7 @@ export default function MatchesPage() {
                     <td className="px-3 py-2 whitespace-nowrap text-center first:border-l-0 rtl:first:border-r-0 border-l rtl:border-r border-chatDivider/40" dir="ltr"><span className="tabular-nums">{fmt(r.eur)} €</span></td>
                   </tr>
                 ))}
-                {rows.length === 0 && !loading && (
+                {displayRows.length === 0 && !loading && (
                   <tr>
                     <td colSpan={5} className="px-3 py-6 text-center text-gray-400">لا توجد بيانات مطابقة بعد</td>
                   </tr>

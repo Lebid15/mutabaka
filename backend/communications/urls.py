@@ -4,7 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     UserSearchViewSet, ContactRelationViewSet, ConversationViewSet,
     MessageViewSet, TransactionViewSet, PushSubscribeView, PushUnsubscribeView,
-    NotificationSoundView, EnsureAdminConversationView, TeamMemberViewSet, TeamLoginView
+    NotificationSoundView, BrandingView, EnsureAdminConversationView, TeamMemberViewSet, TeamLoginView
 )
 from finance.views import WalletViewSet, CurrencyViewSet
 
@@ -24,6 +24,7 @@ urlpatterns = [
     path('push/subscribe', PushSubscribeView.as_view(), name='push_subscribe'),
     path('push/unsubscribe', PushUnsubscribeView.as_view(), name='push_unsubscribe'),
     path('notification/sound', NotificationSoundView.as_view(), name='notification_sound'),
+    path('branding', BrandingView.as_view(), name='branding'),
     path('ensure_admin_conversation', EnsureAdminConversationView.as_view(), name='ensure_admin_conversation'),
     path('auth/team/login', TeamLoginView.as_view(), name='team_login'),
     path('', include(router.urls))
