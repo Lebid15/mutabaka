@@ -11,7 +11,7 @@
   "theme_color": "#ffffff",
   "icons": [
     {
-      "src": "https://mutabaka.com/favicon.ico?favicon.0b3bf435.ico",
+      "src": "icons/mlogo.png",
       "type": "image/x-icon",
       "sizes": "256x256",
       "isSquare": true,

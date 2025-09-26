@@ -872,6 +872,10 @@ export default function Home() {
   const [unreadDividerId, setUnreadDividerId] = useState<number | null>(null);
   const [showSidebar, setShowSidebar] = useState(false); // إظهار/إخفاء القائمة على الموبايل
   const [noteText, setNoteText] = useState('');
+  const subscriptionCtaClass = isLightTheme
+    ? 'md:ml-auto ml-0 mt-1 md:mt-0 px-2 py-1 rounded border border-rose-300 hover:bg-rose-100 text-red-00 font-semibold shrink-0'
+    : 'md:ml-auto ml-0 mt-1 md:mt-0 px-2 py-1 rounded border border-rose-600/40 bg-gray-500/10 hover:bg-rose-500/20 text-rose-200 font-semibold shrink-0';
+  const subscriptionCtaStyle = isLightTheme ? { color: '#da6324ff' } : undefined;
   // أزلنا ميزة إظهار/إخفاء حقل المعاملات — ستبقى ظاهرة دائماً
   const contactsSigRef = useRef<string>('');
   const [pendingDeleteByConv, setPendingDeleteByConv] = useState<Record<number, { from: string; at: string }>>({});
@@ -2319,7 +2323,8 @@ export default function Home() {
                 <span className="flex-1 min-w-0 whitespace-normal break-words leading-5">{subBannerMsg || 'للوصول الكامل لميزات المنصة يرجى الاشتراك. يمكنك مراسلة الأدمن دون قيود.'}</span>
                 <a
                   href="/subscriptions"
-                  className="md:ml-auto ml-0 mt-1 md:mt-0 px-2 py-1 rounded border border-rose-300 hover:bg-rose-100 text-red-00 font-semibold shrink-0"
+                  className={subscriptionCtaClass}
+                  style={subscriptionCtaStyle}
                 >
                   اذهب لصفحة الاشتراك
                 </a>
