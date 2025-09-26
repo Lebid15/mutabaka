@@ -165,7 +165,7 @@ function TransactionBubble({ sender, tx, createdAt, isLight }: { sender: 'curren
         <span className={`px-2 py-0.5 rounded-full text-[10px] ${badgeClass}`}>{tx.direction === 'lna' ? 'لنا' : 'لكم'}</span>
       </div>
       <div className="font-semibold tabular-nums" dir="ltr">{amountLabel} {tx.symbol}</div>
-      {tx.note && <div className="text-[10px] text-gray-200/90 mt-1 whitespace-pre-wrap">{tx.note}</div>}
+  {tx.note && <div className="text-[10px] text-gray-200/90 mt-1 whitespace-pre-wrap" dir="rtl">{tx.note}</div>}
       {dateLabel && (
         <div className="mt-1 text-[10px] text-gray-400 flex items-center justify-end" dir="ltr">{dateLabel}</div>
       )}
@@ -2162,7 +2162,11 @@ export default function Home() {
                           <span className="text-base font-semibold truncate flex items-center gap-1">{contact.name} {contact.isMuted && <span title="مكتمة">🔕</span>}</span>
                           <span className="text-[11px] text-gray-400" dir="ltr">{contact.last_message_at ? formatTimeShort(contact.last_message_at) : ''}</span>
                         </div>
-                        <span className="text-sm text-gray-400 truncate">{contact.last_message_preview || ''}</span>
+                        {(() => {
+                          const raw = contact.last_message_preview || '';
+                          const truncated = truncateContactPreview(raw);
+                          return <span className="text-sm text-gray-400 truncate">{truncated}</span>;
+                        })()}
                       </div>
                       <div
                         className="relative flex items-center gap-2"
@@ -2591,7 +2595,7 @@ export default function Home() {
                         {/* Text with ticks (no inline time) */}
                         {content && (
                           <>
-                            <div className="text-sm leading-6 break-words whitespace-normal" dir="auto">
+                            <div className="text-sm leading-6 break-words whitespace-pre-line" dir="rtl">
                               <bdi className="min-w-0 break-words" style={{unicodeBidi:'isolate'}}>
                                 {showHighlight ? highlightText(content, searchQuery) : content}
                               </bdi>
