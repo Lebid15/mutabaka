@@ -11,7 +11,7 @@
   "theme_color": "#FFFFFF",
   "icons": [
     {
-      "src": "icons/mlogo.png",
+      "src": "icons/mlogo.jpg",
       "type": "image/x-icon",
       "sizes": "256x256",
       "isSquare": true,
