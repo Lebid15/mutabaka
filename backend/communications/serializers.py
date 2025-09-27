@@ -1,7 +1,7 @@
 from rest_framework import serializers
 import re
 from django.contrib.auth import get_user_model
-from .models import ContactRelation, Conversation, Message, Transaction, PushSubscription, ConversationMute, TeamMember, ConversationMember, ConversationReadMarker, ContactLink
+from .models import ContactRelation, Conversation, Message, Transaction, PushSubscription, ConversationMute, TeamMember, ConversationMember, ConversationReadMarker, ContactLink, PrivacyPolicy
 from finance.models import Currency
 from django.core.exceptions import ValidationError
 
@@ -49,6 +49,13 @@ class ContactLinkSerializer(serializers.ModelSerializer):
             return obj.get_icon_display()
         except Exception:
             return obj.icon
+
+
+class PrivacyPolicySerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = PrivacyPolicy
+        fields = ["id", "title", "content", "updated_at", "created_at"]
 
 class ContactRelationSerializer(serializers.ModelSerializer):
     contact = PublicUserSerializer(read_only=True)

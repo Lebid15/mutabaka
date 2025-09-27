@@ -672,6 +672,23 @@ class APIClient {
     return await Notification.requestPermission();
   }
 
+  async getPrivacyPolicy(): Promise<{ id: number; title: string; content: string; updated_at: string } | null> {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/privacy-policy`);
+      if (!res.ok) return null;
+      const data = await res.json().catch(() => null);
+      if (!data || typeof data !== 'object') return null;
+      const id = typeof data.id === 'number' ? data.id : Number(data.id ?? 0);
+      const title = typeof data.title === 'string' ? data.title : '';
+      const content = typeof data.content === 'string' ? data.content : '';
+      const updated = typeof data.updated_at === 'string' ? data.updated_at : '';
+      if (!content.trim()) return null;
+      return { id: Number.isFinite(id) ? Number(id) : 0, title, content, updated_at: updated };
+    } catch {
+      return null;
+    }
+  }
+
   urlBase64ToUint8Array(base64String: string) {
     const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
     const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');

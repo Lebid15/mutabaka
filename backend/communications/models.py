@@ -43,6 +43,26 @@ class BrandingSetting(models.Model):
         return f"BrandingSetting(active={self.active})"
 
 
+class PrivacyPolicy(models.Model):
+    """Stores privacy policy / terms content manageable from the admin."""
+
+    title = models.CharField(max_length=200, blank=True)
+    content = models.TextField(help_text="النص الكامل لسياسة الخصوصية أو شروط الاستخدام")
+    is_active = models.BooleanField(default=True, verbose_name="مفعل؟")
+    display_order = models.PositiveIntegerField(default=0, help_text="رتب السياسات، الأصغر يظهر أولاً")
+    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['display_order', '-updated_at']
+        verbose_name = "سياسة خصوصية"
+        verbose_name_plural = "سياسات الخصوصية"
+
+    def __str__(self):  # pragma: no cover
+        label = self.title.strip() if self.title else 'Policy'
+        return f"{label} (active={self.is_active})"
+
+
 class ContactLink(models.Model):
     """Contact methods configurable from admin and shown on the login screen."""
 

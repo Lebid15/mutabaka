@@ -2539,6 +2539,8 @@ export default function Home() {
     const toggleIcon = isLightTheme ? <MoonIcon className="w-5 h-5" /> : <SunIcon className="w-5 h-5" />;
     const displayedContactLinks = contactLinks.slice(0, 10);
     const hasContactLinks = displayedContactLinks.length > 0;
+    const consentTextClass = isLightTheme ? 'text-xs text-gray-500 text-center leading-relaxed' : 'text-xs text-gray-400 text-center leading-relaxed';
+    const consentLinkClass = isLightTheme ? 'text-blue-600 hover:text-blue-500 underline-offset-2 hover:underline' : 'text-blue-400 hover:text-blue-300 underline-offset-2 hover:underline';
     const contactIconButtonBase = isLightTheme
       ? 'group relative flex h-12 w-12 items-center justify-center rounded-full border border-orange-100/80 bg-white/60 backdrop-blur focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300/70 shadow-sm transition'
       : 'group relative flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500/40 transition';
@@ -2623,6 +2625,20 @@ export default function Home() {
             </>
           )}
           <button disabled={loading} className={submitClass}>{loading ? '...' : 'دخول'}</button>
+          <p className={consentTextClass}>
+            تسجيل الدخول يؤكد موافقتك على
+            {' '}
+            <a href="/policy" className={consentLinkClass}>
+              شروط الاستخدام
+            </a>
+            {' '}
+            و
+            {' '}
+            <a href="/policy" className={consentLinkClass}>
+              سياسة الخصوصية
+            </a>
+            .
+          </p>
           {hasContactLinks && (
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3" dir="ltr">
               {displayedContactLinks.map((link) => {

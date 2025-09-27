@@ -2,7 +2,7 @@ from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from finance.models import Currency, Wallet
-from .models import Conversation, Transaction, Message, ContactLink
+from .models import Conversation, Transaction, Message, ContactLink, PrivacyPolicy
 from rest_framework.test import APIClient
 
 User = get_user_model()
@@ -175,3 +175,23 @@ class ContactLinkAPITests(TestCase):
         self.assertEqual(icons, ['telegram', 'whatsapp'])
         labels = [item['label'] for item in payload]
         self.assertEqual(labels, ['', 'واتساب'])
+
+
+class PrivacyPolicyAPITests(TestCase):
+    def setUp(self):
+        PrivacyPolicy.objects.all().delete()
+        self.policy = PrivacyPolicy.objects.create(title='سياسة الخصوصية', content='نص السياسة هنا', is_active=True, display_order=1)
+
+    def test_privacy_policy_endpoint_returns_active_policy(self):
+        client = APIClient()
+        resp = client.get('/api/privacy-policy')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['title'], 'سياسة الخصوصية')
+        self.assertEqual(data['content'], 'نص السياسة هنا')
+
+    def test_privacy_policy_returns_404_when_missing(self):
+        PrivacyPolicy.objects.all().delete()
+        client = APIClient()
+        resp = client.get('/api/privacy-policy')
+        self.assertEqual(resp.status_code, 404)

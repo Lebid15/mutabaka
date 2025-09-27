@@ -4,7 +4,20 @@ from django.urls import reverse
 from django import forms
 from django.http import HttpRequest
 from django.db import models
-from .models import ContactRelation, Conversation, ConversationInbox, Message, Transaction, PushSubscription, NotificationSetting, BrandingSetting, ContactLink, TeamMember, ConversationMember
+from .models import (
+    ContactRelation,
+    Conversation,
+    ConversationInbox,
+    Message,
+    Transaction,
+    PushSubscription,
+    NotificationSetting,
+    BrandingSetting,
+    PrivacyPolicy,
+    ContactLink,
+    TeamMember,
+    ConversationMember,
+)
 
 @admin.register(ContactRelation)
 class ContactRelationAdmin(admin.ModelAdmin):
@@ -178,6 +191,21 @@ class BrandingSettingAdmin(admin.ModelAdmin):
             pass
         return "-"
     logo_preview.short_description = "Preview"
+
+
+@admin.register(PrivacyPolicy)
+class PrivacyPolicyAdmin(admin.ModelAdmin):
+    list_display = ("title", "is_active", "display_order", "updated_at")
+    list_editable = ("is_active", "display_order")
+    search_fields = ("title", "content")
+    list_filter = ("is_active",)
+    ordering = ("display_order", "-updated_at")
+    fieldsets = (
+        (None, {"fields": ("title", "content", "is_active", "display_order")}),
+    )
+    formfield_overrides = {
+        models.TextField: {"widget": forms.Textarea(attrs={"rows": 20, "style": "direction: rtl;"})}
+    }
 
 
 @admin.register(ContactLink)
