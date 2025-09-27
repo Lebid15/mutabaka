@@ -116,9 +116,6 @@ const truncateContactPreview = (raw: string) => {
   return Array.from(raw).slice(0, limit).join('');
 };
 
-const MOBILE_HEADER_SPACER = 'calc(env(safe-area-inset-top, 0px) + 4.75rem)';
-const MOBILE_COMPOSER_SPACER = 'calc(env(safe-area-inset-bottom, 0px) + 11.5rem)';
-
 // استخراج معاملة من نص الرسالة المولّد من الخادم
 function parseTransaction(body: string): null | { direction: 'lna'|'lkm'; amount: number; currency: string; symbol: string; note?: string } {
   try {
@@ -1635,13 +1632,14 @@ export default function Home() {
         setLoadingMessages(true);
   const data = await apiClient.getMessages(selectedConversationId);
         if (!active) return;
-        const mapped = (Array.isArray(data) ? data : []).map((m: any) => {
+  const mapped = (Array.isArray(data) ? data : []).map((m: any) => {
               const ds: number = (typeof m.delivery_status === 'number' && isFinite(m.delivery_status)) ? m.delivery_status : 0;
               const base: any = {
             id: m.id,
             sender: m.sender && profile && m.sender.id === profile.id ? 'current' : 'other',
             text: (m.body ?? '').toString(),
                 created_at: m.created_at,
+    client_id: typeof m.client_id === 'string' && m.client_id ? m.client_id : undefined,
                 attachment: (m.attachment_url || m.attachment_name) ? { url: m.attachment_url || null, name: m.attachment_name || undefined, mime: m.attachment_mime || undefined, size: typeof m.attachment_size === 'number' ? m.attachment_size : undefined } : undefined,
                 senderDisplay: (m.senderDisplay || (m.sender && (m.sender.display_name || m.sender.username))) || undefined,
                 delivery_status: ds,
@@ -1739,6 +1737,7 @@ export default function Home() {
           const isMine = !!(profile?.username && payload?.sender === profile.username && (!incDisplay || !currentSenderDisplay ? true : incDisplay === (currentSenderDisplay || '')));
           const txt = (payload?.body ?? '').toString();
           const messageIdNum = typeof payload.id === 'number' ? payload.id : null;
+          const incomingClientId = typeof payload.client_id === 'string' && payload.client_id ? payload.client_id : null;
           const tx = parseTransaction(txt);
           const previewLabel = previewFromMessage(txt, payload?.attachment);
           const previewConvId = typeof payload.conversation_id === 'number' ? payload.conversation_id : selectedConversationId;
@@ -1748,12 +1747,39 @@ export default function Home() {
           if (isMine) {
             setMessages(prev => {
               const copy = [...prev];
+              if (incomingClientId) {
+                const byClientIdx = copy.findIndex(m => m.sender === 'current' && m.client_id === incomingClientId);
+                if (byClientIdx !== -1) {
+                  const existing = copy[byClientIdx];
+                  copy[byClientIdx] = {
+                    ...existing,
+                    id: messageIdNum ?? existing.id,
+                    client_id: incomingClientId,
+                    text: txt,
+                    kind: tx ? 'transaction' : 'text',
+                    tx: tx || undefined,
+                    senderDisplay: (payload.senderDisplay || payload.display_name || existing.senderDisplay) || undefined,
+                    attachment: payload.attachment ? {
+                      name: payload.attachment.name,
+                      mime: payload.attachment.mime,
+                      size: payload.attachment.size,
+                      url: payload.attachment.url || existing.attachment?.url || undefined,
+                    } : existing.attachment,
+                    read_at: typeof payload.read_at === 'string' ? payload.read_at : existing.read_at,
+                    delivered_at: typeof payload.delivered_at === 'string' ? payload.delivered_at : existing.delivered_at,
+                    delivery_status: Math.max(existing.delivery_status || 0, typeof payload.delivery_status === 'number' ? payload.delivery_status : (payload.read_at ? 2 : 1)),
+                    status: (typeof payload.read_at === 'string' && payload.read_at) ? 'read' : ((existing.delivery_status || 0) >= 2 ? 'read' : 'delivered'),
+                  } as any;
+                  return copy;
+                }
+              }
               if (messageIdNum) {
                 const existingIdx = copy.findIndex(m => (m.id || 0) === messageIdNum);
                 if (existingIdx !== -1) {
                   const existing = copy[existingIdx];
                   copy[existingIdx] = {
                     ...existing,
+                    client_id: incomingClientId ?? existing.client_id,
                     text: txt,
                     kind: tx ? 'transaction' : 'text',
                     tx: tx || undefined,
@@ -1778,6 +1804,7 @@ export default function Home() {
                   copy[i] = {
                     ...m,
                     id: messageIdNum ?? m.id,
+                    client_id: incomingClientId ?? m.client_id,
                     // keep status; delivery status will be updated by message.status events
                     created_at: m.created_at || payload.created_at || new Date().toISOString(),
                     kind: tx ? 'transaction' : 'text',
@@ -1806,6 +1833,7 @@ export default function Home() {
                   status: 'delivered',
                   delivery_status: 1,
                   id: messageIdNum ?? undefined,
+                  client_id: incomingClientId ?? undefined,
                   senderDisplay: (profile?.display_name || profile?.username) || undefined,
                   attachment: payload.attachment ? {
                     name: payload.attachment.name,
@@ -1827,6 +1855,7 @@ export default function Home() {
                   const existing = copy[existingIdx];
                   copy[existingIdx] = {
                     ...existing,
+                    client_id: incomingClientId ?? existing.client_id,
                     text: txt,
                     kind: tx ? 'transaction' : 'text',
                     tx: tx || undefined,
@@ -1856,6 +1885,7 @@ export default function Home() {
                   status: 'delivered',
                   delivery_status: 1,
                   id: messageIdNum ?? undefined,
+                  client_id: incomingClientId ?? undefined,
                   senderDisplay: (payload.senderDisplay || payload.display_name) || undefined,
                   attachment: payload.attachment ? {
                     name: payload.attachment.name,
@@ -2459,9 +2489,9 @@ export default function Home() {
             )}
             {/* واجهة المحادثة */}
             {(selectedConversationId != null && currentContact) && (
-              <div className={(mobileView === 'chat' ? 'flex' : 'hidden') + ' md:flex flex-col h-full relative'}>
+              <div className={(mobileView === 'chat' ? 'flex' : 'hidden') + ' md:flex flex-col h-full'}>
                         <div
-              className="bg-chatPanel px-4 md:px-6 py-3 font-bold border-b border-chatDivider text-sm flex items-center gap-6 flex-wrap fixed top-0 left-1/2 w-full max-w-7xl -translate-x-1/2 z-40 md:static md:left-auto md:translate-x-0"
+              className="bg-chatPanel px-6 py-3 font-bold border-b border-chatDivider text-sm flex items-center gap-6 flex-wrap relative sticky top-0 z-30 md:static"
               style={{ top: 'env(safe-area-inset-top, 0px)' }}
             >
               {/* شريط أرصدة سريع من منظور هذه المحادثة فقط (موجب = لنا، سالب = لكم) — مخفي عند الدردشة مع admin (أو حسابات إدارية مشابهة) أو عند كون المستخدم الحالي أدمن */}
@@ -2557,14 +2587,9 @@ export default function Home() {
                 {/* info button removed by request */}
               </div>
             </div>
-            <div className="md:hidden" style={{ height: MOBILE_HEADER_SPACER }} aria-hidden />
             {/* Members side panel */}
             {membersPanelOpen && (
-              <div
-                ref={membersPanelRef}
-                className="absolute right-0 w-full md:w-[420px] max-h-[65vh] overflow-y-auto bg-chatBg border border-chatDivider rounded-lg shadow-2xl p-3 z-40"
-                style={{ top: `calc(${MOBILE_HEADER_SPACER} + 0.5rem)` }}
-              >
+              <div ref={membersPanelRef} className="absolute right-0 top-12 md:top-14 z-30 w-full md:w-[420px] max-h-[65vh] overflow-y-auto bg-chatBg border border-chatDivider rounded-lg shadow-2xl p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-xs font-bold text-gray-100">أعضاء المحادثة</div>
                   <button onClick={()=> setMembersPanelOpen(false)} className="text-gray-300 hover:text-white text-xs">إغلاق ✕</button>
@@ -2718,11 +2743,11 @@ export default function Home() {
             )}
             <div
               ref={scrollRef}
-              className={`flex-1 px-4 md:px-6 py-6 pb-40 md:pb-44 flex flex-col gap-2 overflow-y-auto overflow-x-hidden custom-scrollbar transition-colors duration-500 ${isLightTheme ? 'bg-[radial-gradient(circle_at_top,_rgba(255,241,224,0.92),_rgba(255,255,255,0.98))]' : 'bg-[#0f1f25]'}`}
+              className={`flex-1 p-6 pb-56 md:pb-44 flex flex-col gap-2 overflow-y-auto overflow-x-hidden custom-scrollbar transition-colors duration-500 ${isLightTheme ? 'bg-[radial-gradient(circle_at_top,_rgba(255,241,224,0.92),_rgba(255,255,255,0.98))]' : 'bg-[#0f1f25]'}`}
               dir="rtl"
               id="chatScrollRegion"
-              style={{ paddingBottom: MOBILE_COMPOSER_SPACER }}
-            >
+              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 13.5rem)' }}
+            >{/* pb-48 للجوال كي لا يغطي الشريط الثابت الرسائل + safe-area */}
               {(function(){
                 const parts: React.ReactNode[] = [];
                 let lastDayKey = '';
@@ -2798,6 +2823,8 @@ export default function Home() {
                     const theirsBubbleClass = isLightTheme
                       ? `self-end bg-bubbleReceived text-gray-900 px-3 py-2 rounded-2xl rounded-br-sm ${bubbleMax} text-xs shadow whitespace-pre-line break-words`
                       : `self-end bg-bubbleReceived text-white px-3 py-2 rounded-2xl rounded-br-sm ${bubbleMax} text-xs shadow whitespace-pre-line break-words`;
+                    const hasAttachment = !!(m.attachment && (m.attachment.url || m.attachment.name));
+                    const showMeta = hasAttachment || !!content;
                     parts.push(
                       <div
                         key={key}
@@ -2808,7 +2835,7 @@ export default function Home() {
                           <div className="text-[10px] text-gray-300 mb-1">{m.senderDisplay}</div>
                         )}
                         {/* Attachment preview if present */}
-                        {m.attachment && (m.attachment.url || m.attachment.name) && (
+                        {hasAttachment && (
                           <div className="mb-1">
                             {(() => {
                               const url = m.attachment.url || '';
@@ -2835,22 +2862,22 @@ export default function Home() {
                         )}
                         {/* Text with ticks (no inline time) */}
                         {content && (
-                          <>
-                            <div className="text-sm leading-6 break-words whitespace-pre-line" dir="rtl">
-                              <bdi className="min-w-0 break-words" style={{unicodeBidi:'isolate'}}>
-                                {showHighlight ? highlightText(content, searchQuery) : content}
-                              </bdi>
-                            </div>
-                            <div className="mt-1 text-[11px] opacity-70 flex items-center gap-1 justify-end" dir="auto">
-                              <span dir="ltr">{formatTimeShort(m.created_at)}</span>
-                              {m.sender === 'current' && (() => {
-                                                    const readAt = m.read_at || null;
-                                                    const ds = typeof m.delivery_status === 'number' ? (m.delivery_status >=2 ? 2 : 1) : (m.status === 'read' ? 2 : 1);
-                                                    const isRead = !!readAt || ds >= 2;
-                                                    return <Ticks read={isRead} className={isRead ? 'text-blue-400' : 'text-gray-400'} />;
-                              })()}
-                            </div>
-                          </>
+                          <div className="text-sm leading-6 break-words whitespace-pre-line" dir="rtl">
+                            <bdi className="min-w-0 break-words" style={{unicodeBidi:'isolate'}}>
+                              {showHighlight ? highlightText(content, searchQuery) : content}
+                            </bdi>
+                          </div>
+                        )}
+                        {showMeta && (
+                          <div className="mt-1 text-[11px] opacity-70 flex items-center gap-1 justify-end" dir="auto">
+                            <span dir="ltr">{formatTimeShort(m.created_at)}</span>
+                            {m.sender === 'current' && (() => {
+                                                  const readAt = m.read_at || null;
+                                                  const ds = typeof m.delivery_status === 'number' ? (m.delivery_status >=2 ? 2 : 1) : (m.status === 'read' ? 2 : 1);
+                                                  const isRead = !!readAt || ds >= 2;
+                                                  return <Ticks read={isRead} className={isRead ? 'text-blue-400' : 'text-gray-400'} />;
+                            })()}
+                          </div>
                         )}
                       </div>
                     );
@@ -2865,7 +2892,7 @@ export default function Home() {
             </div>
             {/* شريط سفلي موحد (معاملات + رسالة) */}
             <div
-              className="border-t border-chatDivider bg-chatPanel fixed bottom-0 left-1/2 w-full max-w-7xl -translate-x-1/2 z-50 flex flex-col gap-2 p-3 md:static md:left-auto md:translate-x-0"
+              className="border-t border-chatDivider bg-chatPanel sticky bottom-0 z-50 flex flex-col gap-2 p-3"
               style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 4px)' }}
             >
               {(!isAdminLike(profile?.username) && !isAdminLike(currentContact?.otherUsername)) && (
