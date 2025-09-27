@@ -2,6 +2,7 @@
 // أزلنا CSS module (page.module.css) لأن التصميم الآن يعتمد كلياً على Tailwind
 
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '../lib/api';
 import { listTeam, listConversationMembers, addTeamMemberToConversation, removeMemberFromConversation, TeamMember } from '../lib/api-team';
@@ -114,6 +115,135 @@ const truncateContactPreview = (raw: string) => {
   const allEmoji = compact.length > 0 && EMOJI_CLUSTER_REGEX.test(compact);
   const limit = allEmoji ? 7 : 20;
   return Array.from(raw).slice(0, limit).join('');
+};
+
+const formatFileSize = (bytes?: number | null) => {
+  if (typeof bytes !== 'number' || !isFinite(bytes) || bytes <= 0) return '';
+  const thresh = 1024;
+  const units = ['ب', 'ك.ب', 'م.ب', 'ج.ب', 'ت.ب'];
+  let value = bytes;
+  let idx = 0;
+  while (value >= thresh && idx < units.length - 1) {
+    value /= thresh;
+    idx += 1;
+  }
+  const fixed = value >= 10 || idx === 0 ? value.toFixed(0) : value.toFixed(1);
+  return `${fixed.replace(/\.0$/, '')} ${units[idx]}`;
+};
+
+const inferFileKind = (mime?: string | null, name?: string | null) => {
+  const ext = (name || '').split('.').pop()?.toLowerCase();
+  if (mime) {
+    if (mime.includes('pdf')) return 'PDF';
+    if (mime.includes('word')) return 'Word';
+    if (mime.includes('excel') || mime.includes('spreadsheet')) return 'Excel';
+    if (mime.includes('zip')) return 'ZIP';
+    if (mime.includes('powerpoint')) return 'PowerPoint';
+    if (mime.startsWith('text/')) return 'نص';
+  }
+  if (ext) {
+    const upper = ext.toUpperCase();
+    if (upper === 'PDF') return 'PDF';
+    if (['DOC', 'DOCX'].includes(upper)) return 'Word';
+    if (['XLS', 'XLSX', 'CSV'].includes(upper)) return 'Excel';
+    if (['PPT', 'PPTX'].includes(upper)) return 'PowerPoint';
+    if (upper === 'ZIP' || upper === 'RAR' || upper === '7Z') return upper;
+    return upper;
+  }
+  return '';
+};
+
+const buildFileMeta = (mime?: string | null, name?: string | null, size?: number | null) => {
+  const kind = inferFileKind(mime, name);
+  const sizeLabel = formatFileSize(size ?? undefined);
+  if (kind && sizeLabel) return `${kind} • ${sizeLabel}`;
+  if (kind) return kind;
+  if (sizeLabel) return sizeLabel;
+  return '';
+};
+
+type AttachmentLike = { url?: string | null; mime?: string | null; name?: string | null; size?: number | null };
+
+let pdfWorkerUrl: string | null = null;
+if (typeof window !== 'undefined') {
+  try {
+    pdfWorkerUrl = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).toString();
+  } catch (err) {
+    console.warn('تعذر تحديد مسار عامل pdf.js', err);
+    pdfWorkerUrl = null;
+  }
+}
+
+const isPdfAttachment = (attachment?: AttachmentLike | null) => {
+  if (!attachment) return false;
+  const mime = (attachment.mime || '').toLowerCase();
+  const name = (attachment.name || '').toLowerCase();
+  if (mime.includes('pdf')) return true;
+  if (name.endsWith('.pdf')) return true;
+  return false;
+};
+
+const isPreviewableAttachment = (attachment?: AttachmentLike | null) => {
+  if (!attachment || !attachment.url) return false;
+  if (isPdfAttachment(attachment)) return true;
+  return false;
+};
+
+type PdfjsLibType = typeof import('pdfjs-dist');
+let pdfjsLibPromise: Promise<PdfjsLibType> | null = null;
+let pdfWorkerPort: Worker | null = null;
+
+const ensurePdfjsLib = async (): Promise<PdfjsLibType> => {
+  if (!pdfjsLibPromise) {
+    pdfjsLibPromise = (async () => {
+      const pdfjs = await import('pdfjs-dist');
+      if (typeof window !== 'undefined' && (pdfjs as any).GlobalWorkerOptions) {
+        try {
+          if (pdfWorkerUrl) {
+            (pdfjs as any).GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+          } else if (typeof Worker !== 'undefined') {
+            pdfWorkerPort = pdfWorkerPort ?? new Worker(new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url), { type: 'module' });
+            (pdfjs as any).GlobalWorkerOptions.workerPort = pdfWorkerPort;
+          }
+        } catch (err) {
+          console.warn('تعذر تهيئة عامل pdf.js، سيتم استخدام العامل المدمج البطيء', err);
+        }
+      }
+      return pdfjs;
+    })();
+  }
+  return pdfjsLibPromise as Promise<PdfjsLibType>;
+};
+
+const renderPdfToDataUrl = async (url: string): Promise<string | null> => {
+  try {
+    const pdfjs = await ensurePdfjsLib();
+    const res = await fetch(url, { credentials: 'include' });
+    if (!res.ok) throw new Error(`فشل تحميل الملف: ${res.status}`);
+    const buffer = await res.arrayBuffer();
+    const task = pdfjs.getDocument({ data: buffer });
+    const pdf = await task.promise;
+    const page = await pdf.getPage(1);
+    const baseViewport = page.getViewport({ scale: 1 });
+    const maxWidth = 360;
+    const scale = baseViewport.width > maxWidth ? maxWidth / baseViewport.width : 1.4;
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) {
+      throw new Error('تعذر إنشاء سياق الرسم للقماش');
+    }
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    await page.render({ canvasContext: context, viewport }).promise;
+    const dataUrl = canvas.toDataURL('image/png', 0.85);
+    page.cleanup();
+    pdf.cleanup?.();
+    return dataUrl;
+  } catch (err) {
+    console.error('فشل توليد معاينة PDF', err);
+    return null;
+  }
 };
 
 // استخراج معاملة من نص الرسالة المولّد من الخادم
@@ -479,6 +609,8 @@ export default function Home() {
   const wsRef = useRef<WebSocket|null>(null);
   const [outgoingText, setOutgoingText] = useState('');
   const [pendingAttachment, setPendingAttachment] = useState<File|null>(null);
+  const previewUrlCache = useRef<Map<string, string>>(new Map());
+  const [filePreviewCache, setFilePreviewCache] = useState<Record<string, { status: 'idle' | 'loading' | 'ready' | 'error'; dataUrl: string | null }>>({});
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const [showOnlyTransactions, setShowOnlyTransactions] = useState(false);
   const [emojiPanelOpen, setEmojiPanelOpen] = useState(false);
@@ -497,19 +629,47 @@ export default function Home() {
 
   useEffect(() => {
     let cancelled = false;
+    const resolveLogoUrl = async (raw?: string | null) => {
+      const trimmed = (raw || '').trim();
+      if (!trimmed) return DEFAULT_BRANDING_LOGO;
+      let candidate = trimmed;
+      try {
+        if (typeof window !== 'undefined') {
+          if (candidate.startsWith('//')) {
+            candidate = `${window.location.protocol}${candidate}`;
+          } else if (!/^https?:\/\//i.test(candidate)) {
+            const base = apiClient.baseUrl.replace(/\/$/, '');
+            candidate = `${base}/${candidate.replace(/^\/+/, '')}`;
+          }
+          if (window.location.protocol === 'https:' && candidate.startsWith('http://')) {
+            candidate = 'https://' + candidate.slice('http://'.length);
+          }
+        } else if (!/^https?:\/\//i.test(candidate)) {
+          candidate = `${apiClient.baseUrl.replace(/\/$/, '')}/${candidate.replace(/^\/+/, '')}`;
+        }
+        const canLoad = await new Promise<boolean>((resolve) => {
+          if (typeof window === 'undefined' || typeof Image === 'undefined') {
+            resolve(true);
+            return;
+          }
+          const img = new Image();
+          img.onload = () => resolve(true);
+          img.onerror = () => resolve(false);
+          img.src = candidate;
+        });
+        return canLoad ? candidate : DEFAULT_BRANDING_LOGO;
+      } catch {
+        return DEFAULT_BRANDING_LOGO;
+      }
+    };
     (async () => {
       try {
         const data = await apiClient.getBranding();
         if (cancelled) return;
-        if (data && typeof data.logo_url === 'string' && data.logo_url.trim()) {
-          setBrandingLogo(data.logo_url);
-        } else {
-          setBrandingLogo(DEFAULT_BRANDING_LOGO);
-        }
+        const resolved = await resolveLogoUrl(data?.logo_url ?? null);
+        if (!cancelled) setBrandingLogo(resolved);
       } catch {
-        if (!cancelled) {
-          setBrandingLogo(DEFAULT_BRANDING_LOGO);
-        }
+        if (!cancelled) setBrandingLogo(DEFAULT_BRANDING_LOGO);
       }
     })();
     return () => {
@@ -980,6 +1140,59 @@ export default function Home() {
     if (name) return `📎 ${name}`;
     return attachment ? '📎 ملف مرفق' : '';
   }, []);
+
+  const generateAttachmentPreview = useCallback(async (attachment: AttachmentLike) => {
+    if (!attachment || !attachment.url) return null;
+    const url = attachment.url;
+    const cache = previewUrlCache.current;
+    if (cache.has(url)) {
+      return cache.get(url) || null;
+    }
+    if (isPdfAttachment(attachment)) {
+      const dataUrl = await renderPdfToDataUrl(url);
+      if (dataUrl) {
+        cache.set(url, dataUrl);
+      }
+      return dataUrl;
+    }
+    return null;
+  }, []);
+
+  const requestAttachmentPreview = useCallback((key: string, attachment: AttachmentLike) => {
+    setFilePreviewCache(prev => {
+      const existing = prev[key];
+      if (existing && existing.status !== 'idle') {
+        return prev;
+      }
+      return { ...prev, [key]: { status: 'loading', dataUrl: existing?.dataUrl ?? null } };
+    });
+    (async () => {
+      try {
+        const dataUrl = await generateAttachmentPreview(attachment);
+        setFilePreviewCache(prev => ({
+          ...prev,
+          [key]: dataUrl ? { status: 'ready', dataUrl } : { status: 'error', dataUrl: null },
+        }));
+      } catch (err) {
+        console.error('خطأ أثناء إنشاء معاينة المرفق', err);
+        setFilePreviewCache(prev => ({ ...prev, [key]: { status: 'error', dataUrl: null } }));
+      }
+    })();
+  }, [generateAttachmentPreview]);
+
+  useEffect(() => {
+    if (!Array.isArray(messages) || messages.length === 0) return;
+    messages.forEach((msg, idx) => {
+      const attachment = (msg && typeof msg === 'object') ? (msg.attachment as AttachmentLike | undefined) : undefined;
+      if (!isPreviewableAttachment(attachment)) return;
+      const safeAttachment = attachment as AttachmentLike;
+      const previewKey = buildMessageKey(msg, idx, 'preview');
+      const entry = filePreviewCache[previewKey];
+      if (!entry) {
+        requestAttachmentPreview(previewKey, safeAttachment);
+      }
+    });
+  }, [messages, filePreviewCache, requestAttachmentPreview]);
 
   const applyConversationPreview = useCallback((convId: number, preview: string, createdAt?: string) => {
     if (!convId) return;
@@ -2901,11 +3114,65 @@ export default function Home() {
                                   />
                                 );
                               }
+                              const downloadName = m.attachment.name || 'مرفق';
+                              const meta = buildFileMeta(m.attachment.mime, m.attachment.name, m.attachment.size ?? null);
+                              const kind = inferFileKind(m.attachment.mime, m.attachment.name);
+                              const previewKey = buildMessageKey(m, i, 'preview');
+                              const previewState = filePreviewCache[previewKey];
+                              const previewUrl = previewState?.dataUrl || null;
+                              const previewStatus = previewState?.status || 'idle';
+                              const previewLoading = previewStatus === 'loading';
+                              const previewError = previewStatus === 'error';
+                              const cardClass = isLightTheme
+                                ? 'bg-white/95 border border-orange-200/70 text-gray-800 shadow-sm'
+                                : 'bg-white/5 border border-white/10 text-gray-100 backdrop-blur-sm';
+                              const buttonClass = isLightTheme
+                                ? 'text-sm font-semibold py-2 text-orange-600 hover:bg-orange-50 transition'
+                                : 'text-sm font-semibold py-2 text-green-300 hover:bg-white/10 transition';
+                              const disabled = !url;
+                              const handleClick = (evt: ReactMouseEvent<HTMLAnchorElement>) => { if (!url) evt.preventDefault(); evt.stopPropagation(); };
                               return (
-                                <a href={url || '#'} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-blue-300 hover:text-blue-200 underline">
-                                  <svg xmlns='http://www.w3.org/2000/svg' className='h-4 w-4' viewBox='0 0 24 24' fill='currentColor'><path d='M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z'/><path d='M14 2v6h6'/></svg>
-                                  <span className="truncate max-w-[200px]">{m.attachment.name || 'مرفق'}</span>
-                                </a>
+                                <div className={`w-full max-w-xs md:max-w-sm rounded-2xl overflow-hidden ${cardClass}`}>
+                                  {(previewUrl || previewLoading) && (
+                                    <div className={`relative w-full overflow-hidden ${isLightTheme ? 'bg-gray-100 border-b border-orange-200/60' : 'bg-black/40 border-b border-white/10'}`}>
+                                      {previewUrl ? (
+                                        <img
+                                          src={previewUrl}
+                                          alt={downloadName}
+                                          className="w-full h-auto object-cover"
+                                        />
+                                      ) : (
+                                        <div className={`h-28 grid place-items-center text-[11px] ${isLightTheme ? 'text-orange-500' : 'text-white/70'}`}>
+                                          جاري إنشاء معاينة…
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                  {!previewUrl && previewError && (
+                                    <div className={`px-3 pt-3 text-[11px] ${isLightTheme ? 'text-red-500' : 'text-red-300'}`}>
+                                      تعذر إنشاء معاينة للملف
+                                    </div>
+                                  )}
+                                  <div className="p-3 flex flex-col items-end gap-1 text-right" dir="rtl">
+                                    <div className="font-semibold text-sm break-words" dir="auto">{downloadName}</div>
+                                    {meta && <div className="text-[11px] opacity-70" dir="auto">{meta}</div>}
+                                  </div>
+                                  <div className={`grid grid-cols-2 border-t ${isLightTheme ? 'border-orange-200/60' : 'border-white/10'}`}>
+                                    <a
+                                      href={url || undefined}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      onClick={handleClick}
+                                      className={`text-center ${buttonClass} ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+                                    >فتح</a>
+                                    <a
+                                      href={url || undefined}
+                                      download={downloadName}
+                                      onClick={handleClick}
+                                      className={`text-center border-r ${isLightTheme ? 'border-orange-200/60' : 'border-white/10'} ${buttonClass} ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+                                    >حفظ باسم…</a>
+                                  </div>
+                                </div>
                               );
                             })()}
                           </div>

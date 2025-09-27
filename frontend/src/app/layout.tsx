@@ -39,6 +39,7 @@ export default async function RootLayout({
         <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FFFFFF" />
         <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#111B21" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content={appleStatusBarStyle} />
       </head>
       <body suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} h-full antialiased transition-colors duration-500`}>
