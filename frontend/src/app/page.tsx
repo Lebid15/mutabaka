@@ -3,12 +3,17 @@
 
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
+import type { IconType } from 'react-icons';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '../lib/api';
 import { listTeam, listConversationMembers, addTeamMemberToConversation, removeMemberFromConversation, TeamMember } from '../lib/api-team';
 import { attachPrimingListeners, tryPlayMessageSound, setRuntimeSoundUrl } from '../lib/sound';
 import { useThemeMode } from './theme-context';
 import { FaMoneyBillTrendUp } from 'react-icons/fa6';
+import { FaWhatsapp, FaFacebookF, FaYoutube, FaTelegramPlane, FaInstagram, FaTwitter, FaSnapchatGhost, FaLinkedinIn } from 'react-icons/fa';
+import { SiTiktok } from 'react-icons/si';
+import { HiOutlineEnvelope } from 'react-icons/hi2';
+import { FiLink } from 'react-icons/fi';
 
 // قائمة احتياطية (fallback) في حال تأخر تحميل العملات من الخادم
 const fallbackCurrencies = [
@@ -161,6 +166,78 @@ const buildFileMeta = (mime?: string | null, name?: string | null, size?: number
   if (kind) return kind;
   if (sizeLabel) return sizeLabel;
   return '';
+};
+
+type ContactLinkDTO = {
+  id: number;
+  icon: string;
+  icon_display: string;
+  label: string;
+  value: string;
+};
+
+type ContactIconMeta = {
+  Icon: IconType;
+  bubbleClass: string;
+  iconClass: string;
+};
+
+type ContactLinkView = ContactLinkDTO & {
+  href: string;
+  display: string;
+  subtitle?: string;
+  meta: ContactIconMeta;
+};
+
+const CONTACT_ICON_META: Record<string, ContactIconMeta> = {
+  whatsapp: { Icon: FaWhatsapp, bubbleClass: 'bg-[#25D366]/15 dark:bg-[#25D366]/25', iconClass: 'text-[#25D366]' },
+  facebook: { Icon: FaFacebookF, bubbleClass: 'bg-[#1877F2]/15 dark:bg-[#1877F2]/25', iconClass: 'text-[#1877F2]' },
+  youtube: { Icon: FaYoutube, bubbleClass: 'bg-[#FF0000]/15 dark:bg-[#FF0000]/25', iconClass: 'text-[#FF0000]' },
+  telegram: { Icon: FaTelegramPlane, bubbleClass: 'bg-[#24A1DE]/15 dark:bg-[#24A1DE]/25', iconClass: 'text-[#24A1DE]' },
+  instagram: { Icon: FaInstagram, bubbleClass: 'bg-gradient-to-br from-[#f09433]/20 via-[#bc1888]/25 to-[#bc1888]/20 dark:via-[#bc1888]/30', iconClass: 'text-[#bc1888]' },
+  twitter: { Icon: FaTwitter, bubbleClass: 'bg-slate-300/20 dark:bg-slate-200/15', iconClass: 'text-slate-900 dark:text-slate-100' },
+  tiktok: { Icon: SiTiktok, bubbleClass: 'bg-[#010101]/10 dark:bg-[#010101]/35', iconClass: 'text-[#010101] dark:text-white' },
+  snapchat: { Icon: FaSnapchatGhost, bubbleClass: 'bg-[#FFFC00]/45 dark:bg-[#FFFC00]/35', iconClass: 'text-[#0f0f0f]' },
+  linkedin: { Icon: FaLinkedinIn, bubbleClass: 'bg-[#0A66C2]/15 dark:bg-[#0A66C2]/25', iconClass: 'text-[#0A66C2]' },
+  email: { Icon: HiOutlineEnvelope, bubbleClass: 'bg-[#0072C6]/15 dark:bg-[#0072C6]/25', iconClass: 'text-[#0072C6]' },
+};
+
+const DEFAULT_CONTACT_ICON_META: ContactIconMeta = {
+  Icon: FiLink,
+  bubbleClass: 'bg-gray-300/30 dark:bg-gray-700/40',
+  iconClass: 'text-gray-600 dark:text-gray-100',
+};
+
+const normalizeContactHref = (icon: string, raw: string): string => {
+  const value = (raw || '').trim();
+  if (!value) return '';
+  if (/^(https?:\/\/|mailto:|tel:)/i.test(value)) return value;
+  if (icon === 'email' && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)) {
+    return `mailto:${value}`;
+  }
+  if (icon === 'whatsapp') {
+    const digits = value.replace(/[^+\d]/g, '');
+    if (digits) {
+      const normalized = digits.startsWith('+') ? digits.replace(/[^+\d]/g, '') : digits;
+      return `https://wa.me/${normalized.replace(/^\+/, '')}`;
+    }
+  }
+  if (icon === 'telegram') {
+    const username = value.replace(/^@/, '');
+    if (username && /^[A-Za-z0-9_]+$/.test(username)) {
+      return `https://t.me/${username}`;
+    }
+  }
+  if (icon === 'snapchat') {
+    const username = value.replace(/^@/, '');
+    if (username) {
+      return `https://www.snapchat.com/add/${username}`;
+    }
+  }
+  if (!/^https?:\/\//i.test(value)) {
+    return `https://${value}`;
+  }
+  return value;
 };
 
 type AttachmentLike = { url?: string | null; mime?: string | null; name?: string | null; size?: number | null };
@@ -550,6 +627,7 @@ export default function Home() {
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const lastMsgIdRef = useRef<number>(0);
   const contactMenuRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const contactLinksFetchedRef = useRef(false);
   const TEXTAREA_MIN_HEIGHT = 40;
   const TEXTAREA_MAX_HEIGHT = 160;
 
@@ -583,7 +661,40 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [brandingLogo, setBrandingLogo] = useState<string>(DEFAULT_BRANDING_LOGO);
   const [profile, setProfile] = useState<any|null>(null);
+  const [contactLinks, setContactLinks] = useState<ContactLinkView[]>([]);
   const { isLight: isLightTheme, toggleTheme } = useThemeMode();
+
+  const mapContactLinks = useCallback((items: ContactLinkDTO[]): ContactLinkView[] => {
+    return items
+      .map<ContactLinkView | null>((item) => {
+        const href = normalizeContactHref(item.icon, item.value);
+        if (!href) return null;
+        const meta = CONTACT_ICON_META[item.icon] ?? DEFAULT_CONTACT_ICON_META;
+        const label = (item.label || '').trim();
+        const iconDisplay = (item.icon_display || '').trim();
+        const rawValue = (item.value || '').trim();
+        const display = label || iconDisplay || rawValue;
+        let subtitle = '';
+        if (label) {
+          subtitle = iconDisplay && iconDisplay !== label ? iconDisplay : rawValue;
+        } else if (iconDisplay && iconDisplay !== display) {
+          subtitle = iconDisplay;
+        } else if (rawValue && rawValue !== display) {
+          subtitle = rawValue;
+        }
+        return {
+          ...item,
+          label,
+          icon_display: iconDisplay,
+          value: rawValue,
+          href,
+          display,
+          subtitle: subtitle || undefined,
+          meta,
+        };
+      })
+      .filter((entry): entry is ContactLinkView => Boolean(entry));
+  }, []);
 
   // Contacts & conversations
   const [contacts, setContacts] = useState<any[]>([]);
@@ -674,6 +785,25 @@ export default function Home() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (isAuthed || contactLinksFetchedRef.current) return;
+    contactLinksFetchedRef.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await apiClient.getContactLinks();
+        if (cancelled) return;
+        setContactLinks(mapContactLinks(raw));
+      } catch {
+        if (cancelled) return;
+        setContactLinks([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthed, mapContactLinks]);
   // Decode JWT access payload
   const getJwtPayload = useCallback((): any | null => {
     try {
@@ -2393,8 +2523,8 @@ export default function Home() {
       ? 'w-full pl-9 pr-3 bg-white/80 border border-orange-200/70 rounded-lg py-2 text-sm text-gray-800 placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-300 transition'
       : 'w-full pl-9 pr-3 bg-chatBg border border-chatDivider rounded py-2 text-sm text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-green-600';
     const formClass = isLightTheme
-      ? 'w-full max-w-sm bg-white/80 border border-orange-100/80 backdrop-blur-md rounded-3xl p-12 pt-14 flex flex-col gap-8 shadow-[0_35px_60px_-15px_rgba(255,153,51,0.35)] text-gray-700'
-      : 'w-full max-w-sm bg-chatPanel border border-chatDivider rounded-2xl p-12 pt-14 flex flex-col gap-8 shadow-2xl/40';
+      ? 'w-full max-w-sm bg-white/80 border border-orange-100/80 backdrop-blur-md rounded-3xl p-10 pt-12 flex flex-col gap-7 shadow-[0_35px_60px_-15px_rgba(255,153,51,0.35)] text-gray-700'
+      : 'w-full max-w-sm bg-chatPanel border border-chatDivider rounded-2xl p-10 pt-12 flex flex-col gap-7 shadow-2xl/40';
     const checkboxClasses = isLightTheme
       ? 'accent-orange-400'
       : 'accent-green-600';
@@ -2407,6 +2537,12 @@ export default function Home() {
       ? 'text-orange-400 hover:text-orange-500 bg-white/70 border border-orange-200/60 shadow-sm'
       : 'text-yellow-300 hover:text-yellow-200 bg-chatPanel/60 border border-chatDivider shadow-lg';
     const toggleIcon = isLightTheme ? <MoonIcon className="w-5 h-5" /> : <SunIcon className="w-5 h-5" />;
+    const displayedContactLinks = contactLinks.slice(0, 10);
+    const hasContactLinks = displayedContactLinks.length > 0;
+    const contactIconButtonBase = isLightTheme
+      ? 'group relative flex h-12 w-12 items-center justify-center rounded-full border border-orange-100/80 bg-white/60 backdrop-blur focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300/70 shadow-sm transition'
+      : 'group relative flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500/40 transition';
+    const contactIconInnerBase = 'flex h-10 w-10 items-center justify-center rounded-full transition-transform duration-200 group-hover:scale-110 group-focus-visible:scale-110';
 
     return (
       <div className={`relative min-h-screen flex items-center justify-center p-6 md:p-8 transition-colors duration-500 ${isLightTheme ? 'bg-gradient-to-br from-white via-orange-50 to-orange-100 text-gray-900' : 'bg-chatBg text-gray-100'}`}>
@@ -2419,12 +2555,13 @@ export default function Home() {
         >
           {toggleIcon}
         </button>
-        <form onSubmit={handleLogin} className={`${formClass} transition-all duration-500`}>
-          <div className="flex flex-col items-center gap-5">
+        <div className="flex w-full flex-col items-center gap-6">
+          <form onSubmit={handleLogin} className={`${formClass} transition-all duration-500`}>
+          <div className="flex flex-col items-center gap-4 -mt-2">
             <img
               src={brandingLogo || DEFAULT_BRANDING_LOGO}
               alt="شعار التطبيق"
-              className="h-48 md:h-64 w-auto object-contain drop-shadow-xl transition-all duration-200"
+              className="h-40 md:h-52 w-auto object-contain drop-shadow-xl transition-all duration-200"
               onError={(e)=>{
                 const target = e.currentTarget as HTMLImageElement & { dataset: DOMStringMap & { fallbackApplied?: string } };
                 if (target.dataset.fallbackApplied !== '1') {
@@ -2486,7 +2623,31 @@ export default function Home() {
             </>
           )}
           <button disabled={loading} className={submitClass}>{loading ? '...' : 'دخول'}</button>
+          {hasContactLinks && (
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3" dir="ltr">
+              {displayedContactLinks.map((link) => {
+                const { Icon, bubbleClass, iconClass } = link.meta;
+                return (
+                  <a
+                    key={link.id}
+                    href={link.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={contactIconButtonBase}
+                    title={link.display}
+                    aria-label={link.display}
+                  >
+                    <span className={`${contactIconInnerBase} ${bubbleClass}`}>
+                      <Icon className={`h-5 w-5 ${iconClass}`} aria-hidden="true" />
+                    </span>
+                    <span className="sr-only">{link.display}</span>
+                  </a>
+                );
+              })}
+            </div>
+          )}
         </form>
+        </div>
       </div>
     );
   }

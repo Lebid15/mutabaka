@@ -626,6 +626,35 @@ class APIClient {
     }
   }
 
+  async getContactLinks(): Promise<Array<{ id: number; icon: string; icon_display: string; label: string; value: string }>> {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/contact-links`);
+      if (!res.ok) return [];
+      const data = await res.json().catch(() => []);
+      if (!Array.isArray(data)) return [];
+      return data
+        .map((item, idx) => {
+          const icon = typeof item?.icon === 'string' ? item.icon.trim() : '';
+          const value = typeof item?.value === 'string' ? item.value.trim() : '';
+          if (!icon || !value) return null;
+          const label = typeof item?.label === 'string' ? item.label : '';
+          const iconDisplay = typeof item?.icon_display === 'string' ? item.icon_display : '';
+          const idRaw = item?.id;
+          const id = typeof idRaw === 'number' ? idRaw : Number(idRaw);
+          return {
+            id: Number.isFinite(id) ? Number(id) : idx,
+            icon,
+            icon_display: iconDisplay,
+            label,
+            value,
+          };
+        })
+        .filter((item): item is { id: number; icon: string; icon_display: string; label: string; value: string } => Boolean(item));
+    } catch {
+      return [];
+    }
+  }
+
   async getNotificationSoundUrl(): Promise<string|null> {
     try {
       const res = await fetch(`${this.baseUrl}/api/notification/sound`);

@@ -2,7 +2,8 @@ from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from finance.models import Currency, Wallet
-from .models import Conversation, Transaction, Message
+from .models import Conversation, Transaction, Message, ContactLink
+from rest_framework.test import APIClient
 
 User = get_user_model()
 
@@ -67,7 +68,6 @@ class TransactionFlowTests(TestCase):
         Transaction.create_transaction(self.conv, self.user1, self.currency, 10, 'lna')
         Transaction.create_transaction(self.conv, self.user2, self.currency, 4, 'lkm')  # user2 pays us? direction lkm by user2 increases net for user_a
         from django.urls import reverse
-        from rest_framework.test import APIClient
         client = APIClient()
         self.assertTrue(client.login(username='u1', password='pass12345'))
         url = reverse('conversations-detail', args=[self.conv.id]) + 'net_balance/'
@@ -115,7 +115,6 @@ class APIRoundingIntegrationTests(TestCase):
         self.assertTrue(client.login(username=username, password=password))
 
     def test_post_transaction_rounds_and_summary_reflects(self):
-        from rest_framework.test import APIClient
         client = APIClient()
         self.api_login(client, 'api_u1')
         # Post transaction with >5 decimals
@@ -141,7 +140,6 @@ class APIRoundingIntegrationTests(TestCase):
         self.assertEqual(entry['net_from_user_a_perspective'], '14.66666')
 
     def test_net_balance_endpoint_after_api_transaction(self):
-        from rest_framework.test import APIClient
         client = APIClient()
         self.api_login(client, 'api_u1')
         client.post('/api/transactions/', {
@@ -156,3 +154,24 @@ class APIRoundingIntegrationTests(TestCase):
         entry = next(e for e in payload if e['currency']['code'] == 'APX')
         # For net_balance, perspective user_a: only one transaction direction=lna by user_a => +3.2
         self.assertEqual(entry['net_from_user_a_perspective'], '3.2')
+
+
+class ContactLinkAPITests(TestCase):
+    def setUp(self):
+        ContactLink.objects.all().delete()
+        ContactLink.objects.create(icon='whatsapp', label='واتساب', value='https://wa.me/123456', display_order=2, is_active=True)
+        ContactLink.objects.create(icon='telegram', label='', value='https://t.me/example', display_order=1, is_active=True)
+        ContactLink.objects.create(icon='facebook', label='مخفي', value='https://facebook.com/hidden', display_order=0, is_active=False)
+
+    def test_contact_links_public_endpoint_returns_active_only(self):
+        client = APIClient()
+        resp = client.get('/api/contact-links')
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        self.assertIsInstance(payload, list)
+        self.assertEqual(len(payload), 2)
+        # ensure ordering by display_order ascending (telegram first)
+        icons = [item['icon'] for item in payload]
+        self.assertEqual(icons, ['telegram', 'whatsapp'])
+        labels = [item['label'] for item in payload]
+        self.assertEqual(labels, ['', 'واتساب'])

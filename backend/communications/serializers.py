@@ -1,7 +1,7 @@
 from rest_framework import serializers
 import re
 from django.contrib.auth import get_user_model
-from .models import ContactRelation, Conversation, Message, Transaction, PushSubscription, ConversationMute, TeamMember, ConversationMember, ConversationReadMarker
+from .models import ContactRelation, Conversation, Message, Transaction, PushSubscription, ConversationMute, TeamMember, ConversationMember, ConversationReadMarker, ContactLink
 from finance.models import Currency
 from django.core.exceptions import ValidationError
 
@@ -35,6 +35,20 @@ class CurrencySerializer(serializers.ModelSerializer):
     class Meta:
         model = Currency
         fields = ["id", "code", "symbol", "name"]
+
+
+class ContactLinkSerializer(serializers.ModelSerializer):
+    icon_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ContactLink
+        fields = ["id", "icon", "icon_display", "label", "value"]
+
+    def get_icon_display(self, obj):
+        try:
+            return obj.get_icon_display()
+        except Exception:
+            return obj.icon
 
 class ContactRelationSerializer(serializers.ModelSerializer):
     contact = PublicUserSerializer(read_only=True)

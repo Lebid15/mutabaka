@@ -42,6 +42,40 @@ class BrandingSetting(models.Model):
     def __str__(self):  # pragma: no cover
         return f"BrandingSetting(active={self.active})"
 
+
+class ContactLink(models.Model):
+    """Contact methods configurable from admin and shown on the login screen."""
+
+    ICON_CHOICES = [
+        ('whatsapp', 'WhatsApp'),
+        ('facebook', 'Facebook'),
+        ('youtube', 'YouTube'),
+        ('telegram', 'Telegram'),
+        ('instagram', 'Instagram'),
+        ('twitter', 'Twitter / X'),
+        ('tiktok', 'TikTok'),
+        ('snapchat', 'Snapchat'),
+        ('linkedin', 'LinkedIn'),
+        ('email', 'Email'),
+    ]
+
+    icon = models.CharField(max_length=32, choices=ICON_CHOICES)
+    label = models.CharField(max_length=100, blank=True, help_text="النص الظاهر بجانب الأيقونة (اختياري)")
+    value = models.CharField(max_length=255, help_text="الرابط أو رقم التواصل (مثال: https://example.com أو tel:+963...)")
+    is_active = models.BooleanField(default=True, verbose_name="مفعل؟")
+    display_order = models.PositiveIntegerField(default=0, help_text="ترتيب العرض (الأصغر يظهر أولاً)")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['display_order', '-updated_at']
+        verbose_name = "رابط تواصل"
+        verbose_name_plural = "روابط تواصل"
+
+    def __str__(self):  # pragma: no cover
+        label = self.label or dict(self.ICON_CHOICES).get(self.icon, self.icon)
+        return f"{label} ({self.value})"
+
 class ContactRelation(models.Model):
     STATUS_CHOICES = [
         ("pending", "Pending"),

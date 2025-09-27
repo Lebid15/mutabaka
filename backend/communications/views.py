@@ -9,11 +9,11 @@ from django.db.models import Q
 from django.db import models as dj_models
 from django.contrib.auth import get_user_model
 import re
-from .models import ContactRelation, Conversation, Message, Transaction, PushSubscription, ConversationMute, TeamMember, ConversationMember, BrandingSetting, get_conversation_viewer_ids
+from .models import ContactRelation, Conversation, Message, Transaction, PushSubscription, ConversationMute, TeamMember, ConversationMember, BrandingSetting, ContactLink, get_conversation_viewer_ids
 from .serializers import (
     PublicUserSerializer, ContactRelationSerializer, ConversationSerializer,
     MessageSerializer, TransactionSerializer, PushSubscriptionSerializer,
-    TeamMemberSerializer, ConversationMemberSerializer,
+    TeamMemberSerializer, ConversationMemberSerializer, ContactLinkSerializer,
 )
 from .permissions import IsParticipant
 from django.conf import settings
@@ -1583,6 +1583,15 @@ class BrandingView(APIView):
                 except Exception:
                     url = None
         return Response({'logo_url': url})
+
+
+class ContactLinkListView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        qs = ContactLink.objects.filter(is_active=True).order_by('display_order', '-updated_at')
+        serializer = ContactLinkSerializer(qs, many=True, context={'request': request})
+        return Response(serializer.data)
 
 
 class TeamLoginView(APIView):

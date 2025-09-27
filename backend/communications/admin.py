@@ -4,7 +4,7 @@ from django.urls import reverse
 from django import forms
 from django.http import HttpRequest
 from django.db import models
-from .models import ContactRelation, Conversation, ConversationInbox, Message, Transaction, PushSubscription, NotificationSetting, BrandingSetting, TeamMember, ConversationMember
+from .models import ContactRelation, Conversation, ConversationInbox, Message, Transaction, PushSubscription, NotificationSetting, BrandingSetting, ContactLink, TeamMember, ConversationMember
 
 @admin.register(ContactRelation)
 class ContactRelationAdmin(admin.ModelAdmin):
@@ -178,6 +178,24 @@ class BrandingSettingAdmin(admin.ModelAdmin):
             pass
         return "-"
     logo_preview.short_description = "Preview"
+
+
+@admin.register(ContactLink)
+class ContactLinkAdmin(admin.ModelAdmin):
+    list_display = ("icon", "display_label", "value", "is_active", "display_order", "updated_at")
+    list_editable = ("is_active", "display_order")
+    list_filter = ("icon", "is_active")
+    search_fields = ("label", "value")
+    ordering = ("display_order", "icon")
+    fieldsets = (
+        ("معلومات التواصل", {
+            "fields": ("icon", "label", "value", "is_active", "display_order"),
+        }),
+    )
+
+    def display_label(self, obj):
+        return obj.label or dict(obj.ICON_CHOICES).get(obj.icon, obj.icon)
+    display_label.short_description = "التسمية"
 
 @admin.register(TeamMember)
 class TeamMemberAdmin(admin.ModelAdmin):
