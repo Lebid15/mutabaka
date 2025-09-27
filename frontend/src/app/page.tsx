@@ -81,7 +81,7 @@ const normalizeNumberString = (raw: string) => {
   return s.trim();
 };
 
-const DEFAULT_BRANDING_LOGO = '/logo-default.svg';
+const DEFAULT_BRANDING_LOGO = '/frontend/public/icons/mlogo.jpg';
 const EMOJI_PALETTE = ['😀','😂','😍','👍','🙏','🎉','💰','📌','❤️','😢','😎','🤔','✅','❌','🔥','🌟','🥰','😮','💡','📈','🤥','🌎'];
 const EMOJI_CLUSTER_REGEX = /^[\p{Extended_Pictographic}\u200d\uFE0F]+$/u;
 
@@ -2001,7 +2001,9 @@ export default function Home() {
                 if (idNum > lastMsgIdRef.current) lastMsgIdRef.current = idNum;
                 const socket = wsRef.current || (controller as any).socket || null;
                 if (socket && socket.readyState === WebSocket.OPEN && idNum > 0) {
-                  socket.send(JSON.stringify({ type: 'read', last_read_id: lastMsgIdRef.current }));
+                  try {
+                    socket.send(JSON.stringify({ type: 'read', last_read_id: lastMsgIdRef.current }));
+                  } catch {}
                 }
               } catch {}
             }

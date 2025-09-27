@@ -1,6 +1,7 @@
 "use client";
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiClient } from '../../lib/api';
+import { useThemeMode } from '../theme-context';
 
 type Row = { name: string; avatar?: string; usd: number; tryy: number; syp: number; eur: number };
 
@@ -22,6 +23,7 @@ function isAdminLike(u?: string | null) {
 }
 
 export default function MatchesPage() {
+  const { isLight } = useThemeMode();
   // Avoid hydration mismatch: don't branch on client-only state until mounted
   const [mounted, setMounted] = useState(false);
   const [blocked, setBlocked] = useState(false);
@@ -196,7 +198,7 @@ export default function MatchesPage() {
           <button
             onClick={exportToExcel}
             disabled={!displayRows.length}
-            className="ml-auto text-xs md:text-sm px-3 py-1.5 rounded border border-teal-500 text-teal-200 hover:bg-teal-600/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className={`ml-auto text-xs md:text-sm px-3 py-1.5 rounded border border-teal-500 hover:bg-teal-600/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${isLight ? 'text-teal-700 bg-white/70 hover:bg-teal-500/10' : 'text-teal-200'}`}
           >
             تصدير إلى إكسل
           </button>
