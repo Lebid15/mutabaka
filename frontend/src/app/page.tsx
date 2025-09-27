@@ -82,7 +82,7 @@ const normalizeNumberString = (raw: string) => {
 };
 
 const DEFAULT_BRANDING_LOGO = '/logo-default.svg';
-const EMOJI_PALETTE = ['😀','😂','😍','👍','🙏','🎉','💰','📌','❤️','😢','😎','🤔','✅','❌','🔥','🌟','🥰','😮','💡','📈','🤥'];
+const EMOJI_PALETTE = ['😀','😂','😍','👍','🙏','🎉','💰','📌','❤️','😢','😎','🤔','✅','❌','🔥','🌟','🥰','😮','💡','📈','🤥','🌎'];
 const EMOJI_CLUSTER_REGEX = /^[\p{Extended_Pictographic}\u200d\uFE0F]+$/u;
 
 const isEmojiGrapheme = (segment: string) => {
@@ -129,6 +129,20 @@ function parseTransaction(body: string): null | { direction: 'lna'|'lkm'; amount
     return { direction: dir, amount: isNaN(amount) ? 0 : amount, currency: sym, symbol: sym, note: note || undefined };
   } catch { return null; }
 }
+
+const buildMessageKey = (msg: any, index: number, prefix = 'msg') => {
+  if (msg && typeof msg.id === 'number') {
+    const suffix = msg && typeof msg.client_id === 'string' && msg.client_id ? `_c_${msg.client_id}` : '_c_none';
+    return `${prefix}_id_${msg.id}${suffix}`;
+  }
+  if (msg && typeof msg.client_id === 'string' && msg.client_id) {
+    return `${prefix}_cid_${msg.client_id}`;
+  }
+  if (msg && typeof msg.created_at === 'string' && msg.created_at) {
+    return `${prefix}_ts_${msg.created_at}_${index}`;
+  }
+  return `${prefix}_idx_${index}`;
+};
 
 // Two-state ticks (delivered=1 gray, read=2 blue)
 function Ticks({ read, className }: { read: boolean; className?: string }) {
@@ -765,15 +779,34 @@ export default function Home() {
           const res = await apiClient.uploadConversationAttachment(selectedConversationId, f, caption || undefined, maybeOtp);
           setMessages(prev => {
             const copy = [...prev];
+            let patchedIndex = -1;
             for (let i = copy.length - 1; i >= 0; i--) {
               const m = copy[i];
               if (m.client_id === clientId) {
                 // Patch attachment info and, if no caption was provided, remove the provisional filename text
-                const patched: any = { ...m, id: res.id, attachment: { url: res.attachment_url || null, name: res.attachment_name, mime: res.attachment_mime, size: res.attachment_size } };
+                const serverClientId = (res && typeof res.client_id === 'string' && res.client_id) ? res.client_id : m.client_id;
+                const patched: any = {
+                  ...m,
+                  id: typeof res?.id === 'number' ? res.id : m.id,
+                  client_id: serverClientId,
+                  attachment: {
+                    url: res.attachment_url || null,
+                    name: res.attachment_name,
+                    mime: res.attachment_mime,
+                    size: res.attachment_size,
+                  },
+                };
                 if (!caption) patched.text = '';
                 copy[i] = patched;
+                patchedIndex = i;
                 break;
               }
+            }
+            if (typeof res?.id === 'number' && patchedIndex !== -1) {
+              return copy.filter((msg, idx) => {
+                if (idx === patchedIndex) return true;
+                return !(msg && typeof msg.id === 'number' && msg.id === res.id && msg.client_id !== clientId);
+              });
             }
             return copy;
           });
@@ -1653,7 +1686,22 @@ export default function Home() {
           return { ...base, kind: 'text' };
         });
         const chrono = mapped.reverse();
-        setMessages(chrono);
+        const deduped: typeof chrono = [];
+        const seenIds = new Set<number>();
+        const seenClientIds = new Set<string>();
+        for (const msg of chrono) {
+          const idNum = typeof msg.id === 'number' ? msg.id : null;
+          const clientKey = typeof msg.client_id === 'string' ? msg.client_id : null;
+          if (idNum !== null) {
+            if (seenIds.has(idNum)) continue;
+            seenIds.add(idNum);
+          } else if (clientKey) {
+            if (seenClientIds.has(clientKey)) continue;
+            seenClientIds.add(clientKey);
+          }
+          deduped.push(msg);
+        }
+        setMessages(deduped);
         const last = chrono.length ? (chrono[chrono.length - 1].id || 0) : 0;
         lastMessageIdRef.current = typeof last === 'number' ? last : 0;
       } catch (e) {
@@ -2787,7 +2835,7 @@ export default function Home() {
                     lastDayKey = dk;
                   }
                   if (m.kind === 'transaction' && m.tx) {
-                    const key = String(m.id ?? `tx_${i}`);
+                    const key = buildMessageKey(m, i, 'tx');
                     parts.push(
                       <div key={key} ref={(el)=>{ messageRefs.current[key] = el; }} className={m.sender === 'current' ? 'self-start' : 'self-end'}>
                         {m.senderDisplay && (
@@ -2806,14 +2854,14 @@ export default function Home() {
                       </div>
                     );
                   } else if (m.kind === 'system') {
-                    const key = String(m.id ?? `sys_${i}`);
+                    const key = buildMessageKey(m, i, 'sys');
                     parts.push(
                       <div key={key} ref={(el)=>{ messageRefs.current[key] = el; }} className={systemBubbleClass}>
                         {m.text}
                       </div>
                     );
                   } else {
-                    const key = String(m.id ?? (m.client_id ? `c_${m.client_id}` : `i_${i}`));
+                    const key = buildMessageKey(m, i, 'msg');
                     const content = m.text;
                     const showHighlight = !!searchQuery.trim();
                     const bubbleMax = 'inline-flex flex-col w-fit max-w-[200px] md:max-w-[300px] xl:max-w-[360px]';
