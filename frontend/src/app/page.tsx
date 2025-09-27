@@ -8,6 +8,7 @@ import { apiClient } from '../lib/api';
 import { listTeam, listConversationMembers, addTeamMemberToConversation, removeMemberFromConversation, TeamMember } from '../lib/api-team';
 import { attachPrimingListeners, tryPlayMessageSound, setRuntimeSoundUrl } from '../lib/sound';
 import { useThemeMode } from './theme-context';
+import { FaMoneyBillTrendUp } from 'react-icons/fa6';
 
 // قائمة احتياطية (fallback) في حال تأخر تحميل العملات من الخادم
 const fallbackCurrencies = [
@@ -301,10 +302,7 @@ function TransactionBubble({ sender, tx, createdAt, isLight, noteContent }: { se
   return (
     <div className={wrapClass}>
       <div className="flex items-center gap-2 mb-1">
-        <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' className='h-4 w-4 opacity-80' fill='none' stroke='currentColor' strokeWidth='1.6' strokeLinecap='round' strokeLinejoin='round'>
-          <path d='M12 1v22'/>
-          <path d='M5 5h14v14H5z'/>
-        </svg>
+        <FaMoneyBillTrendUp className="h-5 w-5 opacity-80" aria-hidden="true" />
         <span className="font-bold">معاملة</span>
         <span className={`px-2.5 py-0.5 rounded-full text-[11px] md:text-xs font-semibold ${badgeClass}`}>{tx.direction === 'lna' ? 'لنا' : 'لكم'}</span>
       </div>
