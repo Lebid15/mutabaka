@@ -82,24 +82,20 @@ jobs:
 
       - name: Build Android APK locally with EAS
         run: |
-          mkdir -p ./builds
-          eas build --platform android --profile preview --local --non-interactive --output-dir ./builds
+          # الناتج سيكون ملف واحد اسمه app-release.apk داخل مجلد mobile/
+          eas build --platform android --profile preview --local --non-interactive --output ./app-release.apk
 
-      - name: List builds dir
-        run: ls -lah ./builds || true
-
-      - name: Locate build outputs
+      - name: Show produced files
         run: |
-          echo "Looking for APK/AAB under $(pwd) ..."
+          echo "PWD: $(pwd)"
+          ls -lah .
+          echo "Trying to locate APK/AAB under mobile ..."
           find . -maxdepth 6 -type f \( -name "*.apk" -o -name "*.aab" \) -print
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: mutabaka-apk
-          path: |
-            builds/**/*.apk
-            builds/**/*.aab
-            android/app/build/outputs/**/*.apk
-            android/app/build/outputs/**/*.aab
+          # ملاحظة: هذا المسار من جذر المستودع، لأن خطوة الرفع لا تتبع working-directory الافتراضي
+          path: mobile/app-release.apk
           if-no-files-found: error
