@@ -1,0 +1,8 @@
+node_modules/
+.expo/
+.eas/
+builds/
+dist/
+.gradle/
+android/
+ios/

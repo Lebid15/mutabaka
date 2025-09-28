@@ -1,0 +1,119 @@
+import { request } from '../lib/httpClient';
+
+export interface ConversationUser {
+  id: number;
+  username: string;
+  display_name?: string;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  logo_url?: string | null;
+}
+
+export interface ConversationDto {
+  id: number;
+  user_a: ConversationUser;
+  user_b: ConversationUser;
+  created_at: string;
+  last_message_at: string | null;
+  last_activity_at: string | null;
+  last_message_preview: string | null;
+  mutedUntil: string | null;
+  isMuted: boolean;
+  unread_count?: number;
+  unreadCount?: number;
+}
+
+interface PaginatedResponse<T> {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: T[];
+}
+
+export interface FetchConversationsOptions {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+}
+
+export async function fetchConversations(options?: FetchConversationsOptions): Promise<PaginatedResponse<ConversationDto>> {
+  const { page, pageSize, search } = options || {};
+  return request<PaginatedResponse<ConversationDto>>({
+    path: 'conversations/',
+    method: 'GET',
+    query: {
+      page,
+      page_size: pageSize,
+      search,
+    },
+  });
+}
+
+export async function fetchConversation(conversationId: number): Promise<ConversationDto> {
+  return request<ConversationDto>({
+    path: `conversations/${conversationId}/`,
+    method: 'GET',
+  });
+}
+
+export async function createConversationByUsername(username: string): Promise<ConversationDto> {
+  return request<ConversationDto, { other_user_username: string }>({
+    path: 'conversations/',
+    method: 'POST',
+    body: { other_user_username: username },
+  });
+}
+
+export interface NetBalanceEntry {
+  currency?: {
+    id?: number;
+    code?: string;
+    name?: string;
+  } | null;
+  net_from_user_a_perspective?: string | number | null;
+}
+
+export interface NetBalanceResponse {
+  net?: NetBalanceEntry[];
+}
+
+export async function fetchNetBalance(conversationId: number): Promise<NetBalanceResponse> {
+  return request<NetBalanceResponse>({
+    path: `conversations/${conversationId}/net_balance/`,
+    method: 'GET',
+  });
+}
+
+export async function clearConversation(conversationId: number): Promise<{ status: string; deleted_messages: number }> {
+  return request<{ status: string; deleted_messages: number }>({
+    path: `conversations/${conversationId}/clear/`,
+    method: 'POST',
+  });
+}
+
+export async function muteConversation(conversationId: number): Promise<{ mutedUntil: string | null }> {
+  return request<{ mutedUntil: string | null }>({
+    path: `conversations/${conversationId}/mute/`,
+    method: 'POST',
+  });
+}
+
+export async function unmuteConversation(conversationId: number): Promise<{ mutedUntil: string | null }> {
+  return request<{ mutedUntil: string | null }>({
+    path: `conversations/${conversationId}/mute/`,
+    method: 'DELETE',
+  });
+}
+
+export async function requestDeleteConversation(conversationId: number, otpCode?: string): Promise<{ status: string }> {
+  const headers: Record<string, string> = {};
+  if (otpCode) {
+    headers['X-OTP-Code'] = otpCode;
+  }
+  return request<{ status: string }>({
+    path: `conversations/${conversationId}/request_delete/`,
+    method: 'POST',
+    headers,
+  });
+}
