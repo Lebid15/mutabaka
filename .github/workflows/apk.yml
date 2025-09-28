@@ -96,6 +96,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mutabaka-apk
-          # ملاحظة: هذا المسار من جذر المستودع، لأن خطوة الرفع لا تتبع working-directory الافتراضي
+          # ملاحظة: هذا المسار من جذر المستودع،, لأن خطوة الرفع لا تتبع working-directory الافتراضي
           path: mobile/app-release.apk
           if-no-files-found: error
