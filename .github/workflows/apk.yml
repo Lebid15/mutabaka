@@ -83,8 +83,21 @@ jobs:
       - name: Build Android APK locally with EAS
         run: eas build --platform android --profile preview --local --non-interactive --output ./builds
 
+      # يساعدنا نعرف أين وضع EAS الملف فعليًا
+      - name: Locate build outputs
+        run: |
+          echo "Looking for APK/AAB under $GITHUB_WORKSPACE/mobile ..."
+          find . -maxdepth 6 -type f \( -name "*.apk" -o -name "*.aab" \) -print
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: mutabaka-apk
-          path: mobile/builds/*.apk
+          path: |
+            mobile/builds/**/*.apk
+            mobile/builds/**/*.aab
+            mobile/**/outputs/**/*.apk
+            mobile/**/outputs/**/*.aab
+            mobile/dist/**/*.apk
+            mobile/dist/**/*.aab
+          if-no-files-found: warn
