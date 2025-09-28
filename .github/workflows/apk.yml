@@ -81,7 +81,7 @@ jobs:
         run: eas whoami
 
       - name: Build Android APK locally with EAS
-        run: eas build --platform android --profile preview --local --non-interactive --output-dir builds
+        run: eas build --platform android --profile preview --local --non-interactive --output ./builds
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
