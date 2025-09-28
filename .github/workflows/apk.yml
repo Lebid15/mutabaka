@@ -81,25 +81,25 @@ jobs:
         run: eas whoami
 
       - name: Build Android APK locally with EAS
-        run: eas build --platform android --profile preview --local --non-interactive --output ./builds
+        run: |
+          mkdir -p ./builds
+          eas build --platform android --profile preview --local --non-interactive --output-dir ./builds
 
       - name: List builds dir
-        run: ls -lah ${{ github.workspace }}/mobile/builds || true
+        run: ls -lah ./builds || true
 
       - name: Locate build outputs
         run: |
-          echo "Looking for APK/AAB under $GITHUB_WORKSPACE/mobile ..."
-          find ${{ github.workspace }}/mobile -maxdepth 6 -type f \( -name "*.apk" -o -name "*.aab" \) -print
+          echo "Looking for APK/AAB under $(pwd) ..."
+          find . -maxdepth 6 -type f \( -name "*.apk" -o -name "*.aab" \) -print
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: mutabaka-apk
           path: |
-            ${{ github.workspace }}/mobile/builds/**/*.apk
-            ${{ github.workspace }}/mobile/builds/**/*.aab
-            ${{ github.workspace }}/mobile/android/app/build/outputs/**/*.apk
-            ${{ github.workspace }}/mobile/android/app/build/outputs/**/*.aab
-            ${{ github.workspace }}/mobile/dist/**/*.apk
-            ${{ github.workspace }}/mobile/dist/**/*.aab
-          if-no-files-found: warn
+            builds/**/*.apk
+            builds/**/*.aab
+            android/app/build/outputs/**/*.apk
+            android/app/build/outputs/**/*.aab
+          if-no-files-found: error
