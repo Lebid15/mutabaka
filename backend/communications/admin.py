@@ -4,6 +4,7 @@ from django.urls import reverse
 from django import forms
 from django.http import HttpRequest
 from django.db import models
+from ckeditor.widgets import CKEditorWidget
 from .models import (
     ContactRelation,
     Conversation,
@@ -72,6 +73,17 @@ class ConversationAdmin(admin.ModelAdmin):
 
 class QuickReplyForm(forms.Form):
     body = forms.CharField(label="Message", widget=forms.Textarea(attrs={"rows": 3}), required=True)
+
+
+class PrivacyPolicyAdminForm(forms.ModelForm):
+    content = forms.CharField(
+        label="المحتوى",
+        widget=CKEditorWidget(config_name="default"),
+    )
+
+    class Meta:
+        model = PrivacyPolicy
+        fields = "__all__"
 
 
 @admin.register(ConversationInbox)
@@ -195,17 +207,15 @@ class BrandingSettingAdmin(admin.ModelAdmin):
 
 @admin.register(PrivacyPolicy)
 class PrivacyPolicyAdmin(admin.ModelAdmin):
+    form = PrivacyPolicyAdminForm
     list_display = ("title", "document_type", "is_active", "display_order", "updated_at")
     list_editable = ("is_active", "display_order")
     search_fields = ("title", "content")
     list_filter = ("document_type", "is_active")
     ordering = ("document_type", "display_order", "-updated_at")
     fieldsets = (
-        (None, {"fields": ("document_type", "title", "content", "is_active", "display_order")} ),
+        (None, {"fields": ("document_type", "title", "content", "is_active", "display_order"), "description": "قم بتحرير النص باستخدام أدوات التنسيق المتقدمة."}),
     )
-    formfield_overrides = {
-        models.TextField: {"widget": forms.Textarea(attrs={"rows": 20, "style": "direction: rtl;"})}
-    }
 
 
 @admin.register(ContactLink)

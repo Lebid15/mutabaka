@@ -72,6 +72,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'daphne',
     'django.contrib.staticfiles',
+    'ckeditor',
     'channels',
     'rest_framework',
     'accounts',
@@ -339,4 +340,53 @@ LOGGING = {
         "handlers": ["console"],
         "level": LOG_LEVEL,
     },
+}
+
+# CKEditor toolbar tuned for Arabic legal content authoring
+CKEDITOR_CONFIGS = {
+    "default": {
+        "language": "ar",
+        "toolbar": "Custom",
+        "toolbar_Custom": [
+            [
+                "Format",
+                "Font",
+                "FontSize",
+                "-",
+                "Bold",
+                "Italic",
+                "Underline",
+                "Strike",
+                "Subscript",
+                "Superscript",
+            ],
+            [
+                "TextColor",
+                "BGColor",
+                "-",
+                "JustifyLeft",
+                "JustifyCenter",
+                "JustifyRight",
+                "JustifyBlock",
+            ],
+            [
+                "NumberedList",
+                "BulletedList",
+                "-",
+                "Outdent",
+                "Indent",
+                "Blockquote",
+            ],
+            ["Link", "Unlink", "Anchor"],
+            ["Table", "HorizontalRule", "SpecialChar"],
+            ["RemoveFormat", "Source"],
+        ],
+        "extraPlugins": ",".join([
+            "font",
+            "colorbutton",
+            "justify",
+        ]),
+        "height": 400,
+        "tabSpaces": 4,
+    }
 }

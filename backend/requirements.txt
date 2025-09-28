@@ -13,3 +13,4 @@ pyotp==2.9.0
 Pillow==10.4.0
 argon2-cffi==23.1.0
 psycopg2-binary==2.9.10
+django-ckeditor==6.7.1
