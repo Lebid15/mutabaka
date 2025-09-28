@@ -73,9 +73,16 @@ export function LegalDocumentPage({
     : 'bg-chatPanel border border-chatDivider shadow-2xl/40';
   const title = document?.title?.trim() || defaultTitle;
   const updatedAt = formatDate(document?.updated_at);
-  const contentHtml = document?.content?.trim()
-    ? document.content
-    : emptyMessageHtml;
+  const rawContent = (document?.content ?? '').replace(/\r\n/g, '\n');
+  const trimmedContent = rawContent.trim();
+  const hasContent = trimmedContent.length > 0;
+  const containsHtmlTags = /<\/?[a-z][^>]*>/i.test(trimmedContent);
+  const articleClass = [
+    'prose prose-invert max-w-none prose-headings:text-current prose-p:leading-loose',
+    hasContent && !containsHtmlTags ? 'whitespace-pre-wrap' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <div className={`min-h-screen ${bgClass} transition-colors duration-500`}>
@@ -101,10 +108,17 @@ export function LegalDocumentPage({
           {loading ? (
             <p className="text-sm text-gray-400">{loadingLabel}</p>
           ) : (
-            <article
-              className="prose prose-invert max-w-none prose-headings:text-current prose-p:leading-loose"
-              dangerouslySetInnerHTML={{ __html: contentHtml }}
-            />
+            <article className={articleClass}>
+              {hasContent ? (
+                containsHtmlTags ? (
+                  <div dangerouslySetInnerHTML={{ __html: rawContent }} />
+                ) : (
+                  rawContent
+                )
+              ) : (
+                <div dangerouslySetInnerHTML={{ __html: emptyMessageHtml }} />
+              )}
+            </article>
           )}
         </main>
         <footer className="flex flex-wrap items-center justify-between gap-4 text-sm text-gray-400">
