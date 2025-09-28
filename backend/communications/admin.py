@@ -195,13 +195,13 @@ class BrandingSettingAdmin(admin.ModelAdmin):
 
 @admin.register(PrivacyPolicy)
 class PrivacyPolicyAdmin(admin.ModelAdmin):
-    list_display = ("title", "is_active", "display_order", "updated_at")
+    list_display = ("title", "document_type", "is_active", "display_order", "updated_at")
     list_editable = ("is_active", "display_order")
     search_fields = ("title", "content")
-    list_filter = ("is_active",)
-    ordering = ("display_order", "-updated_at")
+    list_filter = ("document_type", "is_active")
+    ordering = ("document_type", "display_order", "-updated_at")
     fieldsets = (
-        (None, {"fields": ("title", "content", "is_active", "display_order")}),
+        (None, {"fields": ("document_type", "title", "content", "is_active", "display_order")} ),
     )
     formfield_overrides = {
         models.TextField: {"widget": forms.Textarea(attrs={"rows": 20, "style": "direction: rtl;"})}

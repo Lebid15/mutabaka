@@ -2628,7 +2628,7 @@ export default function Home() {
           <p className={consentTextClass}>
             تسجيل الدخول يؤكد موافقتك على
             {' '}
-            <a href="/policy" className={consentLinkClass}>
+            <a href="/terms" className={consentLinkClass}>
               شروط الاستخدام
             </a>
             {' '}

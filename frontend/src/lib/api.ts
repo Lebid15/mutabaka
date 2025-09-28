@@ -672,9 +672,14 @@ class APIClient {
     return await Notification.requestPermission();
   }
 
-  async getPrivacyPolicy(): Promise<{ id: number; title: string; content: string; updated_at: string } | null> {
+  async getPolicyDocument(documentType: 'privacy' | 'terms' = 'privacy'): Promise<{ id: number; title: string; content: string; document_type: string; updated_at: string } | null> {
     try {
-      const res = await fetch(`${this.baseUrl}/api/privacy-policy`);
+      const params = new URLSearchParams();
+      if (documentType !== 'privacy') {
+        params.set('type', documentType);
+      }
+      const query = params.toString();
+      const res = await fetch(`${this.baseUrl}/api/privacy-policy${query ? `?${query}` : ''}`);
       if (!res.ok) return null;
       const data = await res.json().catch(() => null);
       if (!data || typeof data !== 'object') return null;
@@ -682,11 +687,26 @@ class APIClient {
       const title = typeof data.title === 'string' ? data.title : '';
       const content = typeof data.content === 'string' ? data.content : '';
       const updated = typeof data.updated_at === 'string' ? data.updated_at : '';
+      const docType = typeof data.document_type === 'string' ? data.document_type : documentType;
       if (!content.trim()) return null;
-      return { id: Number.isFinite(id) ? Number(id) : 0, title, content, updated_at: updated };
+      return {
+        id: Number.isFinite(id) ? Number(id) : 0,
+        title,
+        content,
+        document_type: docType,
+        updated_at: updated,
+      };
     } catch {
       return null;
     }
+  }
+
+  async getPrivacyPolicy(): Promise<{ id: number; title: string; content: string; document_type: string; updated_at: string } | null> {
+    return this.getPolicyDocument('privacy');
+  }
+
+  async getTermsOfUse(): Promise<{ id: number; title: string; content: string; document_type: string; updated_at: string } | null> {
+    return this.getPolicyDocument('terms');
   }
 
   urlBase64ToUint8Array(base64String: string) {

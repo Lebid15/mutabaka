@@ -180,7 +180,20 @@ class ContactLinkAPITests(TestCase):
 class PrivacyPolicyAPITests(TestCase):
     def setUp(self):
         PrivacyPolicy.objects.all().delete()
-        self.policy = PrivacyPolicy.objects.create(title='سياسة الخصوصية', content='نص السياسة هنا', is_active=True, display_order=1)
+        self.privacy = PrivacyPolicy.objects.create(
+            title='سياسة الخصوصية',
+            content='نص سياسة الخصوصية',
+            is_active=True,
+            display_order=1,
+            document_type=PrivacyPolicy.DOCUMENT_TYPE_PRIVACY,
+        )
+        self.terms = PrivacyPolicy.objects.create(
+            title='شروط الاستخدام',
+            content='نص شروط الاستخدام',
+            is_active=True,
+            display_order=0,
+            document_type=PrivacyPolicy.DOCUMENT_TYPE_TERMS,
+        )
 
     def test_privacy_policy_endpoint_returns_active_policy(self):
         client = APIClient()
@@ -188,10 +201,32 @@ class PrivacyPolicyAPITests(TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertEqual(data['title'], 'سياسة الخصوصية')
-        self.assertEqual(data['content'], 'نص السياسة هنا')
+        self.assertEqual(data['content'], 'نص سياسة الخصوصية')
+        self.assertEqual(data['document_type'], PrivacyPolicy.DOCUMENT_TYPE_PRIVACY)
 
     def test_privacy_policy_returns_404_when_missing(self):
         PrivacyPolicy.objects.all().delete()
         client = APIClient()
         resp = client.get('/api/privacy-policy')
+        self.assertEqual(resp.status_code, 404)
+
+    def test_terms_of_use_endpoint_returns_terms_document(self):
+        client = APIClient()
+        resp = client.get('/api/terms-of-use')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['title'], 'شروط الاستخدام')
+        self.assertEqual(data['document_type'], PrivacyPolicy.DOCUMENT_TYPE_TERMS)
+
+    def test_privacy_policy_endpoint_accepts_type_param(self):
+        client = APIClient()
+        resp = client.get('/api/privacy-policy', {'type': 'terms'})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['title'], 'شروط الاستخدام')
+        self.assertEqual(data['document_type'], PrivacyPolicy.DOCUMENT_TYPE_TERMS)
+
+    def test_requesting_unknown_type_returns_404(self):
+        client = APIClient()
+        resp = client.get('/api/privacy-policy', {'type': 'non-existent'})
         self.assertEqual(resp.status_code, 404)

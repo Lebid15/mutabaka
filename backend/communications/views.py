@@ -1612,13 +1612,34 @@ class ContactLinkListView(APIView):
 
 class PrivacyPolicyView(APIView):
     permission_classes = [AllowAny]
+    default_document_type = PrivacyPolicy.DOCUMENT_TYPE_PRIVACY
 
-    def get(self, request):
-        policy = PrivacyPolicy.objects.filter(is_active=True).order_by('display_order', '-updated_at').first()
+    def _normalize_document_type(self, raw: str | None) -> str:
+        if raw is None:
+            return self.default_document_type
+        raw_norm = raw.strip().lower()
+        valid_types = {choice[0]: choice[0] for choice in PrivacyPolicy.DOCUMENT_TYPE_CHOICES}
+        if raw_norm in valid_types:
+            return raw_norm
+        return raw_norm  # unknown types will result in 404 when querying
+
+    def get(self, request, *args, **kwargs):
+        param_type = request.query_params.get('type') or request.query_params.get('document_type')
+        kw_type = kwargs.get('document_type')
+        document_type = self._normalize_document_type(param_type or kw_type)
+        policy = (
+            PrivacyPolicy.objects.filter(is_active=True, document_type=document_type)
+            .order_by('display_order', '-updated_at')
+            .first()
+        )
         if not policy:
             return Response({'detail': 'policy not found'}, status=404)
         serializer = PrivacyPolicySerializer(policy, context={'request': request})
         return Response(serializer.data)
+
+
+class TermsOfUseView(PrivacyPolicyView):
+    default_document_type = PrivacyPolicy.DOCUMENT_TYPE_TERMS
 
 
 class TeamLoginView(APIView):

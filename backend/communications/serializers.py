@@ -55,7 +55,7 @@ class PrivacyPolicySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PrivacyPolicy
-        fields = ["id", "title", "content", "updated_at", "created_at"]
+        fields = ["id", "title", "content", "document_type", "updated_at", "created_at"]
 
 class ContactRelationSerializer(serializers.ModelSerializer):
     contact = PublicUserSerializer(read_only=True)

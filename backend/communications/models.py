@@ -46,6 +46,20 @@ class BrandingSetting(models.Model):
 class PrivacyPolicy(models.Model):
     """Stores privacy policy / terms content manageable from the admin."""
 
+    DOCUMENT_TYPE_PRIVACY = 'privacy'
+    DOCUMENT_TYPE_TERMS = 'terms'
+    DOCUMENT_TYPE_CHOICES = [
+        (DOCUMENT_TYPE_PRIVACY, 'سياسة الخصوصية'),
+        (DOCUMENT_TYPE_TERMS, 'شروط الاستخدام'),
+    ]
+
+    document_type = models.CharField(
+        max_length=20,
+        choices=DOCUMENT_TYPE_CHOICES,
+        default=DOCUMENT_TYPE_PRIVACY,
+        verbose_name="نوع الوثيقة",
+        help_text="حدد ما إذا كان هذا المستند سياسة خصوصية أو شروط استخدام",
+    )
     title = models.CharField(max_length=200, blank=True)
     content = models.TextField(help_text="النص الكامل لسياسة الخصوصية أو شروط الاستخدام")
     is_active = models.BooleanField(default=True, verbose_name="مفعل؟")
@@ -54,13 +68,17 @@ class PrivacyPolicy(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ['display_order', '-updated_at']
-        verbose_name = "سياسة خصوصية"
-        verbose_name_plural = "سياسات الخصوصية"
+        ordering = ['document_type', 'display_order', '-updated_at']
+        verbose_name = "مستند قانوني"
+        verbose_name_plural = "مستندات قانونية"
 
     def __str__(self):  # pragma: no cover
         label = self.title.strip() if self.title else 'Policy'
-        return f"{label} (active={self.is_active})"
+        try:
+            doc_label = dict(self.DOCUMENT_TYPE_CHOICES).get(self.document_type, self.document_type)
+        except Exception:
+            doc_label = self.document_type
+        return f"{doc_label}: {label} (active={self.is_active})"
 
 
 class ContactLink(models.Model):

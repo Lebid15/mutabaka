@@ -5,6 +5,7 @@ from .views import (
     UserSearchViewSet, ContactRelationViewSet, ConversationViewSet,
     MessageViewSet, TransactionViewSet, PushSubscribeView, PushUnsubscribeView,
     NotificationSoundView, BrandingView, ContactLinkListView, PrivacyPolicyView,
+    TermsOfUseView,
     EnsureAdminConversationView, TeamMemberViewSet, TeamLoginView
 )
 from finance.views import WalletViewSet, CurrencyViewSet
@@ -28,6 +29,7 @@ urlpatterns = [
     path('branding', BrandingView.as_view(), name='branding'),
     path('contact-links', ContactLinkListView.as_view(), name='contact_links'),
     path('privacy-policy', PrivacyPolicyView.as_view(), name='privacy_policy'),
+    path('terms-of-use', TermsOfUseView.as_view(), name='terms_of_use'),
     path('ensure_admin_conversation', EnsureAdminConversationView.as_view(), name='ensure_admin_conversation'),
     path('auth/team/login', TeamLoginView.as_view(), name='team_login'),
     path('', include(router.urls))
