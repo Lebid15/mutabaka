@@ -3426,9 +3426,21 @@ export default function Home() {
               <div className="flex items-center gap-2">
                 {/* معاينة مرفق قيد الانتظار */}
                 {pendingAttachment && (
-                  <div className="flex items-center gap-2 text-xs text-gray-200 bg-white/5 border border-white/10 rounded px-2 py-1 max-w-[50%]">
-                    <svg xmlns='http://www.w3.org/2000/svg' className='h-4 w-4' viewBox='0 0 24 24' fill='currentColor'><path d='M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z'/><path d='M14 2v6h6'/></svg>
-                    <span className="truncate">{pendingAttachment.name}</span>
+                  <div
+                    className="flex items-center gap-1 text-xs text-gray-200 bg-white/5 border border-white/10 rounded px-2 py-1"
+                    title={pendingAttachment.name || undefined}
+                  >
+                    <svg
+                      xmlns='http://www.w3.org/2000/svg'
+                      className='h-4 w-4'
+                      viewBox='0 0 24 24'
+                      fill='currentColor'
+                      aria-hidden='true'
+                    >
+                      <path d='M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z'/>
+                      <path d='M14 2v6h6'/>
+                    </svg>
+                    <span className="sr-only">{pendingAttachment.name}</span>
                     <button onClick={()=> setPendingAttachment(null)} className="ml-1 text-gray-400 hover:text-white" title="إزالة">×</button>
                   </div>
                 )}
