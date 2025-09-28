@@ -2,6 +2,7 @@ from __future__ import annotations
 from django.db import models
 from django.conf import settings
 from django.core.validators import MinValueValidator
+from decimal import Decimal
 
 User = settings.AUTH_USER_MODEL
 
@@ -21,8 +22,13 @@ class Currency(models.Model):
 class Wallet(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='wallets')
     currency = models.ForeignKey(Currency, on_delete=models.CASCADE, related_name='wallets')
-    # Reduced to 5 decimal places to match enforced business precision
-    balance = models.DecimalField(max_digits=18, decimal_places=5, default=0, validators=[MinValueValidator(-999999999)])
+    # Allow large aggregates while keeping 5 decimal places of precision
+    balance = models.DecimalField(
+        max_digits=28,
+        decimal_places=5,
+        default=0,
+        validators=[MinValueValidator(Decimal('-99999999999999999999999'))]
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

@@ -20,7 +20,7 @@ const fallbackCurrencies = [
   { name: "دولار", code: "USD", symbol: "$" },
   { name: "يورو", code: "EUR", symbol: "€" },
   { name: "تركي", code: "TRY", symbol: "₺" },
-  { name: "سوري", code: "SYP", symbol: "SP" },
+  { name: "سوري", code: "SYP", symbol: "ل.س" },
 ];
 // خريطة أسماء عربية بحسب كود العملة لضمان ثبات التسمية حتى لو رجعت أسماء إنجليزية من الخادم
 const AR_NAME_BY_CODE: Record<string, string> = {
@@ -1426,16 +1426,38 @@ export default function Home() {
       try {
         const ws = await apiClient.getWallets();
         const next = { ...initialWallet } as any;
+        const discovered: Record<string, any> = {};
         if (Array.isArray(ws)) {
           for (const w of ws) {
             const code = w.currency?.code;
             if (code) {
               const val = parseFloat(w.balance);
               if (!isNaN(val)) next[code] = val;
+              const currencyObj = w.currency || {};
+              discovered[code] = {
+                id: currencyObj.id,
+                code,
+                name: currencyObj.name,
+                symbol: typeof currencyObj.symbol === 'string' ? currencyObj.symbol : '',
+                precision: currencyObj.precision,
+                is_active: currencyObj.is_active,
+              };
             }
           }
         }
         setWallet(next);
+        if (Object.keys(discovered).length) {
+          setServerCurrencies(prev => {
+            const merged = new Map<string, any>();
+            for (const item of prev) {
+              if (item && item.code) merged.set(item.code, item);
+            }
+            for (const item of Object.values(discovered)) {
+              if (item && item.code) merged.set(item.code, item);
+            }
+            return Array.from(merged.values());
+          });
+        }
       } catch (e:any) {
         pushToast({ type:'error', msg:'تعذر جلب المحافظ' });
       }
@@ -1789,9 +1811,37 @@ export default function Home() {
 
   // نُفضّل الاسم العربي المحلي حسب الكود؛ وإن لم يتوفر نستخدم الاسم القادم من الخادم ثم الكود
   const effectiveCurrencies = serverCurrencies.length
-    ? serverCurrencies.map((c:any)=>({ name: AR_NAME_BY_CODE[c.code] || c.name || c.code, code: c.code, symbol: c.symbol }))
+    ? serverCurrencies.map((c:any)=>({
+        name: AR_NAME_BY_CODE[c.code] || c.name || c.code,
+        code: c.code,
+        symbol: (c.symbol && typeof c.symbol === 'string' && c.symbol.trim()) ? c.symbol.trim() : c.code,
+      }))
     : fallbackCurrencies;
-  const symbolFor = (code:string) => effectiveCurrencies.find(c=>c.code===code)?.symbol || code;
+  const symbolFor = (code:string) => {
+    const entry = effectiveCurrencies.find(c=>c.code===code);
+    if (!entry) return code;
+    return entry.symbol && entry.symbol.trim() ? entry.symbol : entry.code;
+  };
+  const sanitizeAmountInput = useCallback((raw: string) => {
+    const normalized = arabicToEnglishDigits(raw || '')
+      .replace(/[\u066B]/g, '.')
+      .replace(/[\u066C]/g, '')
+      .replace(/[^0-9.,]/g, '')
+      .replace(/,/g, '.');
+    if (!normalized) return '';
+    const match = normalized.match(/^(\d{0,9})(?:\.(\d{0,2})?)?/);
+    if (!match) return '';
+    const intPart = match[1] || '';
+    const fracPart = match[2] || '';
+    let formatted = intPart;
+    if (normalized.startsWith('.') && !intPart) {
+      formatted = '0';
+    }
+    if (normalized.includes('.') || fracPart) {
+      formatted = `${formatted}.${fracPart}`;
+    }
+    return formatted;
+  }, []);
   const formatMoneyValue = (num:number) => {
     if (isNaN(num)) return '0.00';
     const rounded = Number(num.toFixed(5));
@@ -2934,7 +2984,10 @@ export default function Home() {
             >
               {/* شريط أرصدة سريع من منظور هذه المحادثة فقط (موجب = لنا، سالب = لكم) — مخفي عند الدردشة مع admin (أو حسابات إدارية مشابهة) أو عند كون المستخدم الحالي أدمن */}
               {(!isAdminLike(profile?.username) && !isAdminLike(currentContact?.otherUsername)) && (
-                <div dir="rtl" className="flex gap-4 text-xs md:text-sm order-2 md:order-1 w-full md:w-auto justify-between md:justify-start">
+                <div
+                  dir="rtl"
+                  className="flex flex-wrap md:flex-nowrap gap-x-4 gap-y-1 text-xs md:text-sm order-2 md:order-1 w-full md:w-auto justify-start"
+                >
                   {(() => {
                     const ORDER = ['USD','TRY','EUR','SYP'];
                     const pair = getPairWallet(selectedConversationId);
@@ -2947,8 +3000,11 @@ export default function Home() {
                         const positive = rounded >= 0;
                         const isPending = pendingCurrencies.has(code);
                         return (
-                          <span key={code} className={(positive ? 'text-green-400' : 'text-red-400') + ' font-semibold flex items-center gap-1'}>
-                            <span dir="ltr" className="inline-block tabular-nums">
+                          <span
+                            key={code}
+                            className={(positive ? 'text-green-400' : 'text-red-400') + ' font-semibold flex items-center gap-1 basis-1/2 md:basis-auto justify-end md:justify-start max-w-full text-right'}
+                          >
+                            <span dir="ltr" className="inline-block tabular-nums break-words md:break-normal">
                               {formatAmount(rounded, code)}
                             </span>
                             {isPending && <span className="text-yellow-400 animate-pulse" title="قيمة مؤقتة قيد التأكيد">⚡</span>}
@@ -3392,8 +3448,20 @@ export default function Home() {
                   <select value={selectedCurrency} onChange={e=>setSelectedCurrency(e.target.value)} className="bg-chatBg border border-chatDivider rounded px-2 py-1 text-gray-100 focus:outline-none w-auto min-w-0">
                     {effectiveCurrencies.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
                   </select>
-                  <input value={amountOurs} onChange={e=>setAmountOurs(e.target.value)} inputMode="decimal" placeholder="لنا" className="w-24 bg-chatBg border border-chatDivider rounded px-2 py-1 text-gray-100 focus:outline-none" />
-                  <input value={amountYours} onChange={e=>setAmountYours(e.target.value)} inputMode="decimal" placeholder="لكم" className="w-24 bg-chatBg border border-chatDivider rounded px-2 py-1 text-gray-100 focus:outline-none" />
+                  <input
+                    value={amountOurs}
+                    onChange={e=>setAmountOurs(sanitizeAmountInput(e.target.value))}
+                    inputMode="decimal"
+                    placeholder="لنا"
+                    className="w-24 bg-chatBg border border-chatDivider rounded px-2 py-1 text-gray-100 focus:outline-none"
+                  />
+                  <input
+                    value={amountYours}
+                    onChange={e=>setAmountYours(sanitizeAmountInput(e.target.value))}
+                    inputMode="decimal"
+                    placeholder="لكم"
+                    className="w-24 bg-chatBg border border-chatDivider rounded px-2 py-1 text-gray-100 focus:outline-none"
+                  />
                   <button
                     onClick={()=>setNoteModalOpen(true)}
                     className="relative group w-9 h-9 flex items-center justify-center rounded-lg bg-white/5 hover:bg-white/10 backdrop-blur-sm border border-white/10 text-gray-200 transition"

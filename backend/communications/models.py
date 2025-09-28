@@ -257,11 +257,11 @@ class Transaction(models.Model):
     from_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='transactions_from')
     to_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='transactions_to')
     currency = models.ForeignKey(Currency, on_delete=models.PROTECT)
-    amount = models.DecimalField(max_digits=18, decimal_places=5)
+    amount = models.DecimalField(max_digits=28, decimal_places=5)
     direction = models.CharField(max_length=8, choices=DIRECTION_CHOICES)
     note = models.CharField(max_length=255, blank=True)
-    balance_after_from = models.DecimalField(max_digits=18, decimal_places=5, null=True, blank=True)
-    balance_after_to = models.DecimalField(max_digits=18, decimal_places=5, null=True, blank=True)
+    balance_after_from = models.DecimalField(max_digits=28, decimal_places=5, null=True, blank=True)
+    balance_after_to = models.DecimalField(max_digits=28, decimal_places=5, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
