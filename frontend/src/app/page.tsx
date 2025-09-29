@@ -2937,52 +2937,21 @@ export default function Home() {
             {/* واجهة المحادثة */}
             {(selectedConversationId != null && currentContact) && (
               <div className={(mobileView === 'chat' ? 'flex' : 'hidden') + ' md:flex flex-col h-full'}>
-                        <div
-              className="bg-chatPanel px-6 py-3 font-bold border-b border-chatDivider text-sm flex items-center gap-6 flex-wrap relative sticky top-0 z-30 md:static"
-              style={{ top: 'env(safe-area-inset-top, 0px)' }}
-            >
-              {/* شريط أرصدة سريع من منظور هذه المحادثة فقط (موجب = لنا، سالب = لكم) — مخفي عند الدردشة مع admin (أو حسابات إدارية مشابهة) أو عند كون المستخدم الحالي أدمن */}
-              {(!isAdminLike(profile?.username) && !isAdminLike(currentContact?.otherUsername)) && (
                 <div
-                  dir="rtl"
-                  className="flex flex-wrap gap-x-4 gap-y-1 text-xs md:text-sm order-2 md:order-1 w-full md:w-auto justify-start"
+                  className="bg-chatPanel px-6 py-3 font-bold border-b border-chatDivider text-sm flex flex-col gap-2 md:gap-1 relative sticky top-0 z-30 md:static"
+                  style={{ top: 'env(safe-area-inset-top, 0px)' }}
                 >
-                  {(() => {
-                    const ORDER = ['USD','TRY','EUR','SYP'];
-                    const pair = getPairWallet(selectedConversationId);
-                    return ORDER
-                      .filter(code => (pair as any)[code] !== undefined)
-                      .map(code => {
-                        const val = (pair as any)[code] ?? 0;
-                        const rounded = Math.round(val * 100) / 100;
-                        if (rounded === 0) return null; // إخفاء العملة ذات القيمة صفر
-                        const positive = rounded >= 0;
-                        const isPending = pendingCurrencies.has(code);
-                        return (
-                          <span
-                            key={code}
-                            className={(positive ? 'text-green-400' : 'text-red-400') + ' font-semibold flex items-center gap-1 justify-end md:justify-start text-right flex-none'}
-                          >
-                            <span dir="ltr" className="inline-flex tabular-nums whitespace-nowrap">
-                              {formatAmount(rounded, code)}
-                            </span>
-                            {isPending && <span className="text-yellow-400 animate-pulse" title="قيمة مؤقتة قيد التأكيد">⚡</span>}
-                          </span>
-                        );
-                      });
-                  })()}
-                </div>
-              )}
-              {/* زر رجوع للجوال */}
-              <button onClick={()=>setMobileView('list')} className="md:hidden text-gray-300 hover:text-white" title="رجوع"><svg xmlns='http://www.w3.org/2000/svg' className='h-6 w-6' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M15 19l-7-7 7-7'/></svg></button>
-              <img src={currentContact.avatar} alt={currentContact.name} className="w-9 h-9 rounded-full border border-chatDivider" />
-              <div className="flex flex-col">
-                <span className="text-sm font-semibold flex items-center gap-1">{currentContact.name} {currentContact.isMuted && <span title="مكتمة">🔕</span>}</span>
-                {isOtherTyping && (
-                  <span className="text-[10px] text-green-300 mt-0.5">يكتب الآن…</span>
-                )}
-              </div>
-              <div className="ml-auto flex items-center gap-3 text-gray-300">
+                  <div className="flex flex-wrap items-center gap-4">
+                    {/* زر رجوع للجوال */}
+                    <button onClick={()=>setMobileView('list')} className="md:hidden text-gray-300 hover:text-white" title="رجوع"><svg xmlns='http://www.w3.org/2000/svg' className='h-6 w-6' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M15 19l-7-7 7-7'/></svg></button>
+                    <img src={currentContact.avatar} alt={currentContact.name} className="w-9 h-9 rounded-full border border-chatDivider" />
+                    <div className="flex flex-col">
+                      <span className="text-sm font-semibold flex items-center gap-1">{currentContact.name} {currentContact.isMuted && <span title="مكتمة">🔕</span>}</span>
+                      {isOtherTyping && (
+                        <span className="text-[10px] text-green-300 mt-0.5">يكتب الآن…</span>
+                      )}
+                    </div>
+                    <div className="ml-auto flex items-center gap-3 text-gray-300">
                 <button
                   onClick={()=> setShowOnlyTransactions(v => !v)}
                   className={`w-9 h-9 rounded-full flex items-center justify-center border transition ${showOnlyTransactions
@@ -3038,8 +3007,41 @@ export default function Home() {
                   <svg xmlns='http://www.w3.org/2000/svg' className='h-4 w-4' viewBox='0 0 20 20' fill='currentColor'><path fillRule='evenodd' d='M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z' clipRule='evenodd'/></svg>
                 </button>
                 {/* info button removed by request */}
-              </div>
-            </div>
+                    </div>
+                  </div>
+                  {/* شريط أرصدة سريع من منظور هذه المحادثة فقط (موجب = لنا، سالب = لكم) — مخفي عند الدردشة مع admin (أو حسابات إدارية مشابهة) أو عند كون المستخدم الحالي أدمن */}
+                  {(!isAdminLike(profile?.username) && !isAdminLike(currentContact?.otherUsername)) && (
+                    <div
+                      dir="rtl"
+                      className="flex flex-wrap gap-x-4 gap-y-1 text-xs md:text-sm justify-start"
+                    >
+                      {(() => {
+                        const ORDER = ['USD','TRY','EUR','SYP'];
+                        const pair = getPairWallet(selectedConversationId);
+                        return ORDER
+                          .filter(code => (pair as any)[code] !== undefined)
+                          .map(code => {
+                            const val = (pair as any)[code] ?? 0;
+                            const rounded = Math.round(val * 100) / 100;
+                            if (rounded === 0) return null; // إخفاء العملة ذات القيمة صفر
+                            const positive = rounded >= 0;
+                            const isPending = pendingCurrencies.has(code);
+                            return (
+                              <span
+                                key={code}
+                                className={(positive ? 'text-green-400' : 'text-red-400') + ' font-semibold flex items-center gap-1 justify-end md:justify-start text-right flex-none'}
+                              >
+                                <span dir="ltr" className="inline-flex tabular-nums whitespace-nowrap">
+                                  {formatAmount(rounded, code)}
+                                </span>
+                                {isPending && <span className="text-yellow-400 animate-pulse" title="قيمة مؤقتة قيد التأكيد">⚡</span>}
+                              </span>
+                            );
+                          });
+                      })()}
+                    </div>
+                  )}
+                </div>
             {/* Members side panel */}
             {membersPanelOpen && (
               <div ref={membersPanelRef} className="absolute right-0 top-12 md:top-14 z-30 w-full md:w-[420px] max-h-[65vh] overflow-y-auto bg-chatBg border border-chatDivider rounded-lg shadow-2xl p-3">
