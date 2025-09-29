@@ -2945,7 +2945,7 @@ export default function Home() {
               {(!isAdminLike(profile?.username) && !isAdminLike(currentContact?.otherUsername)) && (
                 <div
                   dir="rtl"
-                  className="flex flex-wrap md:flex-nowrap gap-x-4 gap-y-1 text-xs md:text-sm order-2 md:order-1 w-full md:w-auto justify-start"
+                  className="flex flex-wrap gap-x-4 gap-y-1 text-xs md:text-sm order-2 md:order-1 w-full md:w-auto justify-start"
                 >
                   {(() => {
                     const ORDER = ['USD','TRY','EUR','SYP'];
@@ -2961,9 +2961,9 @@ export default function Home() {
                         return (
                           <span
                             key={code}
-                            className={(positive ? 'text-green-400' : 'text-red-400') + ' font-semibold flex items-center gap-1 basis-1/2 md:basis-auto justify-end md:justify-start max-w-full text-right'}
+                            className={(positive ? 'text-green-400' : 'text-red-400') + ' font-semibold flex items-center gap-1 justify-end md:justify-start text-right flex-none'}
                           >
-                            <span dir="ltr" className="inline-block tabular-nums break-words md:break-normal">
+                            <span dir="ltr" className="inline-flex tabular-nums whitespace-nowrap">
                               {formatAmount(rounded, code)}
                             </span>
                             {isPending && <span className="text-yellow-400 animate-pulse" title="قيمة مؤقتة قيد التأكيد">⚡</span>}
