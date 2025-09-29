@@ -53,6 +53,8 @@ interface CurrencyOption {
 
 const ADMIN_USERNAMES = new Set(['admin', 'madmin', 'a_admin', 'l_admin']);
 
+const EMOJI_PALETTE = ['😀','😂','😍','👍','🙏','🎉','💰','📌','❤️','😢','😎','🤔','✅','❌','🔥','🌟','🥰','😮','💡','📈','🤥','🌎'];
+
 function isAdminLike(username?: string | null): boolean {
   if (!username) {
     return false;
@@ -225,6 +227,7 @@ export default function ChatScreen() {
   const [theirShare, setTheirShare] = useState('');
   const [note, setNote] = useState('');
   const [noteModalVisible, setNoteModalVisible] = useState(false);
+  const [emojiPickerVisible, setEmojiPickerVisible] = useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState<string>('USD');
   const [currencyOptions, setCurrencyOptions] = useState<CurrencyOption[]>([]);
   const [currencyPickerVisible, setCurrencyPickerVisible] = useState(false);
@@ -238,6 +241,7 @@ export default function ChatScreen() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusBanner, setStatusBanner] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+  const [composerHeight, setComposerHeight] = useState(0);
   const [transactionLoading, setTransactionLoading] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [balancesError, setBalancesError] = useState(false);
@@ -297,6 +301,7 @@ export default function ChatScreen() {
       clearTimeout(initialScrollTimerRef.current);
       initialScrollTimerRef.current = null;
     }
+    setEmojiPickerVisible(false);
   }, [conversationId]);
 
   const scrollToBottom = useCallback((animated = false, onSuccess?: () => void): boolean => {
@@ -961,6 +966,17 @@ export default function ChatScreen() {
     };
   }, [clearInitialScrollTimer, filteredMessages.length, requestInitialScroll]);
 
+  useEffect(() => {
+    if (composerHeight <= 0) {
+      return;
+    }
+    if (initialScrollDoneRef.current) {
+      scrollToBottom(false);
+    } else {
+      requestInitialScroll(false);
+    }
+  }, [composerHeight, requestInitialScroll, scrollToBottom]);
+
   const lastMessageKey = useMemo(() => {
     if (!filteredMessages.length) {
       return null;
@@ -993,6 +1009,18 @@ export default function ChatScreen() {
   }, [currencyOptions]);
 
   const selectedCurrencyOption = useMemo(() => currencyMap.get(selectedCurrency), [currencyMap, selectedCurrency]);
+
+  const handleInsertEmoji = useCallback((emoji: string) => {
+    if (!emoji) {
+      return;
+    }
+    setDraft((prev) => {
+      const next = prev ?? '';
+      const needsSpace = next.length > 0 && !/\s$/.test(next);
+      return `${next}${needsSpace ? ' ' : ''}${emoji}`;
+    });
+    setEmojiPickerVisible(false);
+  }, [setEmojiPickerVisible]);
 
   const handleSaveTransaction = useCallback(async () => {
     if (!shouldUseBackend || Number.isNaN(numericConversationId) || transactionLoading) {
@@ -1425,7 +1453,7 @@ export default function ChatScreen() {
               data={filteredMessages}
               keyExtractor={(item) => item.id}
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.listContent}
+              contentContainerStyle={[styles.listContent, { paddingBottom: Math.max(composerHeight + 24, 80) }]}
               onContentSizeChange={handleListContentSizeChange}
               ListEmptyComponent={renderEmpty}
               refreshing={shouldUseBackend ? loadingMessages : false}
@@ -1442,7 +1470,15 @@ export default function ChatScreen() {
             />
 
             <View
-              style={[styles.composer, { backgroundColor: composerBackground, borderColor: tokens.divider }]}>
+              style={[styles.composer, { backgroundColor: composerBackground, borderColor: tokens.divider }]}
+              onLayout={(event) => {
+                const height = event?.nativeEvent?.layout?.height;
+                if (!Number.isFinite(height)) {
+                  return;
+                }
+                setComposerHeight((prev) => (Math.abs(prev - height) > 0.5 ? height : prev));
+              }}
+            > 
               {statusBanner ? (
                 <View
                   style={[
@@ -1533,6 +1569,7 @@ export default function ChatScreen() {
                   </Pressable>
                   <Pressable
                     accessibilityLabel="إضافة رمز تعبيري"
+                    onPress={() => setEmojiPickerVisible((prev) => !prev)}
                     style={[styles.composerButton, { backgroundColor: composerButtonBackground, borderColor: composerButtonBorder }]}
                   >
                     <Text style={{ fontSize: 18 }}>😊</Text>
@@ -1591,6 +1628,38 @@ export default function ChatScreen() {
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
+
+      <Modal
+        visible={emojiPickerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEmojiPickerVisible(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setEmojiPickerVisible(false)}>
+          <View
+            style={[styles.emojiPanel, { backgroundColor: tokens.panel, borderColor: tokens.divider }]}
+            onStartShouldSetResponder={() => true}
+          >
+            <Text style={[styles.modalTitle, { color: tokens.textPrimary }]}>اختر رمزاً تعبيرياً</Text>
+            <ScrollView
+              style={styles.modalList}
+              contentContainerStyle={styles.emojiGrid}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {EMOJI_PALETTE.map((emoji) => (
+                <Pressable
+                  key={emoji}
+                  style={styles.emojiButton}
+                  onPress={() => handleInsertEmoji(emoji)}
+                >
+                  <Text style={styles.emojiChar}>{emoji}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        </Pressable>
+      </Modal>
 
       <Modal
         visible={currencyPickerVisible}
@@ -1800,7 +1869,6 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 20,
     paddingTop: 24,
-    paddingBottom: 40,
     flexGrow: 1,
     justifyContent: 'flex-end',
   },
@@ -1988,6 +2056,35 @@ const styles = StyleSheet.create({
     fontSize: 14,
     minHeight: 96,
     textAlignVertical: 'top',
+  },
+  emojiPanel: {
+    width: '90%',
+    maxWidth: 360,
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+  },
+  emojiGrid: {
+    flexDirection: 'row-reverse',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    paddingVertical: 8,
+  },
+  emojiButton: {
+    width: 52,
+    height: 52,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(249, 115, 22, 0.35)',
+    backgroundColor: 'rgba(249, 115, 22, 0.08)',
+    marginHorizontal: 6,
+    marginVertical: 6,
+  },
+  emojiChar: {
+    fontSize: 26,
   },
   modalActions: {
     flexDirection: 'row-reverse',
