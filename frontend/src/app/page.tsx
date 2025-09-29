@@ -1921,24 +1921,7 @@ export default function Home() {
                 return copy;
               }
             }
-            for (let i = copy.length - 1; i >= 0; i--) {
-              const m = copy[i];
-              if (m.sender === 'current' && m.text === txt) {
-                copy[i] = {
-                  ...m,
-                  id: messageIdNum ?? m.id,
-                  created_at: m.created_at || new Date().toISOString(),
-                  kind: tx ? 'transaction' : 'text',
-                  tx: tx || undefined,
-                  delivery_status: Math.max(m.delivery_status||1, readAtPayload ? 2 : 1),
-                  status: readAtPayload ? 'read' : ((m.delivery_status||1) >=2 ? 'read':'delivered'),
-                  read_at: readAtPayload || m.read_at || null,
-                  delivered_at: deliveredAtPayload || m.delivered_at || null,
-                } as any;
-                return copy;
-              }
-            }
-            // إذا لم نجد عنصر تفاؤلي، أضف واحدة (مثلاً عندما تأتي من جهاز آخر)
+            // لم نعد نعيد استخدام رسائل مطابقة بالنص؛ المعاملات المتكررة يجب أن تظهر دائمًا كفقاعات جديدة.
             return [
               ...prev,
               {
