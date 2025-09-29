@@ -24,6 +24,17 @@ export interface ConversationDto {
   unreadCount?: number;
 }
 
+export interface ConversationMemberSummary {
+  id: number;
+  username: string;
+  display_name?: string | null;
+  role: 'participant' | 'team' | 'team_member';
+}
+
+interface ConversationMembersResponse {
+  members?: ConversationMemberSummary[];
+}
+
 interface PaginatedResponse<T> {
   count: number;
   next: string | null;
@@ -115,5 +126,39 @@ export async function requestDeleteConversation(conversationId: number, otpCode?
     path: `conversations/${conversationId}/request_delete/`,
     method: 'POST',
     headers,
+  });
+}
+
+export async function fetchConversationMembers(conversationId: number): Promise<ConversationMemberSummary[]> {
+  const response = await request<ConversationMembersResponse>({
+    path: `conversations/${conversationId}/members/`,
+    method: 'GET',
+  });
+  if (response && Array.isArray(response.members)) {
+    return response.members;
+  }
+  return [];
+}
+
+export async function addConversationTeamMember(conversationId: number, teamMemberId: number) {
+  return request<{ id: number; type: string; display_name?: string } | undefined, { team_member_id: number }>({
+    path: `conversations/${conversationId}/add_team_member/`,
+    method: 'POST',
+    body: { team_member_id: teamMemberId },
+  });
+}
+
+export async function removeConversationMember(
+  conversationId: number,
+  memberId: number,
+  memberType: 'user' | 'team_member',
+) {
+  return request<{ status: string }>({
+    path: `conversations/${conversationId}/remove_member/`,
+    method: 'POST',
+    body: {
+      member_id: memberId,
+      member_type: memberType,
+    },
   });
 }
