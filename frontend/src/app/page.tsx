@@ -1454,16 +1454,9 @@ export default function Home() {
           ? item.to_user
           : (item.to_user_info?.id ?? null);
 
-        const viewerIsSender = viewerId != null && fromId === viewerId;
-        const viewerIsReceiver = viewerId != null && toId === viewerId;
-        let positive = true;
-        if (viewerIsSender) {
-          positive = direction === 'lna';
-        } else if (viewerIsReceiver) {
-          positive = direction === 'lkm';
-        } else {
-          positive = direction === 'lna';
-        }
+        const directionLabelRaw = (item.direction_label || '').toString().trim();
+        const normalizedDirectionLabel: 'لنا' | 'لكم' = directionLabelRaw === 'لكم' ? 'لكم' : 'لنا';
+        const positive = normalizedDirectionLabel === 'لنا';
 
         const amountSource = item.amount_value ?? item.amount ?? 0;
         const amountNumber = typeof amountSource === 'number'
