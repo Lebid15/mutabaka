@@ -357,6 +357,24 @@ class APIClient {
     });
   }
 
+  async getTransactions(conversationId: number, opts?: { from?: string; to?: string }): Promise<any> {
+    const params = new URLSearchParams();
+    params.set('conversation', String(conversationId));
+    if (opts?.from) params.set('from_date', opts.from);
+    if (opts?.to) params.set('to_date', opts.to);
+    params.set('ordering', 'created_at');
+    const qs = params.toString();
+    const res = await this.authFetch(`/api/transactions/${qs ? `?${qs}` : ''}`);
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok) {
+      const err: any = new Error(data?.detail || 'تعذر جلب المعاملات');
+      err.status = res.status;
+      err.response = data;
+      throw err;
+    }
+    return data;
+  }
+
   getWallets(): Promise<any> {
     return this.authFetch('/api/wallets/')
       .then((r: Response) => r.json())

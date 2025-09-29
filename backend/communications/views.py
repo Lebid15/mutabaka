@@ -34,6 +34,8 @@ from .serializers import (
 from .permissions import IsParticipant
 from django.conf import settings
 from django.utils import timezone
+from django.utils.timezone import make_aware
+from datetime import datetime, time
 
 # اشتراطات الاشتراك: السماح بالمراسلة وجهات الاتصال وفق الباقة
 try:
@@ -1535,10 +1537,46 @@ class TransactionViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, viewset
         acting_team_id = getattr(getattr(self.request, 'auth', None), 'payload', {}).get('team_member_id') if getattr(self.request, 'auth', None) else None
         base = Transaction.objects.select_related('conversation', 'currency', 'from_user', 'to_user')
         if acting_team_id:
-            return base.filter(Q(conversation__extra_members__member_team_id=acting_team_id)).distinct()
-        return base.filter(
-            Q(conversation__user_a=user) | Q(conversation__user_b=user) | Q(conversation__extra_members__member_user=user) | Q(conversation__extra_members__member_team__owner=user)
-        ).distinct()
+            base = base.filter(Q(conversation__extra_members__member_team_id=acting_team_id)).distinct()
+        else:
+            base = base.filter(
+                Q(conversation__user_a=user) | Q(conversation__user_b=user) | Q(conversation__extra_members__member_user=user) | Q(conversation__extra_members__member_team__owner=user)
+            ).distinct()
+
+        conversation_param = self.request.query_params.get('conversation')
+        if conversation_param:
+            try:
+                cid = int(conversation_param)
+                base = base.filter(conversation_id=cid)
+            except (TypeError, ValueError):
+                pass
+
+        from_date = self.request.query_params.get('from_date') or self.request.query_params.get('from')
+        to_date = self.request.query_params.get('to_date') or self.request.query_params.get('to')
+        if from_date:
+            try:
+                dt = datetime.strptime(from_date, '%Y-%m-%d')
+                start_candidate = datetime.combine(dt.date(), time.min)
+                start = make_aware(start_candidate) if timezone.is_naive(start_candidate) else start_candidate
+                base = base.filter(created_at__gte=start)
+            except Exception:
+                pass
+        if to_date:
+            try:
+                dt = datetime.strptime(to_date, '%Y-%m-%d')
+                end_candidate = datetime.combine(dt.date(), time.max)
+                aware_end = make_aware(end_candidate) if timezone.is_naive(end_candidate) else end_candidate
+                base = base.filter(created_at__lte=aware_end)
+            except Exception:
+                pass
+
+        ordering_param = self.request.query_params.get('ordering')
+        if ordering_param:
+            allowed = {'created_at', '-created_at', 'id', '-id'}
+            if ordering_param in allowed:
+                base = base.order_by(ordering_param)
+
+        return base
 
 
 from rest_framework.views import APIView

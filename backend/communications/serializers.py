@@ -304,14 +304,22 @@ class TransactionSerializer(serializers.ModelSerializer):
     currency_id = serializers.PrimaryKeyRelatedField(queryset=Currency.objects.all(), source='currency', write_only=True)
     # Accept any decimal string input; model rounding will enforce 5 dp
     amount = serializers.CharField(write_only=True)
+    amount_value = serializers.DecimalField(source='amount', max_digits=28, decimal_places=5, read_only=True)
+    from_user_info = PublicUserSerializer(source='from_user', read_only=True)
+    to_user_info = PublicUserSerializer(source='to_user', read_only=True)
+    direction_label = serializers.CharField(source='get_direction_display', read_only=True)
 
     class Meta:
         model = Transaction
         fields = [
-            "id", "conversation", "from_user", "to_user", "currency", "currency_id", "amount", "direction", "note",
-            "balance_after_from", "balance_after_to", "created_at"
+            "id", "conversation", "from_user", "to_user", "currency", "currency_id", "amount", "amount_value",
+            "direction", "direction_label", "note", "balance_after_from", "balance_after_to", "created_at",
+            "from_user_info", "to_user_info"
         ]
-        read_only_fields = ["id", "from_user", "to_user", "balance_after_from", "balance_after_to", "created_at"]
+        read_only_fields = [
+            "id", "from_user", "to_user", "balance_after_from", "balance_after_to", "created_at",
+            "amount_value", "direction_label", "from_user_info", "to_user_info"
+        ]
 
     def validate(self, attrs):
         request = self.context['request']

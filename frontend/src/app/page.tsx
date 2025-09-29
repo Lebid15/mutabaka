@@ -49,6 +49,16 @@ const formatDateShort = (iso?: string) => {
     return '';
   }
 };
+const toDateInputValue = (date: Date) => {
+  const pad = (val: number) => String(val).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
+const formatDateTimeLabel = (iso?: string) => {
+  if (!iso) return '';
+  const datePart = formatDateShort(iso);
+  const timePart = formatTimeShort(iso);
+  return [datePart, timePart].filter(Boolean).join(' ');
+};
 // مفاتيح وتقسيم الأيام: اليوم/أمس/تاريخ كامل
 const dayKeyOf = (iso?: string) => {
   try {
@@ -725,6 +735,9 @@ export default function Home() {
   const [emojiPanelOpen, setEmojiPanelOpen] = useState(false);
   const emojiPanelRef = useRef<HTMLDivElement|null>(null);
   const emojiButtonRef = useRef<HTMLButtonElement|null>(null);
+  const [topToolsMenuOpen, setTopToolsMenuOpen] = useState(false);
+  const topToolsMenuRef = useRef<HTMLDivElement|null>(null);
+  const topToolsMenuBtnRef = useRef<HTMLButtonElement|null>(null);
   // Members panel state
   const [membersPanelOpen, setMembersPanelOpen] = useState(false);
   const membersPanelRef = useRef<HTMLDivElement|null>(null);
@@ -735,6 +748,13 @@ export default function Home() {
   const typingTimeoutRef = useRef<any>(null);
   const lastTypingSentRef = useRef<number>(0);
   const lastMessageIdRef = useRef<number>(0);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'excel'|'pdf'>('excel');
+  const [exportDateFrom, setExportDateFrom] = useState<string>('');
+  const [exportDateTo, setExportDateTo] = useState<string>('');
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportError, setExportError] = useState<string|null>(null);
+  const exportModalRef = useRef<HTMLDivElement|null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -872,8 +892,51 @@ export default function Home() {
   }, [emojiPanelOpen]);
 
   useEffect(() => {
+    if (!topToolsMenuOpen) return;
+    const onDocPointer = (ev: MouseEvent | TouchEvent) => {
+      const target = ev.target as Node | null;
+      const menu = topToolsMenuRef.current;
+      const btn = topToolsMenuBtnRef.current;
+      if (!target) return;
+      if (menu && menu.contains(target)) return;
+      if (btn && btn.contains(target)) return;
+      setTopToolsMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDocPointer, true);
+    document.addEventListener('touchstart', onDocPointer, true);
+    return () => {
+      document.removeEventListener('mousedown', onDocPointer, true);
+      document.removeEventListener('touchstart', onDocPointer, true);
+    };
+  }, [topToolsMenuOpen]);
+
+  useEffect(() => {
+    if (!exportModalOpen) return;
+    const onDocPointer = (ev: MouseEvent | TouchEvent) => {
+      const target = ev.target as Node | null;
+      const modal = exportModalRef.current;
+      if (!target || !modal) return;
+      if (modal.contains(target)) return;
+      setExportModalOpen(false);
+    };
+    document.addEventListener('mousedown', onDocPointer, true);
+    document.addEventListener('touchstart', onDocPointer, true);
+    return () => {
+      document.removeEventListener('mousedown', onDocPointer, true);
+      document.removeEventListener('touchstart', onDocPointer, true);
+    };
+  }, [exportModalOpen]);
+
+  useEffect(() => {
+    if (exportModalOpen) return;
+    setExportBusy(false);
+    setExportError(null);
+  }, [exportModalOpen]);
+
+  useEffect(() => {
     setEmojiPanelOpen(false);
     setShowOnlyTransactions(false);
+    setTopToolsMenuOpen(false);
   }, [selectedConversationId]);
 
   useEffect(() => {
@@ -902,6 +965,8 @@ export default function Home() {
       if (ev.key === 'Escape') {
         setEmojiPanelOpen(false);
         setMembersPanelOpen(false);
+        setTopToolsMenuOpen(false);
+        setExportModalOpen(false);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -1018,6 +1083,448 @@ export default function Home() {
     const idx = items.findIndex(it => it.url === url);
     setLightboxIndex(idx === -1 ? 0 : idx);
     setLightboxOpen(true);
+  };
+
+  const openExportDialog = () => {
+    if (!selectedConversationId || !currentContact) return;
+    const now = new Date();
+    const toDefault = toDateInputValue(now);
+    const fromDefault = toDateInputValue(new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000));
+    setExportDateFrom(fromDefault);
+    setExportDateTo(toDefault);
+    setExportFormat('excel');
+    setExportError(null);
+    setExportBusy(false);
+    setExportModalOpen(true);
+  };
+
+  type ExportRow = {
+    index: number;
+    senderName: string;
+    directionLabel: 'لنا' | 'لكم';
+    amountDisplay: string;
+    amountNumber: number;
+    positive: boolean;
+    dateTimeDisplay: string;
+    createdAtISO?: string;
+  };
+
+  const safeFilename = (raw: string, ext: string) => {
+    const sanitized = raw
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/[^0-9A-Za-z\u0600-\u06FF_-]+/g, '');
+    const base = sanitized || 'transactions';
+    return `${base}.${ext}`;
+  };
+
+  const triggerDownload = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const exportRowsToExcel = async (
+    rows: ExportRow[],
+    parties: { a: string; b: string },
+    rangeLabel: string,
+    filename: string,
+  ) => {
+    const excelModule = await import('exceljs');
+    const WorkbookCtor = (excelModule as any).Workbook || (excelModule as any).default?.Workbook;
+    if (!WorkbookCtor) {
+      throw new Error('ExcelJS Workbook not available');
+    }
+    const workbook = new WorkbookCtor();
+    const sheet = workbook.addWorksheet('التقرير', {
+      views: [{ rightToLeft: true, state: 'frozen', ySplit: 2 }],
+    });
+
+    sheet.columns = [
+      { header: 'رقم المعاملة', key: 'index', width: 15 },
+      { header: 'اسم المرسل', key: 'sender', width: 28 },
+      { header: 'لمن', key: 'direction', width: 16 },
+      { header: 'المبلغ و العملة', key: 'amount', width: 24 },
+      { header: 'التاريخ و الوقت', key: 'datetime', width: 26 },
+    ];
+
+    sheet.mergeCells(1, 1, 1, 5);
+    const titleCell = sheet.getCell('A1');
+    titleCell.value = `معاملات مالية بين ${parties.a} و ${parties.b}`;
+    titleCell.font = { bold: true, size: 14, color: { argb: 'FF0F172A' } };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    sheet.getRow(1).height = 24;
+
+    const headerRow = sheet.getRow(2);
+    headerRow.values = [
+      'رقم المعاملة',
+      'اسم المرسل',
+      'لمن',
+      'المبلغ و العملة',
+      'التاريخ و الوقت',
+    ];
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
+  headerRow.eachCell((cell: any) => {
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FF1F2937' } },
+        bottom: { style: 'thin', color: { argb: 'FF1F2937' } },
+        left: { style: 'thin', color: { argb: 'FF1F2937' } },
+        right: { style: 'thin', color: { argb: 'FF1F2937' } },
+      };
+    });
+
+    const zebraFillA = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } } as const;
+    const zebraFillB = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } } as const;
+
+    rows.forEach((row) => {
+      const excelRow = sheet.addRow({
+        index: row.index,
+        sender: row.senderName,
+        direction: row.directionLabel,
+        amount: row.amountDisplay,
+        datetime: row.dateTimeDisplay,
+      });
+      excelRow.alignment = { horizontal: 'center', vertical: 'middle' };
+  excelRow.eachCell((cell: any) => {
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        };
+      });
+      excelRow.fill = row.index % 2 === 0 ? zebraFillA : zebraFillB;
+      const directionCell = excelRow.getCell(3);
+      directionCell.font = {
+        bold: true,
+        color: { argb: row.positive ? 'FF16A34A' : 'FFE11D48' },
+      };
+      const amountCell = excelRow.getCell(4);
+      amountCell.font = {
+        bold: true,
+        color: { argb: row.positive ? 'FF16A34A' : 'FFE11D48' },
+      };
+    });
+
+    if (rangeLabel) {
+      const infoRow = sheet.addRow(['', '', '', '', rangeLabel]);
+      infoRow.getCell(5).font = { italic: true, size: 10, color: { argb: 'FF64748B' } };
+      infoRow.alignment = { horizontal: 'left' };
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    triggerDownload(
+      new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
+      filename,
+    );
+  };
+
+  const exportRowsToPdf = async (
+    rows: ExportRow[],
+    parties: { a: string; b: string },
+    rangeLabel: string,
+    filename: string,
+  ) => {
+    const [html2canvasModule, jsPDFModule] = await Promise.all([
+      import('html2canvas'),
+      import('jspdf'),
+    ]);
+    const html2canvas = (html2canvasModule as any).default || html2canvasModule;
+    const jsPDFCtor = (jsPDFModule as any).default || (jsPDFModule as any).jsPDF;
+    if (typeof html2canvas !== 'function' || typeof jsPDFCtor !== 'function') {
+      throw new Error('PDF dependencies not available');
+    }
+
+    const container = document.createElement('div');
+    container.dir = 'rtl';
+    container.style.position = 'fixed';
+    container.style.left = '-9999px';
+    container.style.top = '0';
+    container.style.backgroundColor = '#ffffff';
+    container.style.padding = '32px';
+    container.style.width = '794px';
+    container.style.fontFamily = `'Tajawal', 'Cairo', 'Segoe UI', sans-serif`;
+    container.style.color = '#0f172a';
+    container.style.border = '1px solid #e2e8f0';
+    container.style.borderRadius = '18px';
+    container.style.boxShadow = '0 24px 48px rgba(15, 31, 37, 0.12)';
+    container.style.textAlign = 'right';
+
+    const titleEl = document.createElement('div');
+    titleEl.innerText = `معاملات مالية بين ${parties.a} و ${parties.b}`;
+    titleEl.style.fontSize = '20px';
+    titleEl.style.fontWeight = '700';
+    titleEl.style.marginBottom = '12px';
+    titleEl.style.textAlign = 'center';
+    container.appendChild(titleEl);
+
+    if (rangeLabel) {
+      const rangeEl = document.createElement('div');
+      rangeEl.innerText = rangeLabel;
+      rangeEl.style.fontSize = '12px';
+      rangeEl.style.color = '#64748b';
+      rangeEl.style.marginBottom = '18px';
+      rangeEl.style.textAlign = 'center';
+      container.appendChild(rangeEl);
+    }
+
+    const table = document.createElement('table');
+    table.style.width = '100%';
+    table.style.borderCollapse = 'collapse';
+    table.style.fontSize = '12px';
+    table.style.overflow = 'hidden';
+    table.style.borderRadius = '12px';
+
+  const headers = ['رقم المعاملة', 'اسم المرسل', 'لمن', 'المبلغ و العملة', 'التاريخ و الوقت'];
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    headers.forEach((text) => {
+      const th = document.createElement('th');
+      th.innerText = text;
+      th.style.padding = '12px 10px';
+      th.style.backgroundColor = '#102030';
+      th.style.color = '#f8fafc';
+      th.style.fontWeight = '600';
+      th.style.border = '1px solid #0f172a';
+      th.style.textAlign = 'center';
+      headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    rows.forEach((row) => {
+      const tr = document.createElement('tr');
+      tr.style.backgroundColor = row.index % 2 === 0 ? '#f8fafc' : '#ffffff';
+      const cells = [
+        row.index.toString(),
+        row.senderName,
+        row.directionLabel,
+        row.amountDisplay,
+        row.dateTimeDisplay,
+      ];
+      cells.forEach((val, idx) => {
+        const td = document.createElement('td');
+        td.innerText = val;
+        td.style.padding = '12px 10px';
+        td.style.border = '1px solid #e2e8f0';
+        td.style.textAlign = 'center';
+        td.style.fontWeight = idx === 2 || idx === 3 ? '600' : '500';
+        if (idx === 2 || idx === 3) {
+          td.style.color = row.positive ? '#059669' : '#dc2626';
+        }
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    document.body.appendChild(container);
+
+    try {
+      const canvas = await html2canvas(container, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+      const imgData = canvas.toDataURL('image/png', 1.0);
+  const pdf = new jsPDFCtor({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const maxWidth = pageWidth - 60;
+      const maxHeight = pageHeight - 60;
+      const ratio = Math.min(maxWidth / canvas.width, maxHeight / canvas.height);
+      const renderWidth = canvas.width * ratio;
+      const renderHeight = canvas.height * ratio;
+      const offsetX = (pageWidth - renderWidth) / 2;
+      const offsetY = (pageHeight - renderHeight) / 2;
+      pdf.addImage(imgData, 'PNG', offsetX, offsetY, renderWidth, renderHeight, undefined, 'FAST');
+      pdf.save(filename);
+    } finally {
+      document.body.removeChild(container);
+    }
+  };
+
+  const handleConfirmExport = async () => {
+    if (!selectedConversationId || !currentContact) {
+      setExportModalOpen(false);
+      return;
+    }
+    if (!exportDateFrom || !exportDateTo) {
+      setExportError('يرجى اختيار تاريخ البداية والنهاية');
+      return;
+    }
+    const fromDate = new Date(`${exportDateFrom}T00:00:00`);
+    const toDate = new Date(`${exportDateTo}T23:59:59`);
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+      setExportError('تنسيق التاريخ غير صالح');
+      return;
+    }
+    if (fromDate > toDate) {
+      setExportError('تاريخ البداية يجب أن يسبق تاريخ النهاية');
+      return;
+    }
+
+    setExportBusy(true);
+    setExportError(null);
+    try {
+      const response = await (async () => {
+        const maybeClient: any = apiClient as any;
+        if (maybeClient && typeof maybeClient.getTransactions === 'function') {
+          return maybeClient.getTransactions(selectedConversationId, {
+            from: exportDateFrom,
+            to: exportDateTo,
+          });
+        }
+        const params = new URLSearchParams();
+        params.set('conversation', String(selectedConversationId));
+        if (exportDateFrom) params.set('from_date', exportDateFrom);
+        if (exportDateTo) params.set('to_date', exportDateTo);
+        params.set('ordering', 'created_at');
+        const qs = params.toString();
+        if (!maybeClient || typeof maybeClient.authFetch !== 'function') {
+          throw new Error('واجهة التصدير غير متاحة حالياً');
+        }
+        const res: Response = await maybeClient.authFetch(`/api/transactions/${qs ? `?${qs}` : ''}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const err: any = new Error((data && (data.detail || data.error)) || 'تعذر جلب المعاملات');
+          err.status = res.status;
+          err.response = data;
+          throw err;
+        }
+        return data;
+      })();
+      const rawList: any[] = Array.isArray((response as any)?.results)
+        ? (response as any).results
+        : Array.isArray(response)
+          ? response
+          : [];
+
+      const viewerName = (profile?.display_name || profile?.username || 'أنا').trim() || 'أنا';
+      const otherName = (currentContact?.name || currentContact?.otherUsername || 'جهة').trim() || 'جهة';
+      const viewerId = profile?.id ?? null;
+      const metaForConv = convMetaById[selectedConversationId] || null;
+      const fallbackUnknownName = 'غير محدد';
+      const pickDisplayName = (info: any) => {
+        if (!info) return '';
+        const candidates = [
+          typeof info.display_name === 'string' ? info.display_name : '',
+          (() => {
+            const first = typeof info.first_name === 'string' ? info.first_name : '';
+            const last = typeof info.last_name === 'string' ? info.last_name : '';
+            const combined = `${first} ${last}`.trim();
+            return combined && combined !== info.username ? combined : '';
+          })(),
+          typeof info.first_name === 'string' ? info.first_name : '',
+          typeof info.username === 'string' ? info.username : '',
+        ];
+        for (const candidate of candidates) {
+          if (candidate && candidate.trim()) return candidate.trim();
+        }
+        return '';
+      };
+      const fallbackNameForId = (userId: number | null) => {
+        if (userId == null) return '';
+        if (viewerId != null && userId === viewerId) return viewerName;
+        if (metaForConv) {
+          const { user_a_id, user_b_id } = metaForConv;
+          if (userId === user_a_id || userId === user_b_id) {
+            return userId === viewerId ? viewerName : otherName;
+          }
+        }
+        return otherName;
+      };
+
+      const rows: ExportRow[] = rawList.reduce<ExportRow[]>((acc, item: any, idx: number) => {
+        if (!item) return acc;
+        const directionRaw = (item.direction || '').toString().trim();
+        const direction: 'lna' | 'lkm' = directionRaw === 'lkm' ? 'lkm' : 'lna';
+        const fromId: number | null = typeof item.from_user === 'number'
+          ? item.from_user
+          : (item.from_user_info?.id ?? null);
+        const toId: number | null = typeof item.to_user === 'number'
+          ? item.to_user
+          : (item.to_user_info?.id ?? null);
+
+        const viewerIsSender = viewerId != null && fromId === viewerId;
+        const viewerIsReceiver = viewerId != null && toId === viewerId;
+        let positive = true;
+        if (viewerIsSender) {
+          positive = direction === 'lna';
+        } else if (viewerIsReceiver) {
+          positive = direction === 'lkm';
+        } else {
+          positive = direction === 'lna';
+        }
+
+        const amountSource = item.amount_value ?? item.amount ?? 0;
+        const amountNumber = typeof amountSource === 'number'
+          ? amountSource
+          : parseFloat(String(amountSource || 0));
+        const currencySymbol = (item.currency && (item.currency.symbol || item.currency.code)) || '';
+        const amountLabel = `${formatMoneyValue(Math.abs(Number.isFinite(amountNumber) ? amountNumber : 0))}${currencySymbol ? ` ${currencySymbol}` : ''}`;
+        const createdAtIso = typeof item.created_at === 'string' ? item.created_at : undefined;
+        const senderName = pickDisplayName(item.from_user_info) || fallbackNameForId(fromId) || fallbackUnknownName;
+
+        acc.push({
+          index: idx + 1,
+          senderName,
+          directionLabel: positive ? ('لنا' as const) : ('لكم' as const),
+          amountDisplay: amountLabel,
+          amountNumber: Math.abs(Number.isFinite(amountNumber) ? amountNumber : 0),
+          positive,
+          dateTimeDisplay: createdAtIso ? formatDateTimeLabel(createdAtIso) : '',
+          createdAtISO: createdAtIso,
+        });
+        return acc;
+      }, []);
+
+      const sorted = rows
+        .slice()
+        .sort((a, b) => {
+          const aTime = a.createdAtISO ? new Date(a.createdAtISO).getTime() : 0;
+          const bTime = b.createdAtISO ? new Date(b.createdAtISO).getTime() : 0;
+          return aTime - bTime;
+        })
+        .map((row, idx) => ({ ...row, index: idx + 1 }));
+
+      if (!sorted.length) {
+        pushToast({ type: 'info', msg: 'لا توجد معاملات ضمن النطاق المحدد' });
+        setExportModalOpen(false);
+        return;
+      }
+
+      const rangeLabel = `الفترة: ${exportDateFrom} → ${exportDateTo}`;
+      const filename = safeFilename(
+        `transactions_${selectedConversationId}_${exportFormat === 'excel' ? 'excel' : 'pdf'}_${exportDateFrom}_${exportDateTo}`,
+        exportFormat === 'excel' ? 'xlsx' : 'pdf',
+      );
+
+      if (exportFormat === 'excel') {
+        await exportRowsToExcel(sorted, { a: viewerName, b: otherName }, rangeLabel, filename);
+      } else {
+        await exportRowsToPdf(sorted, { a: viewerName, b: otherName }, rangeLabel, filename);
+      }
+
+      pushToast({
+        type: 'success',
+        msg: exportFormat === 'excel' ? 'تم إنشاء ملف Excel وحفظه في التنزيلات' : 'تم إنشاء ملف PDF وحفظه في التنزيلات',
+      });
+      setExportModalOpen(false);
+    } catch (err: any) {
+      const msg = err?.message || 'تعذر إكمال التصدير';
+      setExportError(msg);
+    } finally {
+      setExportBusy(false);
+    }
   };
 
   // Transactions UI state
@@ -2941,72 +3448,126 @@ export default function Home() {
                   className="bg-chatPanel px-6 py-3 font-bold border-b border-chatDivider text-sm flex flex-col gap-2 md:gap-1 relative sticky top-0 z-30 md:static"
                   style={{ top: 'env(safe-area-inset-top, 0px)' }}
                 >
-                  <div className="flex flex-wrap items-center gap-4">
-                    {/* زر رجوع للجوال */}
-                    <button onClick={()=>setMobileView('list')} className="md:hidden text-gray-300 hover:text-white" title="رجوع"><svg xmlns='http://www.w3.org/2000/svg' className='h-6 w-6' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M15 19l-7-7 7-7'/></svg></button>
-                    <img src={currentContact.avatar} alt={currentContact.name} className="w-9 h-9 rounded-full border border-chatDivider" />
-                    <div className="flex flex-col">
-                      <span className="text-sm font-semibold flex items-center gap-1">{currentContact.name} {currentContact.isMuted && <span title="مكتمة">🔕</span>}</span>
-                      {isOtherTyping && (
-                        <span className="text-[10px] text-green-300 mt-0.5">يكتب الآن…</span>
-                      )}
+                  <div className="flex flex-wrap items-center gap-4 justify-between">
+                    <div className="flex items-center gap-4 min-w-0">
+                      {/* زر رجوع للجوال */}
+                      <button onClick={()=>setMobileView('list')} className="md:hidden text-gray-300 hover:text-white" title="رجوع"><svg xmlns='http://www.w3.org/2000/svg' className='h-6 w-6' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M15 19l-7-7 7-7'/></svg></button>
+                      <img src={currentContact.avatar} alt={currentContact.name} className="w-9 h-9 rounded-full border border-chatDivider" />
+                      <div className="flex flex-col">
+                        <span className="text-sm font-semibold flex items-center gap-1">{currentContact.name} {currentContact.isMuted && <span title="مكتمة">🔕</span>}</span>
+                        {isOtherTyping && (
+                          <span className="text-[10px] text-green-300 mt-0.5">يكتب الآن…</span>
+                        )}
+                      </div>
                     </div>
-                    <div className="ml-auto flex items-center gap-3 text-gray-300">
-                <button
-                  onClick={()=> setShowOnlyTransactions(v => !v)}
-                  className={`w-9 h-9 rounded-full flex items-center justify-center border transition ${showOnlyTransactions
-                    ? (isLightTheme ? 'border-green-300 bg-green-50 text-green-600 shadow-sm' : 'border-green-400/60 bg-green-500/20 text-green-200')
-                    : (isLightTheme ? 'border-orange-100 bg-white/70 text-orange-400 hover:bg-orange-100' : 'border-chatDivider bg-chatPanel/60 hover:bg-chatDivider/40')}`}
-                  title={showOnlyTransactions ? 'عرض جميع الرسائل' : 'فلترة المعاملات فقط'}
-                  aria-pressed={showOnlyTransactions}
-                >
-                  <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' className='h-4 w-4' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
-                    <path d='M3 4h18' />
-                    <path d='M6 12h12' />
-                    <path d='M10 20h4' />
-                  </svg>
-                </button>
-                {/* Members button */}
-                <button
-                  ref={membersBtnRef}
-                  onClick={async()=>{
-                    if (!selectedConversationId) return;
-                    setMembersPanelOpen(o=>!o);
-                    if (!membersPanelOpen) {
-                      setMembersBusy(true);
-                      try {
-                        const tokenRaw = typeof window !== 'undefined' ? localStorage.getItem('auth_tokens_v1') : null;
-                        const token = tokenRaw ? (JSON.parse(tokenRaw).access as string) : '';
-                        const [team, conv] = await Promise.all([
-                          listTeam(token).catch(()=>[]),
-                          listConversationMembers(token, selectedConversationId).catch(()=>({ members: [] as any[] }))
-                        ]);
-                        setTeamList(team || []);
-                        // Map conversation members; backend returns role and polymorphic members
-                        const mapped = (conv.members || []).map((m: any) => {
-                          const mt: 'user'|'team_member' = (m.role === 'team_member') ? 'team_member' : 'user';
-                          return { id: m.id, username: m.username, display_name: m.display_name || m.username, role: m.role, member_type: mt };
-                        });
-                        setConvMembers(mapped);
-                      } finally {
-                        setMembersBusy(false);
-                      }
-                    }
-                  }}
-                  className="hover:text-orange-500 transition"
-                  title="أعضاء المحادثة"
-                >
-                  <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' className='h-4 w-4' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
-                    <path d='M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2' />
-                    <circle cx='9' cy='7' r='4' />
-                    <path d='M22 21v-2a4 4 0 00-3-3.87' />
-                    <path d='M16 3.13a4 4 0 010 7.75' />
-                  </svg>
-                </button>
-                <button onClick={()=>{ setSearchOpen(s=>!s); if (!searchOpen) setTimeout(()=>{ const el = document.getElementById('inchat_search_input'); el && (el as HTMLInputElement).focus(); }, 50); }} className="hover:text-orange-500 transition" title="بحث">
-                  <svg xmlns='http://www.w3.org/2000/svg' className='h-4 w-4' viewBox='0 0 20 20' fill='currentColor'><path fillRule='evenodd' d='M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z' clipRule='evenodd'/></svg>
-                </button>
-                {/* info button removed by request */}
+                    <div className="flex items-center text-gray-300 relative">
+                      <button
+                        ref={topToolsMenuBtnRef}
+                        onClick={()=> setTopToolsMenuOpen(o => !o)}
+                        className={`w-9 h-9 rounded-full border flex items-center justify-center transition ${topToolsMenuOpen
+                          ? (isLightTheme ? 'border-orange-200 bg-white text-orange-500 shadow' : 'border-chatDivider bg-chatDivider/40 text-white')
+                          : (isLightTheme ? 'border-orange-100 bg-white/80 text-orange-400 hover:bg-orange-100' : 'border-chatDivider bg-chatPanel/60 hover:bg-chatDivider/40')}`}
+                        aria-haspopup="menu"
+                        aria-expanded={topToolsMenuOpen}
+                        title="المزيد من الخيارات"
+                      >
+                        <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' className='h-4 w-4' fill='currentColor'>
+                          <circle cx='12' cy='5' r='1.8' />
+                          <circle cx='12' cy='12' r='1.8' />
+                          <circle cx='12' cy='19' r='1.8' />
+                        </svg>
+                      </button>
+                      {topToolsMenuOpen && (
+                        <div
+                          ref={topToolsMenuRef}
+                          className="absolute left-0 top-full mt-3 w-48 rounded-xl border border-chatDivider bg-chatBg shadow-2xl overflow-hidden z-40"
+                        >
+                          <button
+                            onClick={()=>{
+                              setShowOnlyTransactions(v => !v);
+                              setTopToolsMenuOpen(false);
+                            }}
+                            className={`flex w-full items-center justify-between gap-3 px-4 py-3 text-xs transition ${showOnlyTransactions ? 'bg-green-500/10 text-green-200' : 'text-gray-100 hover:bg-white/5'}`}
+                          >
+                            <span className="flex items-center gap-2">
+                              <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' className='h-4 w-4' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
+                                <path d='M3 4h18' />
+                                <path d='M6 12h12' />
+                                <path d='M10 20h4' />
+                              </svg>
+                              <span>{showOnlyTransactions ? 'عرض جميع الرسائل' : 'فلترة المعاملات فقط'}</span>
+                            </span>
+                            {showOnlyTransactions && <span className="text-[10px]">✓</span>}
+                          </button>
+                          <button
+                            ref={membersBtnRef}
+                            onClick={async()=>{
+                              if (!selectedConversationId) return;
+                              setTopToolsMenuOpen(false);
+                              setMembersPanelOpen(o=>!o);
+                              if (!membersPanelOpen) {
+                                setMembersBusy(true);
+                                try {
+                                  const tokenRaw = typeof window !== 'undefined' ? localStorage.getItem('auth_tokens_v1') : null;
+                                  const token = tokenRaw ? (JSON.parse(tokenRaw).access as string) : '';
+                                  const [team, conv] = await Promise.all([
+                                    listTeam(token).catch(()=>[]),
+                                    listConversationMembers(token, selectedConversationId).catch(()=>({ members: [] as any[] }))
+                                  ]);
+                                  setTeamList(team || []);
+                                  const mapped = (conv.members || []).map((m: any) => {
+                                    const mt: 'user'|'team_member' = (m.role === 'team_member') ? 'team_member' : 'user';
+                                    return { id: m.id, username: m.username, display_name: m.display_name || m.username, role: m.role, member_type: mt };
+                                  });
+                                  setConvMembers(mapped);
+                                } finally {
+                                  setMembersBusy(false);
+                                }
+                              }
+                            }}
+                            className="flex w-full items-center gap-3 px-4 py-3 text-xs text-gray-100 transition hover:bg-white/5"
+                          >
+                            <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' className='h-4 w-4' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
+                              <path d='M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2' />
+                              <circle cx='9' cy='7' r='4' />
+                              <path d='M22 21v-2a4 4 0 00-3-3.87' />
+                              <path d='M16 3.13a4 4 0 010 7.75' />
+                            </svg>
+                            <span>أعضاء المحادثة</span>
+                          </button>
+                          <button
+                            onClick={()=>{
+                              setTopToolsMenuOpen(false);
+                              setSearchOpen(s=>!s);
+                              if (!searchOpen) {
+                                setTimeout(()=>{
+                                  const el = document.getElementById('inchat_search_input');
+                                  el && (el as HTMLInputElement).focus();
+                                }, 50);
+                              }
+                            }}
+                            className="flex w-full items-center gap-3 px-4 py-3 text-xs text-gray-100 transition hover:bg-white/5"
+                          >
+                            <svg xmlns='http://www.w3.org/2000/svg' className='h-4 w-4' viewBox='0 0 20 20' fill='currentColor'><path fillRule='evenodd' d='M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z' clipRule='evenodd'/></svg>
+                            <span>بحث داخل المحادثة</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (!selectedConversationId || !currentContact) return;
+                              setTopToolsMenuOpen(false);
+                              openExportDialog();
+                            }}
+                            className="flex w-full items-center gap-3 px-4 py-3 text-xs text-gray-100 transition hover:bg-white/5"
+                          >
+                            <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' className='h-4 w-4' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
+                              <path d='M12 3v12'/>
+                              <path d='M7 11l5 5 5-5'/>
+                              <path d='M5 19h14'/>
+                            </svg>
+                            <span>تصدير المعاملات</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                   {/* شريط أرصدة سريع من منظور هذه المحادثة فقط (موجب = لنا، سالب = لكم) — مخفي عند الدردشة مع admin (أو حسابات إدارية مشابهة) أو عند كون المستخدم الحالي أدمن */}
@@ -3619,6 +4180,94 @@ export default function Home() {
         </div>
       );
     })()}
+    {exportModalOpen && currentContact && (
+      <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[80] p-4">
+        <div
+          ref={exportModalRef}
+          className="bg-chatPanel border border-chatDivider rounded-xl w-full max-w-md p-5 flex flex-col gap-4 shadow-2xl"
+          dir="rtl"
+        >
+          <div className="space-y-1 text-center">
+            <h3 className="font-bold text-gray-100 text-sm">
+              سجل المعاملات المالية بين {(profile?.display_name || profile?.username || 'أنت')} و {currentContact.name}
+            </h3>
+            <p className="text-[11px] text-gray-300">
+              سيتم تصدير المعاملات المالية بين التاريخين المحددين فقط
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 text-xs text-gray-200">
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] text-gray-300">من تاريخ</span>
+              <input
+                type="date"
+                value={exportDateFrom}
+                onChange={(e)=>{ setExportDateFrom(e.target.value); setExportError(null); }}
+                className="w-full bg-chatBg border border-chatDivider rounded px-3 py-2 text-[12px] focus:outline-none focus:ring-1 focus:ring-green-600 text-gray-100"
+                disabled={exportBusy}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] text-gray-300">إلى تاريخ</span>
+              <input
+                type="date"
+                value={exportDateTo}
+                onChange={(e)=>{ setExportDateTo(e.target.value); setExportError(null); }}
+                className="w-full bg-chatBg border border-chatDivider rounded px-3 py-2 text-[12px] focus:outline-none focus:ring-1 focus:ring-green-600 text-gray-100"
+                disabled={exportBusy}
+              />
+            </label>
+          </div>
+          <div className="text-xs text-gray-200">
+            <span className="block text-[11px] text-gray-300 mb-2">صيغة الملف</span>
+            <div className="flex items-center gap-4">
+              <label className={"flex items-center gap-2 px-3 py-2 rounded-full border cursor-pointer transition " + (exportFormat === 'excel' ? 'border-green-400/60 bg-green-500/10 text-green-200' : 'border-chatDivider bg-chatBg/60 text-gray-100 hover:bg-white/5')}>
+                <input
+                  type="radio"
+                  className="hidden"
+                  name="export_format"
+                  checked={exportFormat === 'excel'}
+                  onChange={()=> { setExportFormat('excel'); setExportError(null); }}
+                  disabled={exportBusy}
+                />
+                <span className="text-[11px] font-semibold">Excel</span>
+              </label>
+              <label className={"flex items-center gap-2 px-3 py-2 rounded-full border cursor-pointer transition " + (exportFormat === 'pdf' ? 'border-blue-400/60 bg-blue-500/10 text-blue-200' : 'border-chatDivider bg-chatBg/60 text-gray-100 hover:bg-white/5')}>
+                <input
+                  type="radio"
+                  className="hidden"
+                  name="export_format"
+                  checked={exportFormat === 'pdf'}
+                  onChange={()=> { setExportFormat('pdf'); setExportError(null); }}
+                  disabled={exportBusy}
+                />
+                <span className="text-[11px] font-semibold">PDF</span>
+              </label>
+            </div>
+          </div>
+          {exportError && (
+            <div className="text-[11px] text-red-300 bg-red-500/10 border border-red-500/30 rounded px-3 py-2">
+              {exportError}
+            </div>
+          )}
+          <div className="flex justify-end gap-2 text-xs">
+            <button
+              onClick={()=> setExportModalOpen(false)}
+              className="px-3 py-1.5 rounded bg-gray-600/70 hover:bg-gray-500 text-white disabled:opacity-60"
+              disabled={exportBusy}
+            >
+              إلغاء
+            </button>
+            <button
+              onClick={handleConfirmExport}
+              className={`px-4 py-1.5 rounded font-semibold transition ${exportBusy ? 'bg-green-500/40 text-green-100 cursor-wait' : 'bg-green-600 hover:bg-green-700 text-white'}`}
+              disabled={exportBusy}
+            >
+              {exportBusy ? 'جارٍ التصدير…' : 'موافق'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     {noteModalOpen && (
       <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
         <div className="bg-chatPanel border border-chatDivider rounded-lg w-full max-w-md p-4 flex flex-col gap-3">
