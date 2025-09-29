@@ -2220,30 +2220,6 @@ export default function Home() {
                   return copy;
                 }
               }
-              for (let i = copy.length - 1; i >= 0; i--) {
-                const m = copy[i];
-                if (m.sender === 'current' && m.text === txt) {
-                  copy[i] = {
-                    ...m,
-                    id: messageIdNum ?? m.id,
-                    client_id: incomingClientId ?? m.client_id,
-                    // keep status; delivery status will be updated by message.status events
-                    created_at: m.created_at || payload.created_at || new Date().toISOString(),
-                    kind: tx ? 'transaction' : 'text',
-                    tx: tx || undefined,
-                    senderDisplay: (payload.senderDisplay || payload.display_name || m.senderDisplay) || undefined,
-                    attachment: payload.attachment ? {
-                      name: payload.attachment.name,
-                      mime: payload.attachment.mime,
-                      size: payload.attachment.size,
-                      url: payload.attachment.url || m.attachment?.url || undefined,
-                    } : m.attachment,
-                    read_at: typeof payload.read_at === 'string' ? payload.read_at : m.read_at,
-                    delivered_at: typeof payload.delivered_at === 'string' ? payload.delivered_at : m.delivered_at,
-                  } as any;
-                  return copy;
-                }
-              }
               return [
                 ...prev,
                 {
