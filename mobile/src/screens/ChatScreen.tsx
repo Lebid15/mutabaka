@@ -22,6 +22,8 @@ import {
   TextInput,
   TouchableWithoutFeedback,
   View,
+  type ListRenderItemInfo,
+  type NativeScrollEvent,
   type NativeSyntheticEvent,
   type TextInputContentSizeChangeEventData,
 } from 'react-native';
@@ -266,10 +268,6 @@ interface NormalizedMessage {
   transaction?: TransactionDetails;
   attachment?: AttachmentMeta | null;
 }
-
-type ConversationListItem =
-  | { kind: 'message'; message: NormalizedMessage }
-  | { kind: 'separator'; id: string; label: string };
 
 function normalizeIdentity(value?: string | null): string | null {
   if (!value) {
@@ -877,6 +875,7 @@ export default function ChatScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusBanner, setStatusBanner] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   const [composerHeight, setComposerHeight] = useState(0);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [transactionLoading, setTransactionLoading] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [attachmentUploading, setAttachmentUploading] = useState(false);
@@ -892,13 +891,11 @@ export default function ChatScreen() {
   const ackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastInboundMessageIdRef = useRef(0);
   const pendingReadRef = useRef<number | null>(null);
-  const listRef = useRef<FlatList<ConversationListItem> | null>(null);
-  const initialScrollDoneRef = useRef(false);
-  const initialScrollAttemptsRef = useRef(0);
-  const initialScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const listRef = useRef<FlatList<NormalizedMessage> | null>(null);
   const otpResolverRef = useRef<((value: string | null) => void) | null>(null);
   const loggedAttachmentIdsRef = useRef<Set<number>>(new Set());
   const myMessageIdsRef = useRef<Set<number>>(new Set());
+  const isAtBottomRef = useRef(true);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -1023,12 +1020,6 @@ export default function ChatScreen() {
   }, [numericConversationId, shouldUseBackend]);
 
   useEffect(() => {
-    initialScrollDoneRef.current = false;
-    initialScrollAttemptsRef.current = 0;
-    if (initialScrollTimerRef.current) {
-      clearTimeout(initialScrollTimerRef.current);
-      initialScrollTimerRef.current = null;
-    }
     setEmojiPickerVisible(false);
     setMembersModalVisible(false);
     setMembersError(null);
@@ -1036,41 +1027,6 @@ export default function ChatScreen() {
     setMembersLoading(false);
     setMembersBusy(false);
   }, [conversationId]);
-
-  const scrollToBottom = useCallback((animated = false, onSuccess?: () => void): boolean => {
-    const list = listRef.current;
-    if (list) {
-      try {
-        list.scrollToEnd({ animated });
-        onSuccess?.();
-        return true;
-      } catch (error) {
-        console.warn('[Mutabaka] Failed to scroll to bottom', error);
-      }
-    }
-
-    InteractionManager.runAfterInteractions(() => {
-      const listAfter = listRef.current;
-      if (!listAfter) {
-        return;
-      }
-      try {
-        listAfter.scrollToEnd({ animated });
-        onSuccess?.();
-      } catch (error) {
-        console.warn('[Mutabaka] (retry) Failed to scroll to bottom', error);
-      }
-    });
-
-    return Boolean(list);
-  }, []);
-
-  const clearInitialScrollTimer = useCallback(() => {
-    if (initialScrollTimerRef.current) {
-      clearTimeout(initialScrollTimerRef.current);
-      initialScrollTimerRef.current = null;
-    }
-  }, []);
 
   const flushAck = useCallback(() => {
     if (!pendingAckRef.current.size) {
@@ -1793,27 +1749,27 @@ export default function ChatScreen() {
     return searchMatches[index]?.messageId ?? null;
   }, [activeSearchIndex, searchMatches]);
 
-  const { items: conversationListItems, map: messageIndexMap } = useMemo(() => {
-    const items: ConversationListItem[] = [];
+  const messageIndexMap = useMemo(() => {
     const map = new Map<string, number>();
-    let lastDayKey: string | null = null;
+    visibleMessages.forEach((message, index) => {
+      map.set(message.id, index);
+    });
+    return map;
+  }, [visibleMessages]);
 
+  const daySeparatorLabelMap = useMemo(() => {
+    const map = new Map<string, string | null>();
+    let lastDayKey: string | null = null;
     visibleMessages.forEach((message) => {
       const info = getLocalDateInfo(message.timestamp);
       if (info && info.key !== lastDayKey) {
-        items.push({
-          kind: 'separator',
-          id: `day-${info.key}`,
-          label: formatDaySeparatorLabel(info.date),
-        });
+        map.set(message.id, formatDaySeparatorLabel(info.date));
         lastDayKey = info.key;
+      } else {
+        map.set(message.id, null);
       }
-      const messageIndex = items.length;
-      items.push({ kind: 'message', message });
-      map.set(message.id, messageIndex);
     });
-
-    return { items, map };
+    return map;
   }, [visibleMessages]);
 
   useEffect(() => {
@@ -1835,12 +1791,15 @@ export default function ChatScreen() {
     if (index === undefined) {
       return;
     }
+    isAtBottomRef.current = false;
+    setShowJumpToLatest(true);
     InteractionManager.runAfterInteractions(() => {
       try {
         list.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
       } catch (error) {
+        console.warn('[Mutabaka] Failed to scroll to message, falling back to offset', error);
         try {
-          list.scrollToEnd({ animated: true });
+          list.scrollToOffset({ offset: 0, animated: true });
         } catch {}
       }
     });
@@ -1869,6 +1828,29 @@ export default function ChatScreen() {
     setActiveSearchIndex((prev) => (prev - 1 + count) % count);
   }, [searchMatches.length]);
 
+  const handleListScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const offsetY = event?.nativeEvent?.contentOffset?.y ?? 0;
+    const nearBottom = offsetY <= 24;
+    if (nearBottom !== isAtBottomRef.current) {
+      isAtBottomRef.current = nearBottom;
+      setShowJumpToLatest(!nearBottom);
+    }
+  }, []);
+
+  const handleJumpToLatest = useCallback(() => {
+    const list = listRef.current;
+    if (!list) {
+      return;
+    }
+    try {
+      list.scrollToOffset({ offset: 0, animated: true });
+      isAtBottomRef.current = true;
+      setShowJumpToLatest(false);
+    } catch (error) {
+      console.warn('[Mutabaka] Failed to jump to latest message', error);
+    }
+  }, []);
+
   const toggleSearch = useCallback(() => {
     setSearchOpen((prev) => {
       if (prev) {
@@ -1878,6 +1860,17 @@ export default function ChatScreen() {
       return !prev;
     });
   }, []);
+
+  useEffect(() => {
+    isAtBottomRef.current = true;
+    setShowJumpToLatest(false);
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (isAtBottomRef.current) {
+      setShowJumpToLatest(false);
+    }
+  }, [visibleMessages.length]);
 
   const closeActionsMenu = useCallback(() => {
     setActionsMenuVisible(false);
@@ -2089,117 +2082,12 @@ export default function ChatScreen() {
     toggleSearch();
   }, [closeActionsMenu, toggleSearch]);
 
-  const requestInitialScroll = useCallback(
-    (animated = false) => {
-      if (!visibleMessages.length || initialScrollDoneRef.current) {
-        return;
-      }
-
-      const markDone = () => {
-        initialScrollDoneRef.current = true;
-        initialScrollAttemptsRef.current = 0;
-        clearInitialScrollTimer();
-      };
-
-      const success = scrollToBottom(animated, markDone);
-      if (success) {
-        markDone();
-        return;
-      }
-
-      if (initialScrollAttemptsRef.current >= 6) {
-        return;
-      }
-
-      initialScrollAttemptsRef.current += 1;
-      clearInitialScrollTimer();
-      initialScrollTimerRef.current = setTimeout(() => {
-        requestInitialScroll(animated);
-      }, 200);
-    },
-    [clearInitialScrollTimer, visibleMessages.length, scrollToBottom],
-  );
-
-  useEffect(() => () => {
-    clearInitialScrollTimer();
-  }, [clearInitialScrollTimer]);
-
-  const handleListContentSizeChange = useCallback(() => {
-    requestInitialScroll(false);
-  }, [requestInitialScroll]);
-
-  useFocusEffect(
-    useCallback(() => {
-      initialScrollDoneRef.current = false;
-      initialScrollAttemptsRef.current = 0;
-      requestInitialScroll(false);
-
-      return () => {
-        clearInitialScrollTimer();
-      };
-    }, [clearInitialScrollTimer, requestInitialScroll]),
-  );
-
-  useEffect(() => {
-    if (!visibleMessages.length) {
-      clearInitialScrollTimer();
-      return;
-    }
-    if (initialScrollDoneRef.current) {
-      return;
-    }
-    initialScrollAttemptsRef.current = 0;
-    requestInitialScroll(false);
-    return () => {
-      clearInitialScrollTimer();
-    };
-  }, [clearInitialScrollTimer, visibleMessages.length, requestInitialScroll]);
-
-  useEffect(() => {
-    if (composerHeight <= 0) {
-      return;
-    }
-    if (initialScrollDoneRef.current) {
-      if (!normalizedSearchQuery) {
-        scrollToBottom(false);
-      }
-    } else {
-      requestInitialScroll(false);
-    }
-  }, [composerHeight, normalizedSearchQuery, requestInitialScroll, scrollToBottom]);
-
-  const lastMessageKey = useMemo(() => {
-    if (!visibleMessages.length) {
-      return null;
-    }
-    const last = visibleMessages[visibleMessages.length - 1];
-    return `${last.id}-${last.time}`;
-  }, [visibleMessages]);
-
   const hasSearchResults = Boolean(normalizedSearchQuery) && searchMatches.length > 0;
   const clampedSearchIndex = hasSearchResults
     ? Math.min(activeSearchIndex, searchMatches.length - 1)
     : 0;
   const searchResultPosition = hasSearchResults ? clampedSearchIndex + 1 : 0;
   const showSearchNavigation = hasSearchResults && searchMatches.length > 1;
-
-  useEffect(() => {
-    if (!initialScrollDoneRef.current) {
-      return;
-    }
-    if (!lastMessageKey) {
-      return;
-    }
-    if (normalizedSearchQuery) {
-      return;
-    }
-    const timer = setTimeout(() => {
-      scrollToBottom(true);
-    }, 120);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [lastMessageKey, normalizedSearchQuery, scrollToBottom]);
 
   const currencyMap = useMemo(() => {
     const map = new Map<string, CurrencyOption>();
@@ -2626,6 +2514,39 @@ export default function ChatScreen() {
       </View>
     );
   }, [loadingMessages, shouldUseBackend, showTransactionsOnly, tokens.textMuted]);
+
+  const renderMessage = useCallback(({ item }: ListRenderItemInfo<NormalizedMessage>) => {
+    const dayLabel = daySeparatorLabelMap.get(item.id);
+    const isSearchMatch = searchMatchSet.has(item.id);
+    const isActiveSearchMatch = activeSearchMatchId === item.id;
+    return (
+      <View style={styles.messageItem}>
+        {dayLabel ? (
+          <View
+            style={[
+              styles.daySeparator,
+              { backgroundColor: daySeparatorBackground, borderColor: daySeparatorBorder },
+            ]}
+          >
+            <Text style={[styles.daySeparatorText, { color: daySeparatorTextColor }]}>{dayLabel}</Text>
+          </View>
+        ) : null}
+        <ChatBubble
+          text={item.text}
+          caption={item.caption}
+          time={item.time}
+          date={item.date}
+          isMine={item.author === 'me'}
+          status={item.status}
+          variant={item.variant}
+          transaction={item.transaction}
+          attachment={item.attachment}
+          highlightQuery={isSearchMatch ? normalizedSearchQuery : ''}
+          highlightActive={isSearchMatch && isActiveSearchMatch}
+        />
+      </View>
+    );
+  }, [activeSearchMatchId, daySeparatorBackground, daySeparatorBorder, daySeparatorLabelMap, daySeparatorTextColor, normalizedSearchQuery, searchMatchSet]);
 
   const handleAttachmentPress = useCallback(async () => {
     if (attachmentUploading) {
@@ -3384,50 +3305,47 @@ export default function ChatScreen() {
               </View>
             ) : null}
 
-            <FlatList<ConversationListItem>
-              ref={listRef}
-              data={conversationListItems}
-              keyExtractor={(item) => (item.kind === 'separator' ? item.id : item.message.id)}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={[styles.listContent, { paddingBottom: Math.max(composerHeight + 24, 80) }]}
-              onContentSizeChange={handleListContentSizeChange}
-              ListEmptyComponent={renderEmpty}
-              refreshing={shouldUseBackend ? loadingMessages : false}
-              onRefresh={loadConversationData}
-              ListFooterComponent={<View style={styles.listFooterSpacer} />}
-              renderItem={({ item }) => {
-                if (item.kind === 'separator') {
-                  return (
-                    <View
-                      style={[
-                        styles.daySeparator,
-                        { backgroundColor: daySeparatorBackground, borderColor: daySeparatorBorder },
-                      ]}
-                    >
-                      <Text style={[styles.daySeparatorText, { color: daySeparatorTextColor }]}>{item.label}</Text>
-                    </View>
-                  );
-                }
-                const message = item.message;
-                const isSearchMatch = searchMatchSet.has(message.id);
-                const isActiveSearchMatch = activeSearchMatchId === message.id;
-                return (
-                  <ChatBubble
-                    text={message.text}
-                    caption={message.caption}
-                    time={message.time}
-                    date={message.date}
-                    isMine={message.author === 'me'}
-                    status={message.status}
-                    variant={message.variant}
-                    transaction={message.transaction}
-                    attachment={message.attachment}
-                    highlightQuery={isSearchMatch ? normalizedSearchQuery : ''}
-                    highlightActive={isSearchMatch && isActiveSearchMatch}
-                  />
-                );
-              }}
-            />
+            <View style={styles.listWrapper}>
+              <FlatList<NormalizedMessage>
+                ref={listRef}
+                data={visibleMessages}
+                inverted
+                maintainVisibleContentPosition={{ minIndexForVisible: 1, autoscrollToTopThreshold: 20 }}
+                keyExtractor={(item) => String(item.id)}
+                renderItem={renderMessage}
+                contentContainerStyle={[
+                  styles.listContent,
+                  { paddingTop: 8, paddingBottom: composerHeight + 12 },
+                ]}
+                showsVerticalScrollIndicator={false}
+                ListEmptyComponent={renderEmpty}
+                refreshing={shouldUseBackend ? loadingMessages : false}
+                onRefresh={loadConversationData}
+                onScroll={handleListScroll}
+                scrollEventThrottle={16}
+                onScrollToIndexFailed={({ index }) => {
+                  requestAnimationFrame(() => {
+                    listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+                  });
+                }}
+              />
+              {showJumpToLatest ? (
+                <Pressable
+                  style={[
+                    styles.jumpToLatestButton,
+                    {
+                      backgroundColor: headerButtonBackground,
+                      borderColor: headerButtonBorder,
+                      bottom: composerHeight + 24,
+                    },
+                  ]}
+                  onPress={handleJumpToLatest}
+                  hitSlop={10}
+                >
+                  <Text style={[styles.jumpToLatestText, { color: headerPrimaryText }]}>⬇️</Text>
+                </Pressable>
+              ) : null}
+            </View>
 
             <View
               style={[styles.composer, { backgroundColor: composerBackground, borderColor: tokens.divider }]}
@@ -4097,14 +4015,13 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
+  listWrapper: {
+    flex: 1,
+    position: 'relative',
+  },
   listContent: {
     paddingHorizontal: 20,
-    paddingTop: 24,
     flexGrow: 1,
-    justifyContent: 'flex-end',
-  },
-  listFooterSpacer: {
-    height: 16,
   },
   daySeparator: {
     alignSelf: 'center',
@@ -4113,6 +4030,25 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     marginBottom: 16,
     borderWidth: 1,
+  },
+  messageItem: {
+    marginBottom: 16,
+  },
+  jumpToLatestButton: {
+    position: 'absolute',
+    alignSelf: 'center',
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    shadowColor: '#000000',
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  jumpToLatestText: {
+    fontSize: 18,
   },
   daySeparatorText: {
     fontSize: 12,
