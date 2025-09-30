@@ -1564,7 +1564,7 @@ export default function Home() {
       applyConversationPreview(selectedConversationId, previewLabel, new Date().toISOString());
       const doUpload = async (maybeOtp?: string) => {
         try {
-          const res = await apiClient.uploadConversationAttachment(selectedConversationId, f, caption || undefined, maybeOtp);
+          const res = await apiClient.uploadConversationAttachment(selectedConversationId, f, caption || undefined, maybeOtp, clientId);
           setMessages(prev => {
             const copy = [...prev];
             let patchedIndex = -1;
@@ -1628,14 +1628,15 @@ export default function Home() {
     const previewLabel = previewFromMessage(text);
   setMessages(prev => [...prev, { sender: 'current', text, client_id: clientId, delivery_status: 1, status: 'delivered', kind: 'text', senderDisplay: currentSenderDisplay, read_at: null }]);
     applyConversationPreview(selectedConversationId, previewLabel, new Date().toISOString());
+    let serverMessage: any = null;
     try {
       try {
-        await apiClient.sendMessage(selectedConversationId, text);
+  serverMessage = await apiClient.sendMessage(selectedConversationId, text, undefined, clientId);
       } catch (err:any) {
         if (err && err.otp_required) {
           const code = typeof window !== 'undefined' ? window.prompt('أدخل رمز التحقق (OTP) لإرسال الرسالة') : '';
           if (!code) throw err;
-          await apiClient.sendMessage(selectedConversationId, text, code);
+          serverMessage = await apiClient.sendMessage(selectedConversationId, text, code, clientId);
         } else if (err && (err.status === 403 || err.status === 401)) {
           setSubBannerMsg(err.message || 'حسابك بحاجة لاشتراك نشط. يمكنك مراسلة الأدمن فقط.');
           setShowSubBanner(true);
@@ -1644,11 +1645,32 @@ export default function Home() {
           throw err;
         }
       }
-      // Do not force 'delivered' locally; wait for backend status
-      // Already shown as delivered=1; just ensure created_at filled (no status downgrade/upgrade here)
-      setMessages(prev => prev.map(m => (m.sender === 'current' && m.client_id === clientId)
-        ? ({ ...m, created_at: m.created_at || new Date().toISOString(), delivery_status: 1, status: 'delivered' } as any)
-        : m));
+      setMessages(prev => prev.map(m => {
+        if (!(m.sender === 'current' && m.client_id === clientId)) return m;
+        const srv = serverMessage || {};
+        const srvId = typeof srv.id === 'number' ? srv.id : m.id;
+        const srvText = typeof srv.body === 'string' && srv.body.trim() ? srv.body : m.text;
+        const srvCreatedAt = typeof srv.created_at === 'string' ? srv.created_at : (m.created_at || new Date().toISOString());
+        const srvDelivery = typeof srv.delivery_status === 'number'
+          ? srv.delivery_status
+          : ((srv.status === 'read') ? 2 : (srv.status === 'delivered' ? 1 : m.delivery_status || 1));
+        const normalizedDelivery = Math.max(m.delivery_status || 0, srvDelivery || 0);
+        const normalizedStatus = srv.status || (normalizedDelivery >= 2 ? 'read' : normalizedDelivery >= 1 ? 'delivered' : 'sent');
+        const srvReadAt = typeof srv.read_at === 'string' ? srv.read_at : m.read_at;
+        const srvDeliveredAt = typeof srv.delivered_at === 'string' ? srv.delivered_at : m.delivered_at;
+        const srvClient = typeof srv.client_id === 'string' && srv.client_id ? srv.client_id : m.client_id;
+        return {
+          ...m,
+          id: srvId,
+          client_id: srvClient,
+          text: srvText,
+          created_at: srvCreatedAt,
+          delivery_status: normalizedDelivery,
+          status: normalizedStatus,
+          read_at: srvReadAt || null,
+          delivered_at: srvDeliveredAt || null,
+        } as any;
+      }));
     } catch (e:any) {
       pushToast({ type: 'error', msg: e?.message || 'تعذر إرسال الرسالة' });
     }

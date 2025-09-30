@@ -381,7 +381,7 @@ export default function ConversationPage() {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'text', body: text, client_id: clientId }));
       } else {
-        const resp = await apiClient.sendMessage(convId, text);
+  const resp = await apiClient.sendMessage(convId, text, undefined, clientId);
         // HTTP response returns final id; keep status as 'sent' until a status event arrives
         setMessages(prev => {
           const idx = prev.findIndex(m => m.client_id === clientId);

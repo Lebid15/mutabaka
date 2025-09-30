@@ -206,6 +206,7 @@ class Message(models.Model):
     sender_team_member = models.ForeignKey('TeamMember', on_delete=models.SET_NULL, null=True, blank=True, related_name='sent_messages')
     type = models.CharField(max_length=16, choices=TYPE_CHOICES, default='text')
     body = models.TextField(blank=True)
+    client_id = models.CharField(max_length=64, blank=True, null=True, db_index=True)
     # Optional attachment (image or PDF)
     attachment = models.FileField(upload_to='attachments/', null=True, blank=True)
     attachment_name = models.CharField(max_length=255, blank=True)
@@ -219,6 +220,9 @@ class Message(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['conversation', 'client_id']),
+        ]
 
     def __str__(self):
         return f"Msg({self.type}) {self.sender}: {self.body[:30]}"

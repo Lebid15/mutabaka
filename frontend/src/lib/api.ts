@@ -289,12 +289,14 @@ class APIClient {
     });
   }
 
-  async sendMessage(conversationId: number, body: string, otp?: string): Promise<any> {
+  async sendMessage(conversationId: number, body: string, otp?: string, clientId?: string): Promise<any> {
     const headers: any = otp ? { 'X-OTP-Code': otp } : {};
+    const payload: Record<string, any> = { body };
+    if (clientId) payload.client_id = clientId;
     const res = await this.authFetch(`/api/conversations/${conversationId}/send/`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ body })
+      body: JSON.stringify(payload)
     });
     const data = await res.json().catch(()=>({}));
     if (res.status === 403 && data && data.otp_required) {
@@ -312,11 +314,12 @@ class APIClient {
     return data;
   }
 
-  async uploadConversationAttachment(conversationId: number, file: File, caption?: string, otp?: string): Promise<any> {
+  async uploadConversationAttachment(conversationId: number, file: File, caption?: string, otp?: string, clientId?: string): Promise<any> {
     if (!this.access) throw new Error('Not authenticated');
     const form = new FormData();
     form.append('file', file);
     if (caption) form.append('body', caption);
+    if (clientId) form.append('client_id', clientId);
     const headers: any = { Authorization: `Bearer ${this.access}` };
     if (otp) headers['X-OTP-Code'] = otp;
     const res = await fetch(`${this.baseUrl}/api/conversations/${conversationId}/send_attachment/`, {

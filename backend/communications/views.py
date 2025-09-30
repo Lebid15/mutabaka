@@ -662,11 +662,15 @@ class ConversationViewSet(viewsets.ModelViewSet):
             if not secret or not totp or not totp.verify(code, valid_window=1):
                 return Response({'detail': 'Invalid OTP', 'otp_required': True}, status=403)
         body = request.data.get('body', '').strip()
+        client_id_raw = (request.data.get('client_id') or '').strip()
+        client_id = client_id_raw[:64] if client_id_raw else ''
         if not body:
             return Response({'detail': 'Empty body'}, status=400)
         # If acting as team member, set on message
         acting_team_id = getattr(getattr(request, 'auth', None), 'payload', {}).get('team_member_id') if getattr(request, 'auth', None) else None
         msg_kwargs = { 'conversation': conv, 'sender': request.user, 'body': body, 'type': 'text' }
+        if client_id:
+            msg_kwargs['client_id'] = client_id
         if acting_team_id:
             try:
                 tm = TeamMember.objects.get(id=acting_team_id, owner=request.user, is_active=True)
@@ -723,6 +727,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'seq': msg.id,
                     'status': 'delivered',
                     'delivery_status': 1,
+                    'client_id': msg.client_id,
                 }
                 async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': payload})
                 # Emit explicit numeric status=1 for clients listening for status events
@@ -812,6 +817,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'seq': payload.get('seq'),
                     'status': payload.get('status'),
                     'delivery_status': payload.get('delivery_status'),
+                    'client_id': msg.client_id,
                 }
                 pusher_client.trigger(f"chat_{conv.id}", 'message', pusher_payload)
                 # notify all viewers
@@ -928,6 +934,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
         caption_raw = (request.data.get('body') or '').strip()
         attachment_name = getattr(file_obj, 'name', '')
         sanitized_caption = _sanitize_attachment_body(caption_raw, attachment_name)
+        client_id_raw = (request.data.get('client_id') or '').strip()
+        client_id = client_id_raw[:64] if client_id_raw else ''
         msg_kwargs = {
             'conversation': conv,
             'sender': request.user,
@@ -938,6 +946,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
             'attachment_mime': mime or '',
             'attachment_size': size,
         }
+        if client_id:
+            msg_kwargs['client_id'] = client_id
         acting_team_id = getattr(getattr(request, 'auth', None), 'payload', {}).get('team_member_id') if getattr(request, 'auth', None) else None
         if acting_team_id:
             try:
@@ -995,6 +1005,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'status': 'delivered',
                     'delivery_status': 1,
                     'attachment': attachment_payload,
+                    'client_id': msg.client_id,
                 }
                 async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': payload})
                 # Initial numeric status event (delivered)
@@ -1067,6 +1078,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'status': 'delivered',
                     'delivery_status': 1,
                     'attachment': attachment_payload,
+                    'client_id': msg.client_id,
                 }
                 pusher_client.trigger(f"chat_{conv.id}", 'message', pusher_payload)
                 for uid in get_conversation_viewer_ids(conv):

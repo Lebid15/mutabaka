@@ -215,11 +215,11 @@ class MessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = Message
         fields = [
-            "id", "conversation", "sender", "senderType", "senderDisplay", "type", "body", "created_at",
+            "id", "conversation", "sender", "senderType", "senderDisplay", "type", "body", "client_id", "created_at",
             "attachment_url", "attachment_name", "attachment_mime", "attachment_size",
             "status", "delivery_status", "delivered_at", "read_at"
         ]
-        read_only_fields = ["id", "sender", "senderType", "senderDisplay", "type", "created_at", "attachment_url", "delivery_status", "delivered_at", "read_at"]
+        read_only_fields = ["id", "sender", "senderType", "senderDisplay", "type", "client_id", "created_at", "attachment_url", "delivery_status", "delivered_at", "read_at"]
 
     def get_attachment_url(self, obj):  # pragma: no cover - simple URL builder
         try:
