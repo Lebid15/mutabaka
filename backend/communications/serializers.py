@@ -37,6 +37,39 @@ class CurrencySerializer(serializers.ModelSerializer):
         fields = ["id", "code", "symbol", "name"]
 
 
+_TRANSACTION_BODY_RE = re.compile(r'^معاملة:\s*(لنا|لكم)\s*([0-9]+(?:\.[0-9]+)?)\s*([^\s]+)(?:\s*-\s*(.*))?$', re.DOTALL | re.MULTILINE)
+
+
+def _parse_transaction_body(body: str | None):
+    if not body:
+        return None
+    try:
+        text = body.strip()
+    except Exception:
+        return None
+    m = _TRANSACTION_BODY_RE.match(text)
+    if not m:
+        return None
+    direction = 'lna' if m.group(1) == 'لنا' else 'lkm'
+    amount_raw = m.group(2)
+    symbol = (m.group(3) or '').strip()
+    note = (m.group(4) or '').strip()
+    try:
+        amount_val = float(amount_raw)
+    except Exception:
+        try:
+            amount_val = float(amount_raw.replace(',', '.'))
+        except Exception:
+            amount_val = 0.0
+    return {
+        'direction': direction,
+        'amount': amount_val,
+        'currency': symbol,
+        'symbol': symbol,
+        'note': note,
+    }
+
+
 class ContactLinkSerializer(serializers.ModelSerializer):
     icon_display = serializers.SerializerMethodField()
 
@@ -295,6 +328,18 @@ class MessageSerializer(serializers.ModelSerializer):
                 if data.get('delivery_status', 0) < 2:
                     data['delivery_status'] = 2
                     data['status'] = 'read'
+        except Exception:
+            pass
+        try:
+            if instance.type == 'transaction':
+                tx_payload = None
+                txn = getattr(instance, 'transaction_record', None)
+                if txn is not None:
+                    tx_payload = txn.build_message_meta()
+                if not tx_payload:
+                    tx_payload = _parse_transaction_body(instance.body)
+                if tx_payload:
+                    data['tx'] = tx_payload
         except Exception:
             pass
         return data

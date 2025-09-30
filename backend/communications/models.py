@@ -267,12 +267,35 @@ class Transaction(models.Model):
     balance_after_from = models.DecimalField(max_digits=28, decimal_places=5, null=True, blank=True)
     balance_after_to = models.DecimalField(max_digits=28, decimal_places=5, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    message = models.OneToOneField('Message', on_delete=models.CASCADE, null=True, blank=True, related_name='transaction_record')
 
     class Meta:
         ordering = ['-created_at']
 
     def __str__(self):
         return f"Txn {self.amount} {self.currency.code} {self.direction}"
+
+    def build_message_meta(self) -> dict:
+        try:
+            symbol = (self.currency.symbol or '').strip() if self.currency_id else ''
+        except Exception:
+            symbol = ''
+        symbol = symbol or (self.currency.code if getattr(self, 'currency', None) else '')
+        try:
+            amount_value = float(self.amount)
+        except Exception:
+            try:
+                amount_value = float(str(self.amount))
+            except Exception:
+                amount_value = 0.0
+        return {
+            'id': self.id,
+            'direction': self.direction,
+            'amount': amount_value,
+            'currency': getattr(self.currency, 'code', ''),
+            'symbol': symbol or getattr(self.currency, 'code', ''),
+            'note': self.note or '',
+        }
 
     @classmethod
     def create_transaction(cls, conversation, actor, currency, amount, direction, note="", sender_team_member=None):
@@ -351,6 +374,12 @@ class Transaction(models.Model):
                 body=f"معاملة: {( 'لنا' if direction=='lna' else 'لكم')} {display_amount} {currency.symbol or currency.code}{(' - ' + note) if note else ''}".strip()
             )
 
+            if not txn.message_id:
+                txn.message = chat_message
+                txn.save(update_fields=["message"])
+
+            tx_payload = txn.build_message_meta()
+
             # Compute display for realtime (prefer team member if present)
             sender_display = (sender_team_member.display_name or sender_team_member.username) if sender_team_member else (getattr(actor, 'display_name', '') or actor.username)
 
@@ -377,6 +406,7 @@ class Transaction(models.Model):
                             'body': preview_body,
                             'created_at': chat_message.created_at.isoformat(),
                             'kind': 'transaction',
+                            'tx': tx_payload,
                             'delivery_status': chat_message.delivery_status,
                             'status': 'delivered' if (chat_message.delivery_status or 0) >= 1 else 'sent',
                             'delivered_at': delivered_at,
@@ -415,6 +445,7 @@ class Transaction(models.Model):
                         'conversation_id': conversation.id,
                         'id': chat_message.id,
                         'message_id': chat_message.id,
+                        'tx': tx_payload,
                         'seq': chat_message.id,
                         'delivered_at': chat_message.delivered_at.isoformat() if chat_message.delivered_at else None,
                         'read_at': chat_message.read_at.isoformat() if chat_message.read_at else None,

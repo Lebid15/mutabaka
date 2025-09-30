@@ -555,17 +555,18 @@ class ConversationViewSet(viewsets.ModelViewSet):
             limit = int(limit) if limit is not None else 200
         except (TypeError, ValueError):
             limit = 200
+        base_qs = conv.messages.select_related('sender', 'sender_team_member', 'transaction_record__currency')
         if since_id:
-            qs = conv.messages.filter(id__gt=since_id).order_by('created_at')[:limit]
+            qs = base_qs.filter(id__gt=since_id).order_by('created_at')[:limit]
         elif before:
             try:
                 b = int(before)
-                qs = conv.messages.filter(id__lt=b).order_by('-created_at')[:limit]
+                qs = base_qs.filter(id__lt=b).order_by('-created_at')[:limit]
                 qs = qs[::-1]  # return ascending
             except (TypeError, ValueError):
-                qs = conv.messages.all().order_by('-created_at')[:limit]
+                qs = base_qs.order_by('-created_at')[:limit]
         else:
-            qs = conv.messages.all().order_by('-created_at')[:limit]
+            qs = base_qs.order_by('-created_at')[:limit]
         # Inject counterpart last_read marker so serializer can freeze blue ticks
         other_last_read_id = 0
         viewer_id = request.user.id

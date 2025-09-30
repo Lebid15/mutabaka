@@ -337,7 +337,7 @@ const renderPdfToDataUrl = async (url: string): Promise<string | null> => {
 // استخراج معاملة من نص الرسالة المولّد من الخادم
 function parseTransaction(body: string): null | { direction: 'lna'|'lkm'; amount: number; currency: string; symbol: string; note?: string } {
   try {
-    const re = /^معاملة:\s*(لنا|لكم)\s*([0-9]+(?:\.[0-9]+)?)\s*([^\s]+)(?:\s*-\s*(.*))?$/u;
+  const re = /^معاملة:\s*(لنا|لكم)\s*([0-9]+(?:\.[0-9]+)?)\s*([^\s]+)(?:\s*-\s*([\s\S]*))?$/u;
     const m = body.trim().match(re);
     if (!m) return null;
     const dir = m[1] === 'لنا' ? 'lna' : 'lkm';
@@ -346,6 +346,27 @@ function parseTransaction(body: string): null | { direction: 'lna'|'lkm'; amount
     const note = (m[4] || '').trim();
     return { direction: dir, amount: isNaN(amount) ? 0 : amount, currency: sym, symbol: sym, note: note || undefined };
   } catch { return null; }
+}
+
+function normalizeServerTransaction(raw: any): null | { direction: 'lna'|'lkm'; amount: number; currency: string; symbol: string; note?: string } {
+  if (!raw || typeof raw !== 'object') return null;
+  const direction = raw.direction === 'lkm' ? 'lkm' : 'lna';
+  const amountSource = raw.amount ?? raw.amount_value ?? raw.value;
+  let amount = typeof amountSource === 'number' ? amountSource : parseFloat(String(amountSource ?? ''));
+  if (!Number.isFinite(amount)) {
+    amount = 0;
+  }
+  const currencyCode = typeof raw.currency === 'string' && raw.currency.trim() ? raw.currency.trim() : '';
+  const symbolRaw = typeof raw.symbol === 'string' && raw.symbol.trim() ? raw.symbol.trim() : '';
+  const symbol = symbolRaw || currencyCode || '';
+  const note = typeof raw.note === 'string' ? raw.note : (Array.isArray(raw.note) ? raw.note.join('\n') : '');
+  return {
+    direction,
+    amount,
+    currency: currencyCode || symbol,
+    symbol,
+    note: note || undefined,
+  };
 }
 
 const buildMessageKey = (msg: any, index: number, prefix = 'msg') => {
@@ -2430,7 +2451,8 @@ export default function Home() {
   const readAtPayload = (typeof data?.read_at === 'string' && data.read_at) ? data.read_at : null;
   const deliveredAtPayload = (typeof data?.delivered_at === 'string' && data.delivered_at) ? data.delivered_at : null;
         const messageIdNum = typeof data?.id === 'number' ? data.id : (typeof data?.message_id === 'number' ? data.message_id : null);
-        const tx = parseTransaction(txt);
+    const txFromServer = normalizeServerTransaction(data?.tx);
+    const tx = txFromServer || parseTransaction(txt);
   if (isCurrent) {
           // Reconcile with optimistic 'sending' bubble instead of appending a duplicate
           setMessages(prev => {
@@ -2584,7 +2606,7 @@ export default function Home() {
                 status: ds >= 2 ? 'read' : ds >= 1 ? 'delivered' : 'sent',
           };
           if (m.type === 'transaction') {
-            const tx = parseTransaction(base.text);
+            const tx = normalizeServerTransaction(m.tx) || parseTransaction(base.text);
             if (tx) return { ...base, kind: 'transaction', tx };
           }
           if (m.type === 'system') return { ...base, kind: 'system' };
@@ -2691,7 +2713,8 @@ export default function Home() {
           const txt = (payload?.body ?? '').toString();
           const messageIdNum = typeof payload.id === 'number' ? payload.id : null;
           const incomingClientId = typeof payload.client_id === 'string' && payload.client_id ? payload.client_id : null;
-          const tx = parseTransaction(txt);
+          const txFromServer = normalizeServerTransaction(payload?.tx);
+          const tx = txFromServer || parseTransaction(txt);
           const previewLabel = previewFromMessage(txt, payload?.attachment);
           const previewConvId = typeof payload.conversation_id === 'number' ? payload.conversation_id : selectedConversationId;
           if (previewConvId) {
