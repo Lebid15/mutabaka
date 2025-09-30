@@ -1819,8 +1819,7 @@ export default function ChatScreen() {
       const needsSpace = next.length > 0 && !/\s$/.test(next);
       return `${next}${needsSpace ? ' ' : ''}${emoji}`;
     });
-    setEmojiPickerVisible(false);
-  }, [setEmojiPickerVisible]);
+  }, []);
 
   const loadMembersPanelData = useCallback(async () => {
     if (!shouldUseBackend || Number.isNaN(numericConversationId)) {
@@ -3220,7 +3219,10 @@ export default function ChatScreen() {
                 <Pressable
                   key={emoji}
                   style={styles.emojiButton}
-                  onPress={() => handleInsertEmoji(emoji)}
+                  onPress={(event) => {
+                    event.stopPropagation?.();
+                    handleInsertEmoji(emoji);
+                  }}
                 >
                   <Text style={styles.emojiChar}>{emoji}</Text>
                 </Pressable>

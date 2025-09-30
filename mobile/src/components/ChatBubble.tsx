@@ -1,7 +1,7 @@
 import FeatherIcon from '@expo/vector-icons/Feather';
 import * as FileSystem from 'expo-file-system/legacy';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Alert, Image, Linking, Pressable, Share, StyleSheet, Text, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { ActivityIndicator, Alert, Image, Linking, Pressable, Share, StyleSheet, Text, View, useWindowDimensions, type ImageProps, type LayoutChangeEvent } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { cn } from '../utils/cn';
 import { useThemeMode } from '../theme';
@@ -360,6 +360,15 @@ function ChatBubbleBase({ text, caption, time, date, isMine, status, variant = '
   }, [isImageCandidate, previewUri, resolvedAttachmentUrl]);
   const viewerFileName = attachmentName || 'صورة';
   const primaryViewerUri = viewerSources.length ? viewerSources[0].uri : null;
+  const viewerImageProps = useMemo<ImageProps>(() => ({
+    style: {
+      alignSelf: 'center',
+      borderWidth: 2,
+      borderColor: 'rgba(255, 99, 71, 0.7)',
+      marginTop: 60,
+      marginBottom: 60,
+    },
+  }), []);
 
   const handleCloseViewer = useCallback(() => {
     setViewerVisible(false);
@@ -874,8 +883,8 @@ function ChatBubbleBase({ text, caption, time, date, isMine, status, variant = '
           swipeToCloseEnabled
           doubleTapToZoomEnabled
           backgroundColor="rgba(0,0,0,0.95)"
-          FooterComponent={renderViewerFooter}
           HeaderComponent={renderViewerHeader}
+          imageProps={viewerImageProps}
         />
       ) : null}
     </>
