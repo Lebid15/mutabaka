@@ -268,6 +268,121 @@ type ConversationListItem =
   | { kind: 'message'; message: NormalizedMessage }
   | { kind: 'separator'; id: string; label: string };
 
+function normalizeIdentity(value?: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed.replace(/\s+/g, ' ').toLowerCase();
+}
+
+function isMessageFromUser(message: MessageDto, user?: CurrentUser | null): boolean {
+  if (!message || !user) {
+    return false;
+  }
+  const sender = message.sender;
+  if (sender?.id && sender.id === user.id) {
+    return true;
+  }
+  const normalizedUserUsername = normalizeIdentity(user.username);
+  const normalizedSenderUsername = normalizeIdentity(sender?.username);
+  if (normalizedUserUsername && normalizedSenderUsername && normalizedUserUsername === normalizedSenderUsername) {
+    return true;
+  }
+  const senderDisplayCandidates: Array<string | null | undefined> = [
+    message.senderDisplay,
+    sender?.display_name,
+    sender?.username,
+  ];
+  const userDisplayCandidates: Array<string | null | undefined> = [
+    user.display_name,
+    user.first_name ? `${user.first_name} ${user.last_name ?? ''}` : null,
+    user.first_name,
+    user.last_name,
+    user.username,
+  ];
+  const normalizedUserDisplays = new Set(
+    userDisplayCandidates
+      .map((candidate) => normalizeIdentity(candidate))
+      .filter((candidate): candidate is string => Boolean(candidate)),
+  );
+  for (const value of senderDisplayCandidates) {
+    const normalized = normalizeIdentity(value);
+    if (normalized && normalizedUserDisplays.has(normalized)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function parseTimestamp(value?: string | null): number | null {
+  if (!value) {
+    return null;
+  }
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+function matchesOptimisticEcho(candidate: MessageDto, incoming: MessageDto): boolean {
+  const candidateBody = (candidate.body ?? '').trim();
+  const incomingBody = (incoming.body ?? '').trim();
+  if (candidateBody && incomingBody && candidateBody === incomingBody) {
+    return true;
+  }
+
+  const candidateName = (candidate.attachment_name ?? '').trim();
+  const incomingName = (incoming.attachment_name ?? '').trim();
+  if (candidateName && incomingName && candidateName === incomingName) {
+    return true;
+  }
+
+  const candidateSize = typeof candidate.attachment_size === 'number' ? candidate.attachment_size : null;
+  const incomingSize = typeof incoming.attachment_size === 'number' ? incoming.attachment_size : null;
+  if (candidateSize !== null && incomingSize !== null && Math.abs(candidateSize - incomingSize) <= 4096) {
+    return true;
+  }
+
+  return false;
+}
+
+function removeOptimisticEcho(
+  list: MessageDto[],
+  incoming: MessageDto,
+  user?: CurrentUser | null,
+): MessageDto[] {
+  if (!user || incoming.id <= 0) {
+    return list;
+  }
+  let removed = false;
+  const incomingTimestamp = parseTimestamp(incoming.created_at);
+  return list.filter((candidate) => {
+    if (removed) {
+      return true;
+    }
+    if (!candidate || candidate.id >= 0) {
+      return true;
+    }
+    if (!isMessageFromUser(candidate, user)) {
+      return true;
+    }
+    if (!matchesOptimisticEcho(candidate, incoming)) {
+      return true;
+    }
+    const candidateTimestamp = parseTimestamp(candidate.created_at);
+    if (incomingTimestamp !== null && candidateTimestamp !== null) {
+      const diff = Math.abs(incomingTimestamp - candidateTimestamp);
+      if (diff > 60000) {
+        return true;
+      }
+    }
+    removed = true;
+    return false;
+  });
+}
+
 function decodeJwtPayload(token?: string | null): Record<string, unknown> | null {
   if (!token) {
     return null;
@@ -556,6 +671,8 @@ export default function ChatScreen() {
   const initialScrollAttemptsRef = useRef(0);
   const initialScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const otpResolverRef = useRef<((value: string | null) => void) | null>(null);
+  const loggedAttachmentIdsRef = useRef<Set<number>>(new Set());
+  const myMessageIdsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -909,8 +1026,9 @@ export default function ChatScreen() {
       };
 
       setRemoteMessages((prev) => {
+        const baseList = isMine ? removeOptimisticEcho(prev, nextMessage, currentUser) : prev;
         let updated = false;
-        const mapped = prev.map((msg) => {
+        const mapped = baseList.map((msg) => {
           if (msg.id !== nextMessage.id) {
             return msg;
           }
@@ -1344,10 +1462,30 @@ export default function ChatScreen() {
             : attachmentMeta
               ? 'attachment'
               : 'text';
+        const numericMessageId = Number.isFinite(msg.id) ? Number(msg.id) : undefined;
+        const computedIsMine = (numericMessageId !== undefined && myMessageIdsRef.current.has(numericMessageId))
+          || isMessageFromUser(msg, currentUser);
+        if (computedIsMine && numericMessageId !== undefined) {
+          myMessageIdsRef.current.add(numericMessageId);
+        }
+        if (__DEV__ && attachmentMeta) {
+          const logged = loggedAttachmentIdsRef.current;
+          if (!logged.has(msg.id)) {
+            logged.add(msg.id);
+            console.debug('[Mutabaka][ChatScreen] attachment meta', {
+              id: msg.id,
+              url: attachmentMeta.url,
+              name: attachmentMeta.name,
+              mime: attachmentMeta.mime,
+              size: attachmentMeta.size,
+            });
+          }
+        }
+        const author: NormalizedMessage['author'] = computedIsMine ? 'me' : 'them';
         return {
           id: String(msg.id),
           conversationId: String(msg.conversation),
-          author: msg.sender?.id === currentUser.id ? 'me' : 'them',
+          author,
           text: body,
           caption: trimmedBody || null,
           time: formatMessageTime(msg.created_at),
@@ -2184,6 +2322,7 @@ export default function ChatScreen() {
     }
     setStatusBanner(null);
     setAttachmentUploading(true);
+    myMessageIdsRef.current.add(optimisticId);
     setRemoteMessages((prev) => [...prev, optimisticMessage]);
 
     const optimisticPreview = caption || uploadAsset.name || DEFAULT_ATTACHMENT_PREVIEW;
@@ -2197,6 +2336,7 @@ export default function ChatScreen() {
     });
 
     const removeOptimistic = () => {
+      myMessageIdsRef.current.delete(optimisticId);
       setRemoteMessages((prev) => prev.filter((msg) => msg.id !== optimisticId));
     };
 
@@ -2240,6 +2380,10 @@ export default function ChatScreen() {
         throw new Error('Attachment upload failed without response');
       }
 
+      if (Number.isFinite(response.id)) {
+        myMessageIdsRef.current.add(response.id);
+      }
+      myMessageIdsRef.current.delete(optimisticId);
       setRemoteMessages((prev) => {
         const withoutOptimistic = prev.filter((msg) => msg.id !== optimisticId);
         const withoutDuplicate = withoutOptimistic.filter((msg) => msg.id !== response!.id);
@@ -2322,6 +2466,7 @@ export default function ChatScreen() {
         status: 'sent',
         delivery_status: 0,
       };
+      myMessageIdsRef.current.add(optimistic.id);
       setRemoteMessages((prev) => [...prev, optimistic]);
       setDraft('');
       if (Number.isFinite(numericConversationId)) {
@@ -2355,6 +2500,7 @@ export default function ChatScreen() {
       delivery_status: 0,
     };
 
+    myMessageIdsRef.current.add(optimisticId);
     setRemoteMessages((prev) => [...prev, optimisticMessage]);
     setDraft('');
     setSendingMessage(true);
@@ -2374,6 +2520,10 @@ export default function ChatScreen() {
 
     try {
       const response = await sendMessage(numericConversationId, text);
+      if (Number.isFinite(response.id)) {
+        myMessageIdsRef.current.add(response.id);
+      }
+      myMessageIdsRef.current.delete(optimisticId);
       setRemoteMessages((prev) => {
         const filtered = prev.filter((msg) => msg.id !== optimisticId);
         const withoutDuplicate = filtered.filter((msg) => msg.id !== response.id);
@@ -2393,6 +2543,7 @@ export default function ChatScreen() {
       });
     } catch (error) {
       setRemoteMessages((prev) => prev.filter((msg) => msg.id !== optimisticId));
+      myMessageIdsRef.current.delete(optimisticId);
       setDraft(text);
       const message = extractErrorMessage(error, 'تعذر إرسال الرسالة');
       if (error instanceof HttpError && error.status === 403 && (error.payload as any)?.otp_required) {

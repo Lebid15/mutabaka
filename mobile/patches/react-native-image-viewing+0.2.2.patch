@@ -1,0 +1,55 @@
+diff --git a/node_modules/react-native-image-viewing/dist/ImageViewing.js b/node_modules/react-native-image-viewing/dist/ImageViewing.js
+index 3d7641a..c92e79d 100644
+--- a/node_modules/react-native-image-viewing/dist/ImageViewing.js
++++ b/node_modules/react-native-image-viewing/dist/ImageViewing.js
+@@ -6,7 +6,7 @@
+  *
+  */
+ import React, { useCallback, useRef, useEffect } from "react";
+-import { Animated, Dimensions, StyleSheet, View, VirtualizedList, Modal, } from "react-native";
++import { Animated, Dimensions, StyleSheet, View, VirtualizedList, Modal, I18nManager, } from "react-native";
+ import ImageItem from "./components/ImageItem/ImageItem";
+ import ImageDefaultHeader from "./components/ImageDefaultHeader";
+ import StatusBarManager from "./components/StatusBarManager";
+@@ -18,6 +18,7 @@ const DEFAULT_BG_COLOR = "#000";
+ const DEFAULT_DELAY_LONG_PRESS = 800;
+ const SCREEN = Dimensions.get("screen");
+ const SCREEN_WIDTH = SCREEN.width;
++const IS_RTL = I18nManager.isRTL;
+ function ImageViewing({ images, keyExtractor, imageIndex, visible, onRequestClose, onLongPress = () => { }, onImageIndexChange, animationType = DEFAULT_ANIMATION_TYPE, backgroundColor = DEFAULT_BG_COLOR, presentationStyle, swipeToCloseEnabled, doubleTapToZoomEnabled, delayLongPress = DEFAULT_DELAY_LONG_PRESS, HeaderComponent, FooterComponent, }) {
+     const imageList = useRef(null);
+     const [opacity, onRequestCloseEnhanced] = useRequestClose(onRequestClose);
+@@ -39,17 +40,17 @@ function ImageViewing({ images, keyExtractor, imageIndex, visible, onRequestClos
+     }
+     return (<Modal transparent={presentationStyle === "overFullScreen"} visible={visible} presentationStyle={presentationStyle} animationType={animationType} onRequestClose={onRequestCloseEnhanced} supportedOrientations={["portrait"]} hardwareAccelerated>
+       <StatusBarManager presentationStyle={presentationStyle}/>
+-      <View style={[styles.container, { opacity, backgroundColor }]}>
++    <View style={[styles.container, { opacity, backgroundColor }, IS_RTL ? styles.forceLTR : undefined]}> 
+         <Animated.View style={[styles.header, { transform: headerTransform }]}>
+           {typeof HeaderComponent !== "undefined" ? (React.createElement(HeaderComponent, {
+         imageIndex: currentImageIndex,
+     })) : (<ImageDefaultHeader onRequestClose={onRequestCloseEnhanced}/>)}
+         </Animated.View>
+-        <VirtualizedList ref={imageList} data={images} horizontal pagingEnabled windowSize={2} initialNumToRender={1} maxToRenderPerBatch={1} showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false} initialScrollIndex={imageIndex} getItem={(_, index) => images[index]} getItemCount={() => images.length} getItemLayout={(_, index) => ({
+-        length: SCREEN_WIDTH,
+-        offset: SCREEN_WIDTH * index,
+-        index,
+-    })} renderItem={({ item: imageSrc }) => (<ImageItem onZoom={onZoom} imageSrc={imageSrc} onRequestClose={onRequestCloseEnhanced} onLongPress={onLongPress} delayLongPress={delayLongPress} swipeToCloseEnabled={swipeToCloseEnabled} doubleTapToZoomEnabled={doubleTapToZoomEnabled}/>)} onMomentumScrollEnd={onScroll} 
++                <VirtualizedList ref={imageList} data={images} horizontal pagingEnabled windowSize={2} initialNumToRender={1} maxToRenderPerBatch={1} showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false} initialScrollIndex={imageIndex} getItem={(_, index) => images[index]} getItemCount={() => images.length} getItemLayout={(_, index) => ({
++                length: SCREEN_WIDTH,
++                offset: SCREEN_WIDTH * index,
++                index,
++            })} renderItem={({ item: imageSrc }) => (<ImageItem onZoom={onZoom} imageSrc={imageSrc} onRequestClose={onRequestCloseEnhanced} onLongPress={onLongPress} delayLongPress={delayLongPress} swipeToCloseEnabled={swipeToCloseEnabled} doubleTapToZoomEnabled={doubleTapToZoomEnabled}/>)} onMomentumScrollEnd={onScroll} style={IS_RTL ? styles.forceLTR : undefined} contentContainerStyle={IS_RTL ? styles.forceLTR : undefined} 
+     //@ts-ignore
+     keyExtractor={(imageSrc, index) => keyExtractor
+         ? keyExtractor(imageSrc, index)
+@@ -81,6 +82,9 @@ const styles = StyleSheet.create({
+         zIndex: 1,
+         bottom: 0,
+     },
++    forceLTR: {
++        direction: "ltr",
++    },
+ });
+ const EnhancedImageViewing = (props) => (<ImageViewing key={props.imageIndex} {...props}/>);
+ export default EnhancedImageViewing;
