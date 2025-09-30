@@ -1106,6 +1106,7 @@ export default function Home() {
     amountNumber: number;
     positive: boolean;
     dateTimeDisplay: string;
+    noteText: string;
     createdAtISO?: string;
   };
 
@@ -1151,10 +1152,11 @@ export default function Home() {
       { header: 'اسم المرسل', key: 'sender', width: 28 },
       { header: 'لمن', key: 'direction', width: 16 },
       { header: 'المبلغ و العملة', key: 'amount', width: 24 },
+      { header: 'ملاحظة', key: 'note', width: 32 },
       { header: 'التاريخ و الوقت', key: 'datetime', width: 26 },
     ];
 
-    sheet.mergeCells(1, 1, 1, 5);
+    sheet.mergeCells(1, 1, 1, 6);
     const titleCell = sheet.getCell('A1');
     titleCell.value = `معاملات مالية بين ${parties.a} و ${parties.b}`;
     titleCell.font = { bold: true, size: 14, color: { argb: 'FF0F172A' } };
@@ -1167,6 +1169,7 @@ export default function Home() {
       'اسم المرسل',
       'لمن',
       'المبلغ و العملة',
+      'ملاحظة',
       'التاريخ و الوقت',
     ];
     headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
@@ -1190,6 +1193,7 @@ export default function Home() {
         sender: row.senderName,
         direction: row.directionLabel,
         amount: row.amountDisplay,
+        note: row.noteText,
         datetime: row.dateTimeDisplay,
       });
       excelRow.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -1215,8 +1219,8 @@ export default function Home() {
     });
 
     if (rangeLabel) {
-      const infoRow = sheet.addRow(['', '', '', '', rangeLabel]);
-      infoRow.getCell(5).font = { italic: true, size: 10, color: { argb: 'FF64748B' } };
+      const infoRow = sheet.addRow(['', '', '', '', '', rangeLabel]);
+      infoRow.getCell(6).font = { italic: true, size: 10, color: { argb: 'FF64748B' } };
       infoRow.alignment = { horizontal: 'left' };
     }
 
@@ -1285,7 +1289,7 @@ export default function Home() {
     table.style.overflow = 'hidden';
     table.style.borderRadius = '12px';
 
-  const headers = ['رقم المعاملة', 'اسم المرسل', 'لمن', 'المبلغ و العملة', 'التاريخ و الوقت'];
+  const headers = ['رقم المعاملة', 'اسم المرسل', 'لمن', 'المبلغ و العملة', 'ملاحظة', 'التاريخ و الوقت'];
     const thead = document.createElement('thead');
     const headerRow = document.createElement('tr');
     headers.forEach((text) => {
@@ -1311,6 +1315,7 @@ export default function Home() {
         row.senderName,
         row.directionLabel,
         row.amountDisplay,
+        row.noteText,
         row.dateTimeDisplay,
       ];
       cells.forEach((val, idx) => {
@@ -1467,6 +1472,9 @@ export default function Home() {
         const createdAtIso = typeof item.created_at === 'string' ? item.created_at : undefined;
         const senderName = pickDisplayName(item.from_user_info) || fallbackNameForId(fromId) || fallbackUnknownName;
 
+        const noteTextRaw = typeof item.note === 'string' ? item.note : (typeof item.description === 'string' ? item.description : '');
+        const noteText = (noteTextRaw || '').toString().trim();
+
         acc.push({
           index: idx + 1,
           senderName,
@@ -1474,6 +1482,7 @@ export default function Home() {
           amountDisplay: amountLabel,
           amountNumber: Math.abs(Number.isFinite(amountNumber) ? amountNumber : 0),
           positive,
+          noteText,
           dateTimeDisplay: createdAtIso ? formatDateTimeLabel(createdAtIso) : '',
           createdAtISO: createdAtIso,
         });
