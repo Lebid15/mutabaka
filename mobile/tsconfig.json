@@ -4,13 +4,16 @@
     "strict": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": [
+        "src/*"
+      ]
     }
   },
   "include": [
     "./index.ts",
     "./App.tsx",
     "./src",
-    "nativewind-env.d.ts"
+    "nativewind-env.d.ts",
+    "F:\\mtk\\mobile\\nativewind-env.d.ts"
   ]
 }
