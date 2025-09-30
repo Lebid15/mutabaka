@@ -870,7 +870,7 @@ function ChatBubbleBase({ text, caption, time, date, isMine, status, variant = '
           <Text className="text-[11px]" style={{ color: timeColor }}>
             {time}
           </Text>
-          {showTicks ? <MessageTicks color={status === 'read' ? readColor : unreadColor} /> : null}
+          {showTicks ? <MessageTicks color={status === 'read' || status === 'delivered' ? readColor : unreadColor} /> : null}
         </View>
       )}
     </View>

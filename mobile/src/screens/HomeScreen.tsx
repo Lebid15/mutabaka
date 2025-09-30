@@ -255,6 +255,8 @@ export default function HomeScreen() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [remoteLoadAttempted, setRemoteLoadAttempted] = useState(false);
+  const [throttleUntil, setThrottleUntil] = useState<number | null>(null);
   const isMountedRef = useRef(true);
   const [isAddContactOpen, setIsAddContactOpen] = useState(false);
   const [contactQuery, setContactQuery] = useState('');
@@ -273,6 +275,7 @@ export default function HomeScreen() {
   const webAppBaseUrl = useMemo(() => environment.apiBaseUrl.replace(/\/api\/?$/, ''), []);
   const remoteConversationsRef = useRef<ConversationRecord[]>(remoteConversations);
   const locallyClearedUnreadRef = useRef<Set<number>>(new Set());
+  const loadConversationsInFlightRef = useRef(false);
 
   useEffect(() => {
     remoteConversationsRef.current = remoteConversations;
@@ -383,7 +386,22 @@ export default function HomeScreen() {
 
 
   const loadConversations = useCallback(async () => {
+    const now = Date.now();
+    if (throttleUntil && now < throttleUntil) {
+      const remainingSeconds = Math.max(0, Math.round((throttleUntil - now) / 1000));
+      if (remainingSeconds > 0) {
+        const minutes = Math.max(1, Math.ceil(remainingSeconds / 60));
+        setErrorMessage(`تم إيقاف الطلبات مؤقتًا. حاول مرة أخرى خلال حوالي ${minutes} دقيقة.`);
+      }
+      setRemoteLoadAttempted(true);
+      setLoading(false);
+      return;
+    }
+    if (loadConversationsInFlightRef.current) {
+      return;
+    }
     try {
+      loadConversationsInFlightRef.current = true;
       setLoading(true);
       setErrorMessage(null);
       const [me, conversationResponse] = await Promise.all([
@@ -403,24 +421,93 @@ export default function HomeScreen() {
       const merged = mergeUnreadCounts(normalized, remoteConversationsRef.current, locallyClearedUnreadRef.current);
       const sorted = [...merged].sort((a, b) => getConversationSortValue(b) - getConversationSortValue(a));
       setRemoteConversations(sorted);
+      setRemoteLoadAttempted(true);
     } catch (error) {
       if (!isMountedRef.current) {
         return;
       }
       console.warn('[Mutabaka] Failed to load conversations', error);
-      setErrorMessage('تعذر تحميل المحادثات. تحقق من الاتصال بالخادم.');
+      let message = 'تعذر تحميل المحادثات. تحقق من الاتصال بالخادم.';
+      if (error instanceof HttpError) {
+        if (error.status === 429) {
+          let retrySeconds: number | null = null;
+          const details = typeof error.message === 'string' ? error.message : '';
+          let payloadDetail = '';
+          if (error.payload && typeof error.payload === 'object' && 'detail' in error.payload) {
+            const detailValue = (error.payload as Record<string, unknown>).detail;
+            if (typeof detailValue === 'string') {
+              payloadDetail = detailValue;
+            }
+          }
+          const sourceText = payloadDetail || details;
+          const secondsMatch = sourceText.match(/(\d+(?:\.\d+)?)\s*second/i);
+          if (secondsMatch) {
+            retrySeconds = Number.parseFloat(secondsMatch[1]);
+            if (!Number.isFinite(retrySeconds)) {
+              retrySeconds = null;
+            }
+          }
+          if (retrySeconds && retrySeconds > 0) {
+            const retryTimestamp = Date.now() + retrySeconds * 1000;
+            setThrottleUntil(retryTimestamp);
+            const minutes = Math.max(1, Math.ceil(retrySeconds / 60));
+            message = `تم إيقاف الطلبات مؤقتًا بسبب معدل الاستخدام. حاول مرة أخرى خلال حوالي ${minutes} دقيقة.`;
+          } else {
+            message = 'تم إرسال طلبات كثيرة خلال وقت قصير. حاول مرة أخرى بعد لحظات.';
+          }
+        } else if (error.status >= 500) {
+          message = 'الخادم يواجه انقطاعًا مؤقتًا. حاول مرة أخرى لاحقًا.';
+        } else {
+          const extracted = extractErrorMessage(error);
+          if (extracted) {
+            message = extracted;
+          }
+        }
+      }
+      setErrorMessage(message);
+      setRemoteLoadAttempted(true);
     } finally {
+      loadConversationsInFlightRef.current = false;
       if (isMountedRef.current) {
         setLoading(false);
       }
     }
-  }, []);
+  }, [throttleUntil]);
 
   useFocusEffect(
     useCallback(() => {
       loadConversations();
     }, [loadConversations]),
   );
+
+  useEffect(() => {
+    if (!throttleUntil) {
+      return;
+    }
+
+    const tick = () => {
+      if (!isMountedRef.current) {
+        return;
+      }
+      const now = Date.now();
+      if (now >= throttleUntil) {
+        setThrottleUntil(null);
+        setErrorMessage(null);
+        loadConversations();
+        return;
+      }
+      const remainingSeconds = Math.max(0, Math.round((throttleUntil - now) / 1000));
+      const minutes = Math.max(1, Math.ceil(remainingSeconds / 60));
+      setErrorMessage(`تم إيقاف الطلبات مؤقتًا. حاول مرة أخرى خلال حوالي ${minutes} دقيقة.`);
+    };
+
+    tick();
+    const interval = setInterval(tick, 15000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [loadConversations, throttleUntil]);
 
   useEffect(() => {
     setPinnedConversationIds((prev) => {
@@ -667,9 +754,11 @@ export default function HomeScreen() {
       } catch (error) {
         console.warn('[Mutabaka] Failed to clear tokens during logout', error);
       }
-  setRemoteConversations([]);
+    setRemoteConversations([]);
   locallyClearedUnreadRef.current.clear();
       setCurrentUser(null);
+      setRemoteLoadAttempted(false);
+    setThrottleUntil(null);
       resetAddContactState();
       navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
       return;
@@ -929,6 +1018,10 @@ export default function HomeScreen() {
       });
     }
 
+    if (environment.name === 'production' || remoteLoadAttempted) {
+      return [];
+    }
+
     return mockConversations.map((conv, index) => {
   const numericId = Number((conv as { id?: string | number }).id);
       const meta = conv as unknown as { isPinned?: boolean };
@@ -944,7 +1037,7 @@ export default function HomeScreen() {
         avatarUri: undefined,
       };
     });
-  }, [currentUser, pinnedSet, remoteConversations, searchValue]);
+  }, [currentUser, pinnedSet, remoteConversations, remoteLoadAttempted, searchValue]);
 
   const filteredConversations = useMemo(() => (
     augmentedConversations.filter((conv) => {
@@ -1377,7 +1470,19 @@ export default function HomeScreen() {
             onRefresh={loadConversations}
             ListEmptyComponent={(
               <View style={styles.emptyState}>
-                <Text style={[styles.emptyText, { color: emptyTextColor }]}>لا توجد محادثات مطابقة للبحث</Text>
+                {loading ? (
+                  <ActivityIndicator size="small" color={actionTint} />
+                ) : throttleUntil && throttleUntil > Date.now() ? (
+                  <Text style={[styles.emptyText, { color: emptyTextColor }]}>انتظر انتهاء الإيقاف المؤقت قبل إعادة المحاولة.</Text>
+                ) : errorMessage ? (
+                  <Text style={[styles.emptyText, { color: emptyTextColor }]}>اسحب للأسفل لإعادة المحاولة.</Text>
+                ) : searchValue.trim() ? (
+                  <Text style={[styles.emptyText, { color: emptyTextColor }]}>لا توجد محادثات مطابقة للبحث</Text>
+                ) : remoteLoadAttempted ? (
+                  <Text style={[styles.emptyText, { color: emptyTextColor }]}>لا توجد محادثات بعد.</Text>
+                ) : (
+                  <Text style={[styles.emptyText, { color: emptyTextColor }]}>جارٍ تحميل المحادثات...</Text>
+                )}
               </View>
             )}
           />
