@@ -2639,16 +2639,16 @@ export default function ChatScreen() {
   const renderMessage = useCallback((
     { item, index }: ListRenderItemInfo<NormalizedMessage>,
   ) => {
-    const previous = index > 0 ? listData[index - 1] : null;
+    const nextEntry = index < listData.length - 1 ? listData[index + 1] : null;
     const info = getLocalDateInfo(item.timestamp);
     let dayLabel: string | null = null;
 
     if (info) {
-      if (!previous) {
+      if (!nextEntry) {
         dayLabel = formatDaySeparatorLabel(info.date);
       } else {
-        const previousInfo = getLocalDateInfo(previous.timestamp);
-        if (!previousInfo || previousInfo.key !== info.key) {
+        const nextInfo = getLocalDateInfo(nextEntry.timestamp);
+        if (!nextInfo || nextInfo.key !== info.key) {
           dayLabel = formatDaySeparatorLabel(info.date);
         }
       }

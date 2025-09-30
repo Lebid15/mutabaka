@@ -465,7 +465,7 @@ function ChatBubbleBase({ text, caption, time, date, isMine, status, deliveredPa
     ? isLight ? '#7c4a21' : '#aca7f3ff'
     : isLight ? '#8c6d52' : '#94a3b8';
 
-  const showTicks = Boolean(status);
+  const showTicks = Boolean(isMine && status);
   const baseSentColor = isLight ? '#696552ff' : '#807a6bff';
   const deliveredActiveColor = isLight ? '#38bdf8' : '#60a5fa';
   const readColor = isLight ? '#10b981' : '#34d399';
