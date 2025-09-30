@@ -3534,7 +3534,13 @@ export default function Home() {
                               setShowOnlyTransactions(v => !v);
                               setTopToolsMenuOpen(false);
                             }}
-                            className={`flex w-full items-center justify-between gap-3 px-4 py-3 text-xs transition ${showOnlyTransactions ? 'bg-green-500/10 text-green-200' : 'text-gray-100 hover:bg-white/5'}`}
+                            className={`flex w-full items-center justify-between gap-3 px-4 py-3 text-xs transition border ${showOnlyTransactions
+                              ? (isLightTheme
+                                ? 'bg-[#F5FBF6] text-[#134E36] border-[#8DD7B0] shadow-sm'
+                                : 'bg-[#133528] text-[#C2F3D4] border-[#2D6A47]')
+                              : (isLightTheme
+                                ? 'text-[#285E43] hover:bg-[#F7FBF9] border-transparent'
+                                : 'text-gray-100 hover:bg-white/10 border-transparent')}`}
                           >
                             <span className="flex items-center gap-2">
                               <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' className='h-4 w-4' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
@@ -3822,7 +3828,12 @@ export default function Home() {
                   : 'self-center bg-gray-700/60 text-gray-100 px-3 py-1.5 rounded-full text-[11px] border border-white/10';
                 if (showOnlyTransactions) {
                   parts.push(
-                    <div key="filter_badge" className="mx-auto mt-1 mb-0 text-[11px] px-3 py-1 rounded-full border border-green-400/40 bg-green-500/15 text-green-300 flex items-center gap-2">
+                    <div
+                      key="filter_badge"
+                      className={`mx-auto mt-1 mb-0 text-[11px] px-3 py-1 rounded-full border flex items-center gap-2 ${isLightTheme
+                        ? 'bg-[#F5FBF6] text-[#134E36] border-[#8DD7B0] shadow-sm'
+                        : 'bg-[#133528] text-[#C2F3D4] border-[#2D6A47]'}`}
+                    >
                       <span>عرض المعاملات فقط</span>
                       <span className="font-semibold" dir="ltr">{visibleMessages.length}</span>
                       <button onClick={()=> setShowOnlyTransactions(false)} className="ml-2 text-[10px] underline decoration-dotted">
