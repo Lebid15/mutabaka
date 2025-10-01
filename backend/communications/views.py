@@ -400,6 +400,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
         payload = {
             'type': 'delete.request',
             'conversation_id': conv.id,
+            'user_id': user.id,
             'username': user.username,
             'display_name': getattr(user, 'display_name', '') or user.username,
             'requested_at': requested_at_iso,
@@ -428,19 +429,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
         try:
             from .pusher_client import pusher_client
             if pusher_client:
-                pusher_client.trigger(f"chat_{conv.id}", 'message', {
-<<<<<<< HEAD
-                    **payload,
-                    'requested_at': requested_at_iso,
-=======
-                    'type': 'delete.request',
-                    'conversation_id': conv.id,
-                    'user_id': user.id,
-                    'username': user.username,
-                    'display_name': getattr(user, 'display_name', '') or user.username,
-                    'requested_at': conv.delete_requested_at.isoformat() if conv.delete_requested_at else None,
->>>>>>> 717f9ee (add icons for social media)
-                })
+                pusher_client.trigger(f"chat_{conv.id}", 'message', payload)
         except Exception:
             pass
         # بث الحدث أيضاً عبر قنوات WebSocket الداخلية لكي تستلمه تطبيقاتنا المباشرة
@@ -483,6 +472,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
         payload = {
             'type': 'delete.approved',
             'conversation_id': cid,
+            'user_id': user.id,
             'username': user.username,
             'display_name': getattr(user, 'display_name', '') or user.username,
             'requested_by': requested_by_username,
@@ -510,17 +500,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
         try:
             from .pusher_client import pusher_client
             if pusher_client:
-<<<<<<< HEAD
                 pusher_client.trigger(f"chat_{cid}", 'message', payload)
-=======
-                pusher_client.trigger(f"chat_{cid}", 'message', {
-                    'type': 'delete.approved',
-                    'conversation_id': cid,
-                    'user_id': user.id,
-                    'username': user.username,
-                    'display_name': getattr(user, 'display_name', '') or user.username,
-                })
->>>>>>> 717f9ee (add icons for social media)
         except Exception:
             pass
         # بث عبر قنوات WebSocket الداخلية
@@ -558,6 +538,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
         payload = {
             'type': 'delete.declined',
             'conversation_id': conv.id,
+            'user_id': user.id,
             'username': user.username,
             'display_name': getattr(user, 'display_name', '') or user.username,
         }
@@ -584,17 +565,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
         try:
             from .pusher_client import pusher_client
             if pusher_client:
-<<<<<<< HEAD
                 pusher_client.trigger(f"chat_{conv.id}", 'message', payload)
-=======
-                pusher_client.trigger(f"chat_{conv.id}", 'message', {
-                    'type': 'delete.declined',
-                    'conversation_id': conv.id,
-                    'user_id': user.id,
-                    'username': user.username,
-                    'display_name': getattr(user, 'display_name', '') or user.username,
-                })
->>>>>>> 717f9ee (add icons for social media)
         except Exception:
             pass
         # بث عبر قنوات WebSocket الداخلية

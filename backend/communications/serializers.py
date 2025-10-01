@@ -124,26 +124,19 @@ class ConversationSerializer(serializers.ModelSerializer):
     delete_requested_by = PublicUserSerializer(read_only=True)
     mutedUntil = serializers.SerializerMethodField()
     isMuted = serializers.SerializerMethodField()
-<<<<<<< HEAD
     deleteRequest = serializers.SerializerMethodField()
-=======
     deleteRequestedBy = serializers.SerializerMethodField()
     deleteRequestedById = serializers.SerializerMethodField()
     deleteRequestedAt = serializers.SerializerMethodField()
->>>>>>> 717f9ee (add icons for social media)
 
     class Meta:
         model = Conversation
         fields = [
             "id", "user_a", "user_b", "created_at",
             "last_message_at", "last_activity_at", "last_message_preview",
-<<<<<<< HEAD
             "mutedUntil", "isMuted", "deleteRequest",
-=======
-            "mutedUntil", "isMuted",
             "delete_requested_by", "delete_requested_by_id", "delete_requested_at",
             "deleteRequestedBy", "deleteRequestedById", "deleteRequestedAt",
->>>>>>> 717f9ee (add icons for social media)
         ]
 
     def get_mutedUntil(self, obj):
