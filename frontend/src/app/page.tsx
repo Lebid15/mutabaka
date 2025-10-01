@@ -14,6 +14,7 @@ import { FaWhatsapp, FaFacebookF, FaYoutube, FaTelegramPlane, FaInstagram, FaTwi
 import { SiTiktok } from 'react-icons/si';
 import { HiOutlineEnvelope } from 'react-icons/hi2';
 import { FiLink } from 'react-icons/fi';
+import { AiOutlineFileDone } from 'react-icons/ai';
 
 // قائمة احتياطية (fallback) في حال تأخر تحميل العملات من الخادم
 const fallbackCurrencies = [
@@ -3990,11 +3991,17 @@ export default function Home() {
                         )}
                         {/* Text with ticks (no inline time) */}
                         {content && (
-                          <div className="text-sm leading-6 break-words whitespace-pre-line" dir="rtl">
-                            <bdi className="min-w-0 break-words" style={{unicodeBidi:'isolate'}}>
-                              {showHighlight ? highlightText(content, searchQuery) : content}
-                            </bdi>
-                          </div>
+
+<div className="flex flex-col items-center text-center gap-2" dir="rtl">
+  <AiOutlineFileDone className="text-yellow-400 drop-shadow-glow text-8xl" />
+  <div className="w-10 border-t border-yellow-400/70"></div>
+  <span className="text-lg font-semibold text-yellow-400">الحساب صفر 000</span>
+  <div className="w-10 border-t border-yellow-400/70"></div>
+  <span className="text-base text-yellow-300">{formatDateShort(m.created_at)}</span>
+</div>
+
+
+
                         )}
                         {showMeta && (
                           <div className="mt-1 text-[11px] opacity-70 flex items-center gap-1 justify-end" dir="auto">
