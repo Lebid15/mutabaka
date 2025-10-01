@@ -395,15 +395,42 @@ class ConversationViewSet(viewsets.ModelViewSet):
         conv.delete_requested_by = user
         conv.delete_requested_at = timezone.now()
         conv.save(update_fields=['delete_requested_by', 'delete_requested_at'])
+        requested_at_iso = conv.delete_requested_at.isoformat() if conv.delete_requested_at else timezone.now().isoformat()
+        counterpart_id = conv.user_b_id if user.id == conv.user_a_id else conv.user_a_id
+        payload = {
+            'type': 'delete.request',
+            'conversation_id': conv.id,
+            'username': user.username,
+            'display_name': getattr(user, 'display_name', '') or user.username,
+            'requested_at': requested_at_iso,
+        }
+        # بث عبر WebSocket الداخلي للطرف الآخر (المحادثة + صندوق الوارد)
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            channel_layer = get_channel_layer()
+            if channel_layer is not None:
+                async_to_sync(channel_layer.group_send)(f"conv_{conv.id}", {
+                    'type': 'broadcast.message',
+                    'data': payload,
+                })
+                viewer_ids = set(get_conversation_viewer_ids(conv))
+                for uid in viewer_ids:
+                    if uid == user.id:
+                        continue
+                    async_to_sync(channel_layer.group_send)(f"user_{uid}", {
+                        'type': 'broadcast.message',
+                        'data': {**payload, 'scope': 'inbox'},
+                    })
+        except Exception:
+            pass
         # بث عبر Pusher للطرف الآخر
         try:
             from .pusher_client import pusher_client
             if pusher_client:
                 pusher_client.trigger(f"chat_{conv.id}", 'message', {
-                    'type': 'delete.request',
-                    'conversation_id': conv.id,
-                    'username': user.username,
-                    'display_name': getattr(user, 'display_name', '') or user.username,
+                    **payload,
+                    'requested_at': requested_at_iso,
                 })
         except Exception:
             pass
@@ -416,19 +443,43 @@ class ConversationViewSet(viewsets.ModelViewSet):
         # الموافقة مسموحة فقط للطرف الآخر غير صاحب الطلب
         if conv.delete_requested_by is None or conv.delete_requested_by_id == user.id:
             return Response({'detail': 'لا يوجد طلب معلق أو لا يمكنك الموافقة على طلبك'}, status=400)
+        requested_by_username = getattr(conv.delete_requested_by, 'username', None)
+        requested_by_display = getattr(conv.delete_requested_by, 'display_name', '') or requested_by_username or ''
+        viewer_ids = set(get_conversation_viewer_ids(conv))
         # احذف المحادثة وجميع رسائلها
         cid = conv.id
         conv.delete()
+        payload = {
+            'type': 'delete.approved',
+            'conversation_id': cid,
+            'username': user.username,
+            'display_name': getattr(user, 'display_name', '') or user.username,
+            'requested_by': requested_by_username,
+            'requested_by_display': requested_by_display,
+        }
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            channel_layer = get_channel_layer()
+            if channel_layer is not None:
+                async_to_sync(channel_layer.group_send)(f"conv_{cid}", {
+                    'type': 'broadcast.message',
+                    'data': payload,
+                })
+                for uid in viewer_ids:
+                    if uid == user.id:
+                        continue
+                    async_to_sync(channel_layer.group_send)(f"user_{uid}", {
+                        'type': 'broadcast.message',
+                        'data': {**payload, 'scope': 'inbox'},
+                    })
+        except Exception:
+            pass
         # أرسل تأكيد عبر Pusher للطرفين
         try:
             from .pusher_client import pusher_client
             if pusher_client:
-                pusher_client.trigger(f"chat_{cid}", 'message', {
-                    'type': 'delete.approved',
-                    'conversation_id': cid,
-                    'username': user.username,
-                    'display_name': getattr(user, 'display_name', '') or user.username,
-                })
+                pusher_client.trigger(f"chat_{cid}", 'message', payload)
         except Exception:
             pass
         return Response({'status': 'ok'})
@@ -442,16 +493,36 @@ class ConversationViewSet(viewsets.ModelViewSet):
         conv.delete_requested_by = None
         conv.delete_requested_at = None
         conv.save(update_fields=['delete_requested_by', 'delete_requested_at'])
+        payload = {
+            'type': 'delete.declined',
+            'conversation_id': conv.id,
+            'username': user.username,
+            'display_name': getattr(user, 'display_name', '') or user.username,
+        }
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            channel_layer = get_channel_layer()
+            if channel_layer is not None:
+                async_to_sync(channel_layer.group_send)(f"conv_{conv.id}", {
+                    'type': 'broadcast.message',
+                    'data': payload,
+                })
+                viewer_ids = set(get_conversation_viewer_ids(conv))
+                for uid in viewer_ids:
+                    if uid == user.id:
+                        continue
+                    async_to_sync(channel_layer.group_send)(f"user_{uid}", {
+                        'type': 'broadcast.message',
+                        'data': {**payload, 'scope': 'inbox'},
+                    })
+        except Exception:
+            pass
         # بث رفض للطرف الآخر
         try:
             from .pusher_client import pusher_client
             if pusher_client:
-                pusher_client.trigger(f"chat_{conv.id}", 'message', {
-                    'type': 'delete.declined',
-                    'conversation_id': conv.id,
-                    'username': user.username,
-                    'display_name': getattr(user, 'display_name', '') or user.username,
-                })
+                pusher_client.trigger(f"chat_{conv.id}", 'message', payload)
         except Exception:
             pass
         return Response({'status': 'ok'})

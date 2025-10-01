@@ -123,13 +123,14 @@ class ConversationSerializer(serializers.ModelSerializer):
     user_b = PublicUserSerializer(read_only=True)
     mutedUntil = serializers.SerializerMethodField()
     isMuted = serializers.SerializerMethodField()
+    deleteRequest = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversation
         fields = [
             "id", "user_a", "user_b", "created_at",
             "last_message_at", "last_activity_at", "last_message_preview",
-            "mutedUntil", "isMuted",
+            "mutedUntil", "isMuted", "deleteRequest",
         ]
 
     def get_mutedUntil(self, obj):
@@ -141,6 +142,33 @@ class ConversationSerializer(serializers.ModelSerializer):
             return m.muted_until.isoformat() if (m and m.muted_until) else None
         except Exception:
             return None
+
+    def get_deleteRequest(self, obj):
+        try:
+            if not obj.delete_requested_by_id or not obj.delete_requested_at:
+                return None
+        except Exception:
+            return None
+        request = self.context.get('request') if hasattr(self, 'context') else None
+        viewer = getattr(request, 'user', None)
+        by = getattr(obj, 'delete_requested_by', None)
+        by_username = getattr(by, 'username', None)
+        by_display = getattr(by, 'display_name', '') or by_username or ''
+        viewer_id = getattr(viewer, 'id', None) if viewer and getattr(viewer, 'is_authenticated', False) else None
+        pending_for_viewer = bool(viewer_id and by and getattr(by, 'id', None) != viewer_id)
+        requested_by_me = bool(viewer_id and by and getattr(by, 'id', None) == viewer_id)
+        try:
+            requested_at = obj.delete_requested_at.isoformat() if obj.delete_requested_at else None
+        except Exception:
+            requested_at = None
+        return {
+            'by': by_username,
+            'display_name': by_display,
+            'user_id': getattr(by, 'id', None),
+            'requested_at': requested_at,
+            'pending_for_viewer': pending_for_viewer,
+            'requested_by_me': requested_by_me,
+        }
 
     def get_isMuted(self, obj):
         request = self.context.get('request') if hasattr(self, 'context') else None

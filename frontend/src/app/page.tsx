@@ -1822,6 +1822,7 @@ export default function Home() {
     : 'rounded-lg bg-green-500/20 hover:bg-green-500/30 backdrop-blur-sm border border-green-400/30 text-green-300';
   // أزلنا ميزة إظهار/إخفاء حقل المعاملات — ستبقى ظاهرة دائماً
   const contactsSigRef = useRef<string>('');
+  const lastDeleteEventRef = useRef<string>('');
   const [pendingDeleteByConv, setPendingDeleteByConv] = useState<Record<number, { from: string; at: string }>>({});
   const [unreadByConv, setUnreadByConv] = useState<Record<number, number>>({});
   const totalUnread = useMemo(() => Object.values(unreadByConv).reduce((a,b)=>a+(b||0), 0), [unreadByConv]);
@@ -1864,32 +1865,51 @@ export default function Home() {
   }, []);
 
   // Manual refresh of conversations/contacts mapping
+  const hydrateConversations = useCallback((convArr: any[]) => {
+    setConversations(convArr);
+    const meta: Record<number, { user_a_id:number; user_b_id:number }> = {};
+    for (const c of convArr) {
+      if (c && c.id && c.user_a && c.user_b) meta[c.id] = { user_a_id: c.user_a.id, user_b_id: c.user_b.id };
+    }
+    setConvMetaById(meta);
+    const mapped = convArr.map((c: any) => {
+      const meId = profile?.id;
+      let other = c.user_a;
+      if (meId && c.user_a && c.user_a.id === meId) other = c.user_b; else if (meId && c.user_b && c.user_b.id === meId) other = c.user_a; else if (c.user_b) other = c.user_b;
+      return {
+        id: c.id,
+        otherUserId: other?.id,
+        otherUsername: other?.username,
+        name: other?.display_name || other?.username || other?.email || 'مستخدم',
+        avatar: other?.logo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent((other?.display_name||other?.username||'U'))}&background=0D8ABC&color=fff`,
+        last_message_at: c.last_message_at,
+        last_message_preview: c.last_message_preview,
+        isMuted: !!(c as any).isMuted,
+        mutedUntil: (c as any).mutedUntil ?? null,
+      };
+    });
+    setContacts(mapped);
+    const pendingMap: Record<number, { from: string; at: string }> = {};
+    const fallbackNow = new Date().toISOString();
+    for (const c of convArr) {
+      if (!c || !c.id) continue;
+      const req = (c as any)?.deleteRequest ?? (c as any)?.delete_request;
+      if (req && typeof req === 'object') {
+        const by = typeof req.by === 'string' && req.by ? req.by
+          : (typeof req.username === 'string' && req.username ? req.username
+            : (typeof req.requested_by === 'string' && req.requested_by ? req.requested_by : 'unknown'));
+        const requestedAt = typeof req.requested_at === 'string' && req.requested_at ? req.requested_at : fallbackNow;
+        pendingMap[c.id] = { from: by || 'unknown', at: requestedAt };
+      }
+    }
+    setPendingDeleteByConv(pendingMap);
+    return mapped;
+  }, [profile?.id]);
+
   const refreshContacts = async () => {
     try {
       const convArr = await apiClient.listConversations();
-      setConversations(convArr);
-      const meta: Record<number, { user_a_id:number; user_b_id:number }> = {};
-      for (const c of convArr) {
-        if (c && c.id && c.user_a && c.user_b) meta[c.id] = { user_a_id: c.user_a.id, user_b_id: c.user_b.id };
-      }
-      setConvMetaById(meta);
-      const mapped = convArr.map((c: any) => {
-        const meId = profile?.id;
-        let other = c.user_a;
-        if (meId && c.user_a && c.user_a.id === meId) other = c.user_b; else if (meId && c.user_b && c.user_b.id === meId) other = c.user_a; else if (c.user_b) other = c.user_b;
-        return {
-          id: c.id,
-          otherUserId: other?.id,
-          otherUsername: other?.username,
-          name: other?.display_name || other?.username || other?.email || 'مستخدم',
-          avatar: other?.logo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent((other?.display_name||other?.username||'U'))}&background=0D8ABC&color=fff`,
-          last_message_at: c.last_message_at,
-          last_message_preview: c.last_message_preview,
-          isMuted: !!(c as any).isMuted,
-          mutedUntil: (c as any).mutedUntil ?? null,
-        };
-      });
-      setContacts(mapped);
+      hydrateConversations(convArr);
       pushToast({ type: 'success', msg: 'تم تحديث جهات الاتصال' });
     } catch {
       pushToast({ type: 'error', msg: 'تعذر تحديث جهات الاتصال' });
@@ -1902,6 +1922,68 @@ export default function Home() {
     if (name) return `📎 ${name}`;
     return attachment ? '📎 ملف مرفق' : '';
   }, []);
+
+  const processDeleteEvent = useCallback((raw: any) => {
+    if (!raw || typeof raw !== 'object') return false;
+    const type = typeof raw.type === 'string' ? raw.type : undefined;
+    if (!type || !type.startsWith('delete.')) return false;
+    const convId = Number(raw.conversation_id ?? raw.conversationId);
+    if (!Number.isFinite(convId) || convId <= 0) return false;
+    const requestedAt = typeof raw.requested_at === 'string' && raw.requested_at ? raw.requested_at : '';
+    const requester = (typeof raw.username === 'string' && raw.username)
+      || (typeof raw.requested_by === 'string' && raw.requested_by)
+      || (typeof raw.by === 'string' && raw.by)
+      || 'unknown';
+    const signature = `${type}:${convId}:${requester}:${requestedAt}`;
+    if (lastDeleteEventRef.current === signature) {
+      return true;
+    }
+    lastDeleteEventRef.current = signature;
+    if (type === 'delete.request') {
+      const at = requestedAt || new Date().toISOString();
+      setPendingDeleteByConv(prev => ({ ...prev, [convId]: { from: requester || 'unknown', at } }));
+      if (profile?.username && requester !== profile.username && selectedConversationId === convId && mobileView === 'chat') {
+        pushToast({ type: 'info', msg: 'وصل طلب حذف جديد لهذه المحادثة' });
+      }
+      return true;
+    }
+    if (type === 'delete.approved') {
+      setPendingDeleteByConv(prev => {
+        if (!(convId in prev)) return prev;
+        const cp = { ...prev };
+        delete cp[convId];
+        return cp;
+      });
+      setContacts(prev => prev.filter(c => c.id !== convId));
+      setConversations(prev => prev.filter(c => c && c.id !== convId));
+      setUnreadByConv(prev => {
+        if (!(convId in prev)) return prev;
+        const next = { ...prev };
+        delete next[convId];
+        return next;
+      });
+      if (selectedConversationId === convId) {
+        setSelectedConversationId(null);
+        setCurrentContactIndex(null);
+        setMessages([]);
+        setSummary(null);
+        setNetBalance(null);
+      }
+      pushToast({ type: 'success', msg: 'تم حذف جهة الاتصال بعد الموافقة' });
+      return true;
+    }
+    if (type === 'delete.declined') {
+      setPendingDeleteByConv(prev => {
+        if (!(convId in prev)) return prev;
+        const cp = { ...prev };
+        delete cp[convId];
+        return cp;
+      });
+      pushToast({ type: 'info', msg: 'رفض الطرف الآخر طلب الحذف' });
+      return true;
+    }
+    return false;
+  }, [mobileView, profile?.username, pushToast, selectedConversationId, setContacts, setConversations, setCurrentContactIndex, setMessages, setNetBalance, setPendingDeleteByConv, setSelectedConversationId, setSummary, setUnreadByConv]);
 
   const generateAttachmentPreview = useCallback(async (attachment: AttachmentLike) => {
     if (!attachment || !attachment.url) return null;
@@ -2096,7 +2178,7 @@ export default function Home() {
         pushToast({ type:'error', msg:'تعذر جلب المحافظ' });
       }
     })();
-  }, [isAuthed]);
+  }, [hydrateConversations, isAuthed, isTeamActor]);
 
   // Load conversations and contacts once after authentication
   useEffect(() => {
@@ -2121,29 +2203,7 @@ export default function Home() {
         const convs = await apiClient.listConversations();
         if (!active) return;
         const convArr = Array.isArray(convs) ? convs : [];
-        setConversations(convArr);
-        const meta: Record<number, { user_a_id:number; user_b_id:number }> = {};
-        for (const c of convArr) {
-          if (c && c.id && c.user_a && c.user_b) meta[c.id] = { user_a_id: c.user_a.id, user_b_id: c.user_b.id };
-        }
-        setConvMetaById(meta);
-          const mapped = convArr.map((c: any) => {
-          const meId = profile?.id;
-          let other = c.user_a;
-          if (meId && c.user_a && c.user_a.id === meId) other = c.user_b; else if (meId && c.user_b && c.user_b.id === meId) other = c.user_a; else if (c.user_b) other = c.user_b;
-          return {
-            id: c.id,
-            otherUserId: other?.id,
-            otherUsername: other?.username,
-              name: other?.display_name || other?.username || other?.email || 'مستخدم',
-              avatar: other?.logo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent((other?.display_name||other?.username||'U'))}&background=0D8ABC&color=fff`,
-            last_message_at: c.last_message_at,
-            last_message_preview: c.last_message_preview,
-            isMuted: !!(c as any).isMuted,
-            mutedUntil: (c as any).mutedUntil ?? null,
-          };
-        });
-        setContacts(mapped);
+        const mapped = hydrateConversations(convArr) || [];
         // reset unread for any conversations not present anymore
         setUnreadByConv(prev => {
           const allowed = new Set(mapped.map(m=>m.id));
@@ -2250,6 +2310,9 @@ export default function Home() {
       if (closed) return;
       try {
         const data = JSON.parse(e.data);
+        if (processDeleteEvent(data)) {
+          return;
+        }
         if (data?.type === 'inbox.update') {
           setContacts(prev => {
             const copy = prev ? [...prev] : [];
@@ -2265,24 +2328,8 @@ export default function Home() {
             (async ()=>{
               try {
                 const convs = await apiClient.listConversations();
-                const mapped = convs.map((c: any) => {
-                  const meId = profile?.id;
-                  let other = c.user_a;
-                  if (meId && c.user_a && c.user_a.id === meId) other = c.user_b; else if (meId && c.user_b && c.user_b.id === meId) other = c.user_a; else if (c.user_b) other = c.user_b;
-                  return {
-                    id: c.id,
-                    otherUserId: other?.id,
-                    otherUsername: other?.username,
-                    name: other?.display_name || other?.username || other?.email || 'مستخدم',
-                    avatar: other?.logo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent((other?.display_name||other?.username||'U'))}&background=0D8ABC&color=fff`,
-                    last_message_at: c.last_message_at,
-                    last_message_preview: c.last_message_preview,
-                    isMuted: !!(c as any).isMuted,
-                    mutedUntil: (c as any).mutedUntil ?? null,
-                  };
-                });
-                setConversations(convs);
-                setContacts(mapped);
+                const convArr = Array.isArray(convs) ? convs : [];
+                hydrateConversations(convArr);
               } catch {}
             })();
             return copy;
@@ -2315,7 +2362,7 @@ export default function Home() {
       }
     }, 15000);
     return () => { closed = true; clearInterval(hb); sub.close(); };
-  }, [isAuthed, profile?.id, selectedConversationId, mobileView]);
+  }, [contacts, hydrateConversations, isAuthed, mobileView, processDeleteEvent, profile?.id, selectedConversationId, tryPlayMessageSound]);
 
   // NOTE: Per-user Pusher notifications block removed. Inbox WS already updates previews/unread.
   // منطق إضافة المعاملة: إذا أدخل المستخدم قيمة في حقل "لنا" فهذا يعني أنه استلم (credit) وبالتالي زيادة في محفظته ونقصان عند الطرف الآخر
@@ -2503,27 +2550,7 @@ export default function Home() {
     let soundPromptShown = false;
   const onMessage = (data: any) => {
       try {
-        if (data?.type === 'delete.request' && data?.conversation_id) {
-          setPendingDeleteByConv(prev => ({ ...prev, [data.conversation_id]: { from: data.username || 'unknown', at: new Date().toISOString() } }));
-          return;
-        }
-        if (data?.type === 'delete.approved' && data?.conversation_id) {
-          // المحادثة حذفت بعد موافقة الطرف الآخر
-          setPendingDeleteByConv(prev => { const cp = { ...prev }; delete cp[data.conversation_id]; return cp; });
-          setContacts(prev => prev.filter(c => c.id !== data.conversation_id));
-          if (selectedConversationId === data.conversation_id) {
-            setSelectedConversationId(null);
-            setCurrentContactIndex(null);
-            setMessages([]);
-            setSummary(null);
-            setNetBalance(null);
-          }
-          pushToast({ type: 'success', msg: 'تم حذف جهة الاتصال بعد الموافقة' });
-          return;
-        }
-        if (data?.type === 'delete.declined' && data?.conversation_id) {
-          setPendingDeleteByConv(prev => { const cp = { ...prev }; delete cp[data.conversation_id]; return cp; });
-          pushToast({ type: 'info', msg: 'رفض الطرف الآخر طلب الحذف' });
+        if (processDeleteEvent(data)) {
           return;
         }
   const systemSubtype = typeof data?.systemSubtype === 'string'
@@ -2675,7 +2702,7 @@ export default function Home() {
       try { pusher && pusher.unsubscribe && pusher.unsubscribe(channelName); } catch {}
       try { pusher && pusher.disconnect && pusher.disconnect(); } catch {}
     };
-  }, [isAuthed, selectedConversationId, profile?.username, contacts]);
+  }, [contacts, isAuthed, mobileView, processDeleteEvent, profile?.username, selectedConversationId]);
   
 
   // Fetch messages when conversation changes (single fetch; no re-fetch on contact list reorder)
@@ -2814,6 +2841,9 @@ export default function Home() {
         const PUSHER_ENABLED = Boolean(process.env.NEXT_PUBLIC_PUSHER_KEY && process.env.NEXT_PUBLIC_PUSHER_CLUSTER);
         if (payload?.type) {
           try { console.debug('[CHAT WS]', payload.type, { conversation_id: payload.conversation_id, id: payload.id, client_id: payload.client_id, created_at: payload.created_at }); } catch {}
+        }
+        if (processDeleteEvent(payload)) {
+          return;
         }
         // Fallback: if Pusher is not configured, use WS chat.message to update the thread
   if (payload.type === 'chat.message') {
@@ -3371,19 +3401,7 @@ export default function Home() {
             <SidebarHeaderAddContact isTeamActor={isTeamActor} onAdded={async (newConv:any)=>{
               const convs = await apiClient.listConversations();
               const convArr = Array.isArray(convs) ? convs : [];
-              setConversations(convArr);
-              const meta: Record<number, { user_a_id:number; user_b_id:number }> = {};
-              for (const c of convArr) {
-                if (c && c.id && c.user_a && c.user_b) meta[c.id] = { user_a_id: c.user_a.id, user_b_id: c.user_b.id };
-              }
-              setConvMetaById(meta);
-              const mapped: {id:number; name:string; avatar:string; otherUsername?:string; last_message_at?: string; last_message_preview?: string; isMuted?: boolean; mutedUntil?: string|null}[] = convArr.map((c: any) => {
-                const meId = profile?.id;
-                let other = c.user_a;
-                if (meId && c.user_a && c.user_a.id === meId) other = c.user_b; else if (meId && c.user_b && c.user_b.id === meId) other = c.user_a; else if (c.user_b) other = c.user_b;
-                return { id: c.id, name: other?.display_name || other?.username || other?.email || 'مستخدم', avatar: other?.logo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent((other?.display_name||other?.username||'U'))}&background=0D8ABC&color=fff`, otherUsername: other?.username, last_message_at: c.last_message_at, last_message_preview: c.last_message_preview, isMuted: !!(c as any).isMuted, mutedUntil: (c as any).mutedUntil ?? null };
-              });
-              setContacts(mapped);
+              const mapped = hydrateConversations(convArr) || [];
               const idx = mapped.findIndex((m:{id:number})=>m.id===newConv.id);
               if(idx!==-1){ setCurrentContactIndex(idx); setSelectedConversationId(newConv.id); }
             }} existingUsernames={contacts.map(c=> c.otherUsername || c.name)} currentUsername={profile?.username} onRefreshContacts={refreshContacts} onSubscriptionGate={(reason)=>{ setSubBannerMsg(reason); setShowSubBanner(true); }} />
@@ -3510,19 +3528,7 @@ export default function Home() {
                   <SidebarHeaderAddContact isTeamActor={isTeamActor} onAdded={async (newConv:any)=>{
                     const convs = await apiClient.listConversations();
                     const convArr = Array.isArray(convs) ? convs : [];
-                    setConversations(convArr);
-                    const meta: Record<number, { user_a_id:number; user_b_id:number }> = {};
-                    for (const c of convArr) {
-                      if (c && c.id && c.user_a && c.user_b) meta[c.id] = { user_a_id: c.user_a.id, user_b_id: c.user_b.id };
-                    }
-                    setConvMetaById(meta);
-                    const mapped: {id:number; name:string; avatar:string; otherUsername?:string; last_message_at?: string; last_message_preview?: string; isMuted?: boolean; mutedUntil?: string|null}[] = convArr.map((c: any) => {
-                      const meId = profile?.id;
-                      let other = c.user_a;
-                      if (meId && c.user_a && c.user_a.id === meId) other = c.user_b; else if (meId && c.user_b && c.user_b.id === meId) other = c.user_a; else if (c.user_b) other = c.user_b;
-                      return { id: c.id, name: other?.display_name || other?.username || other?.email || 'مستخدم', avatar: other?.logo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent((other?.display_name||other?.username||'U'))}&background=0D8ABC&color=fff`, otherUsername: other?.username, last_message_at: c.last_message_at, last_message_preview: c.last_message_preview, isMuted: !!(c as any).isMuted, mutedUntil: (c as any).mutedUntil ?? null };
-                    });
-                    setContacts(mapped);
+                    const mapped = hydrateConversations(convArr) || [];
                     const idx = mapped.findIndex((m:{id:number})=>m.id===newConv.id);
                     if(idx!==-1){ setCurrentContactIndex(idx); setSelectedConversationId(newConv.id); setMobileView('chat'); }
                   }} existingUsernames={contacts.map(c=> c.otherUsername || c.name)} currentUsername={profile?.username} onRefreshContacts={refreshContacts} onSubscriptionGate={(reason)=>{ setSubBannerMsg(reason); setShowSubBanner(true); }} />
