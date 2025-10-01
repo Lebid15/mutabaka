@@ -60,6 +60,73 @@ const formatDateTimeLabel = (iso?: string) => {
   const timePart = formatTimeShort(iso);
   return [datePart, timePart].filter(Boolean).join(' ');
 };
+const normalizeWalletText = (value: string): string =>
+  value.replace(/[\u200e\u200f\u202a-\u202e]/g, '').trim();
+const WALLET_SETTLED_MATCHES = [
+  'الحساب صفر',
+  'الحساب 000 صفر',
+  'الحساب 800 صفر',
+  'تمت تسوية جميع المحافظ',
+  'تم تصفير جميع المحافظ',
+  'تم تصفير المحافظ',
+];
+const matchesWalletSettlementPhrase = (text: string): boolean => {
+  const normalized = normalizeWalletText(text);
+  return WALLET_SETTLED_MATCHES.some(token => normalized.includes(token));
+};
+const isWalletSettlementMessage = (msg: any): boolean => {
+  if (!msg) return false;
+  const subtype = typeof msg.systemSubtype === 'string'
+    ? msg.systemSubtype
+    : (typeof msg.system_subtype === 'string' ? msg.system_subtype : undefined);
+  if (subtype === 'wallet_settled') return true;
+  const body = typeof msg.text === 'string'
+    ? msg.text
+    : (typeof msg.body === 'string' ? msg.body : '');
+  if (!body) return false;
+  return matchesWalletSettlementPhrase(body);
+};
+
+const WalletSettlementCard = ({ msg, isLight }: { msg: any; isLight: boolean }) => {
+  const timestamp = formatDateTimeLabel(msg?.settled_at || msg?.created_at);
+  const wrapClass = isLight
+    ? 'bg-[#FDE8D8] text-[#8C4122] border border-[#F5C7A5]'
+    : 'bg-white/10 text-amber-100 border border-white/10 backdrop-blur';
+  return (
+    <div
+      className={`rounded-2xl px-6 py-5 shadow-sm max-w-xs sm:max-w-sm w-full flex flex-col items-center text-center gap-3 ${wrapClass}`}
+      role="status"
+      aria-live="polite"
+    >
+      <span className="text-green-500 font-semibold text-base sm:text-lg">الحساب صفر</span>
+      <AiOutlineFileDone aria-hidden className="text-emerald-500" size={56} />
+      <time className="text-xs sm:text-sm opacity-80" dir="ltr">
+        {timestamp || '—'}
+      </time>
+    </div>
+  );
+};
+
+const NormalTextBubble = ({
+  content,
+  showHighlight,
+  searchQuery,
+  highlightText,
+}: {
+  content: string;
+  showHighlight: boolean;
+  searchQuery: string;
+  highlightText: (text: string, query: string) => React.ReactNode;
+}) => {
+  if (!content) return null;
+  return (
+    <div className="text-sm leading-6 break-words whitespace-pre-line" dir="rtl">
+      <bdi className="min-w-0 break-words" style={{ unicodeBidi: 'isolate' }}>
+        {showHighlight ? highlightText(content, searchQuery) : content}
+      </bdi>
+    </div>
+  );
+};
 // مفاتيح وتقسيم الأيام: اليوم/أمس/تاريخ كامل
 const dayKeyOf = (iso?: string) => {
   try {
@@ -2445,6 +2512,12 @@ export default function Home() {
           pushToast({ type: 'info', msg: 'رفض الطرف الآخر طلب الحذف' });
           return;
         }
+  const systemSubtype = typeof data?.systemSubtype === 'string'
+    ? data.systemSubtype
+    : (typeof data?.system_subtype === 'string' ? data.system_subtype : undefined);
+  const settledAt = typeof data?.settled_at === 'string'
+    ? data.settled_at
+    : (typeof data?.settledAt === 'string' ? data.settledAt : null);
   const incomingDisplay = (data?.senderDisplay || data?.display_name || '').toString();
   const isCurrent = !!(profile?.username && data?.username === profile.username && (!incomingDisplay || !currentSenderDisplay ? true : incomingDisplay === (currentSenderDisplay || '')));
   const txt = (data?.message ?? '').toString();
@@ -2462,15 +2535,18 @@ export default function Home() {
               const existingIdx = copy.findIndex(m => (m.id || 0) === messageIdNum);
               if (existingIdx !== -1) {
                 const existing = copy[existingIdx];
-                copy[existingIdx] = {
+                  copy[existingIdx] = {
                   ...existing,
                   text: txt,
-                  kind: tx ? 'transaction' : (data?.kind === 'system' ? 'system' : 'text'),
+                  kind: tx ? 'transaction' : (data?.kind === 'system' || systemSubtype ? 'system' : 'text'),
                   tx: tx || undefined,
                   delivery_status: Math.max(existing.delivery_status || 0, readAtPayload ? 2 : 1),
                   status: readAtPayload ? 'read' : ((existing.delivery_status || 0) >= 2 ? 'read' : 'delivered'),
                   read_at: readAtPayload || existing.read_at || null,
                   delivered_at: deliveredAtPayload || existing.delivered_at || null,
+                  systemSubtype: systemSubtype || existing.systemSubtype,
+                  system_subtype: systemSubtype || existing.system_subtype,
+                  settled_at: settledAt ?? existing.settled_at ?? null,
                 } as any;
                 return copy;
               }
@@ -2482,7 +2558,7 @@ export default function Home() {
                 sender: 'current',
                 text: txt,
                 created_at: new Date().toISOString(),
-                kind: tx ? 'transaction' : (data?.kind === 'system' ? 'system' : 'text'),
+                kind: tx ? 'transaction' : (data?.kind === 'system' || systemSubtype ? 'system' : 'text'),
                 tx: tx || undefined,
                 status: readAtPayload ? 'read' : 'delivered',
                 delivery_status: readAtPayload ? 2 : 1,
@@ -2490,6 +2566,9 @@ export default function Home() {
                 delivered_at: deliveredAtPayload,
                 senderDisplay: senderDisplay || undefined,
                 id: messageIdNum ?? undefined,
+                systemSubtype,
+                system_subtype: systemSubtype,
+                settled_at: settledAt ?? null,
               } as any,
             ];
           });
@@ -2501,16 +2580,19 @@ export default function Home() {
               if (existingIdx !== -1) {
                 const copy = [...prev];
                 const existing = copy[existingIdx];
-                copy[existingIdx] = {
+                  copy[existingIdx] = {
                   ...existing,
                   text: txt,
-                  kind: tx ? 'transaction' : (data?.kind === 'system' ? 'system' : 'text'),
+                  kind: tx ? 'transaction' : (data?.kind === 'system' || systemSubtype ? 'system' : 'text'),
                   tx: tx || undefined,
                   status: readAtPayload ? 'read' : 'delivered',
                   delivery_status: readAtPayload ? 2 : 1,
                   read_at: readAtPayload,
                   delivered_at: deliveredAtPayload,
                   senderDisplay: senderDisplay || existing.senderDisplay || undefined,
+                  systemSubtype: systemSubtype || existing.systemSubtype,
+                  system_subtype: systemSubtype || existing.system_subtype,
+                  settled_at: settledAt ?? existing.settled_at ?? null,
                 } as any;
                 return copy;
               }
@@ -2521,7 +2603,7 @@ export default function Home() {
                 sender: 'other',
                 text: txt,
                 created_at: new Date().toISOString(),
-                kind: tx ? 'transaction' : (data?.kind === 'system' ? 'system' : 'text'),
+                kind: tx ? 'transaction' : (data?.kind === 'system' || systemSubtype ? 'system' : 'text'),
                 tx: tx || undefined,
                 status: readAtPayload ? 'read' : 'delivered',
                 delivery_status: readAtPayload ? 2 : 1,
@@ -2529,6 +2611,9 @@ export default function Home() {
                 delivered_at: deliveredAtPayload,
                 senderDisplay: senderDisplay || undefined,
                 id: messageIdNum ?? undefined,
+                systemSubtype,
+                system_subtype: systemSubtype,
+                settled_at: settledAt ?? null,
               } as any,
             ];
           });
@@ -2593,8 +2678,14 @@ export default function Home() {
         setLoadingMessages(true);
   const data = await apiClient.getMessages(selectedConversationId);
         if (!active) return;
-  const mapped = (Array.isArray(data) ? data : []).map((m: any) => {
+        const mapped = (Array.isArray(data) ? data : []).map((m: any) => {
               const ds: number = (typeof m.delivery_status === 'number' && isFinite(m.delivery_status)) ? m.delivery_status : 0;
+              const systemSubtype = typeof m.system_subtype === 'string'
+                ? m.system_subtype
+                : (typeof m.systemSubtype === 'string' ? m.systemSubtype : undefined);
+              const settledAt = typeof m.settled_at === 'string'
+                ? m.settled_at
+                : (typeof m.settledAt === 'string' ? m.settledAt : undefined);
               const base: any = {
             id: m.id,
             sender: m.sender && profile && m.sender.id === profile.id ? 'current' : 'other',
@@ -2605,12 +2696,15 @@ export default function Home() {
                 senderDisplay: (m.senderDisplay || (m.sender && (m.sender.display_name || m.sender.username))) || undefined,
                 delivery_status: ds,
                 status: ds >= 2 ? 'read' : ds >= 1 ? 'delivered' : 'sent',
+                systemSubtype,
+                system_subtype: systemSubtype,
+                settled_at: settledAt || null,
           };
           if (m.type === 'transaction') {
             const tx = normalizeServerTransaction(m.tx) || parseTransaction(base.text);
             if (tx) return { ...base, kind: 'transaction', tx };
           }
-          if (m.type === 'system') return { ...base, kind: 'system' };
+          if (m.type === 'system' || systemSubtype) return { ...base, kind: 'system' };
           return { ...base, kind: 'text' };
         });
         const chrono = mapped.reverse();
@@ -2714,6 +2808,12 @@ export default function Home() {
           const txt = (payload?.body ?? '').toString();
           const messageIdNum = typeof payload.id === 'number' ? payload.id : null;
           const incomingClientId = typeof payload.client_id === 'string' && payload.client_id ? payload.client_id : null;
+          const systemSubtype = typeof payload?.systemSubtype === 'string'
+            ? payload.systemSubtype
+            : (typeof payload?.system_subtype === 'string' ? payload.system_subtype : undefined);
+          const settledAt = typeof payload?.settled_at === 'string'
+            ? payload.settled_at
+            : (typeof payload?.settledAt === 'string' ? payload.settledAt : null);
           const txFromServer = normalizeServerTransaction(payload?.tx);
           const tx = txFromServer || parseTransaction(txt);
           const previewLabel = previewFromMessage(txt, payload?.attachment);
@@ -2733,7 +2833,7 @@ export default function Home() {
                     id: messageIdNum ?? existing.id,
                     client_id: incomingClientId,
                     text: txt,
-                    kind: tx ? 'transaction' : 'text',
+                    kind: tx ? 'transaction' : (systemSubtype ? 'system' : 'text'),
                     tx: tx || undefined,
                     senderDisplay: (payload.senderDisplay || payload.display_name || existing.senderDisplay) || undefined,
                     attachment: payload.attachment ? {
@@ -2746,6 +2846,9 @@ export default function Home() {
                     delivered_at: typeof payload.delivered_at === 'string' ? payload.delivered_at : existing.delivered_at,
                     delivery_status: Math.max(existing.delivery_status || 0, typeof payload.delivery_status === 'number' ? payload.delivery_status : (payload.read_at ? 2 : 1)),
                     status: (typeof payload.read_at === 'string' && payload.read_at) ? 'read' : ((existing.delivery_status || 0) >= 2 ? 'read' : 'delivered'),
+                    systemSubtype: systemSubtype || existing.systemSubtype,
+                    system_subtype: systemSubtype || existing.system_subtype,
+                    settled_at: settledAt ?? existing.settled_at ?? null,
                   } as any;
                   return copy;
                 }
@@ -2758,7 +2861,7 @@ export default function Home() {
                     ...existing,
                     client_id: incomingClientId ?? existing.client_id,
                     text: txt,
-                    kind: tx ? 'transaction' : 'text',
+                    kind: tx ? 'transaction' : (systemSubtype ? 'system' : 'text'),
                     tx: tx || undefined,
                     senderDisplay: (payload.senderDisplay || payload.display_name || existing.senderDisplay) || undefined,
                     attachment: payload.attachment ? {
@@ -2771,6 +2874,9 @@ export default function Home() {
                     delivered_at: typeof payload.delivered_at === 'string' ? payload.delivered_at : existing.delivered_at,
                     delivery_status: Math.max(existing.delivery_status || 0, typeof payload.delivery_status === 'number' ? payload.delivery_status : (payload.read_at ? 2 : 1)),
                     status: (typeof payload.read_at === 'string' && payload.read_at) ? 'read' : ((existing.delivery_status || 0) >= 2 ? 'read' : 'delivered'),
+                    systemSubtype: systemSubtype || existing.systemSubtype,
+                    system_subtype: systemSubtype || existing.system_subtype,
+                    settled_at: settledAt ?? existing.settled_at ?? null,
                   } as any;
                   return copy;
                 }
@@ -2781,7 +2887,7 @@ export default function Home() {
                   sender: 'current',
                   text: txt,
                   created_at: payload.created_at || new Date().toISOString(),
-                  kind: tx ? 'transaction' : 'text',
+                  kind: tx ? 'transaction' : (systemSubtype ? 'system' : 'text'),
                   tx: tx || undefined,
                   status: 'delivered',
                   delivery_status: 1,
@@ -2796,6 +2902,9 @@ export default function Home() {
                   } : undefined,
                   read_at: typeof payload.read_at === 'string' ? payload.read_at : null,
                   delivered_at: typeof payload.delivered_at === 'string' ? payload.delivered_at : null,
+                  systemSubtype,
+                  system_subtype: systemSubtype,
+                  settled_at: settledAt ?? null,
                 } as any,
               ];
             });
@@ -2810,7 +2919,7 @@ export default function Home() {
                     ...existing,
                     client_id: incomingClientId ?? existing.client_id,
                     text: txt,
-                    kind: tx ? 'transaction' : 'text',
+                    kind: tx ? 'transaction' : (systemSubtype ? 'system' : 'text'),
                     tx: tx || undefined,
                     status: 'delivered',
                     delivery_status: Math.max(existing.delivery_status || 0, 1),
@@ -2823,6 +2932,9 @@ export default function Home() {
                     } : existing.attachment,
                     read_at: typeof payload.read_at === 'string' ? payload.read_at : existing.read_at || null,
                     delivered_at: typeof payload.delivered_at === 'string' ? payload.delivered_at : existing.delivered_at || null,
+                    systemSubtype: systemSubtype || existing.systemSubtype,
+                    system_subtype: systemSubtype || existing.system_subtype,
+                    settled_at: settledAt ?? existing.settled_at ?? null,
                   } as any;
                   return copy;
                 }
@@ -2833,7 +2945,7 @@ export default function Home() {
                   sender: 'other',
                   text: txt,
                   created_at: payload.created_at || new Date().toISOString(),
-                  kind: tx ? 'transaction' : 'text',
+                  kind: tx ? 'transaction' : (systemSubtype ? 'system' : 'text'),
                   tx: tx || undefined,
                   status: 'delivered',
                   delivery_status: 1,
@@ -2848,6 +2960,9 @@ export default function Home() {
                   } : undefined,
                   read_at: typeof payload.read_at === 'string' ? payload.read_at : null,
                   delivered_at: typeof payload.delivered_at === 'string' ? payload.delivered_at : null,
+                  systemSubtype,
+                  system_subtype: systemSubtype,
+                  settled_at: settledAt ?? null,
                 } as any,
               ];
             });
@@ -3861,6 +3976,15 @@ export default function Home() {
                     );
                     lastDayKey = dk;
                   }
+                  if (isWalletSettlementMessage(m)) {
+                    const key = buildMessageKey(m, i, 'wallet');
+                    parts.push(
+                      <div key={key} ref={(el)=>{ messageRefs.current[key] = el; }} className="self-center w-full flex justify-center">
+                        <WalletSettlementCard msg={m} isLight={isLightTheme} />
+                      </div>
+                    );
+                    return;
+                  }
                   if (m.kind === 'transaction' && m.tx) {
                     const key = buildMessageKey(m, i, 'tx');
                     parts.push(
@@ -3991,17 +4115,12 @@ export default function Home() {
                         )}
                         {/* Text with ticks (no inline time) */}
                         {content && (
-
-<div className="flex flex-col items-center text-center gap-2" dir="rtl">
-  <AiOutlineFileDone className="text-yellow-400 drop-shadow-glow text-8xl" />
-  <div className="w-10 border-t border-yellow-400/70"></div>
-  <span className="text-lg font-semibold text-yellow-400">الحساب صفر 000</span>
-  <div className="w-10 border-t border-yellow-400/70"></div>
-  <span className="text-base text-yellow-300">{formatDateShort(m.created_at)}</span>
-</div>
-
-
-
+                          <NormalTextBubble
+                            content={content}
+                            showHighlight={showHighlight}
+                            searchQuery={searchQuery}
+                            highlightText={highlightText}
+                          />
                         )}
                         {showMeta && (
                           <div className="mt-1 text-[11px] opacity-70 flex items-center gap-1 justify-end" dir="auto">
