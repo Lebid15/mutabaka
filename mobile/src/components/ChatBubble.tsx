@@ -42,7 +42,7 @@ interface ChatBubbleProps {
   isMine?: boolean;
   status?: 'sent' | 'delivered' | 'read';
   deliveredPassively?: boolean;
-  variant?: 'text' | 'transaction' | 'system' | 'attachment';
+  variant?: 'text' | 'transaction' | 'system' | 'attachment' | 'wallet';
   transaction?: TransactionPayload;
   attachment?: AttachmentData | null;
   highlightQuery?: string;

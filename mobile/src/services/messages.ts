@@ -23,6 +23,13 @@ export interface MessageDto {
   delivered_at?: string | null;
   read_at?: string | null;
   delivery_context?: 'passive' | 'active' | null;
+  system_subtype?: string | null;
+  systemSubtype?: string | null;
+  settled_at?: string | null;
+  settledAt?: string | null;
+  metadata?: Record<string, unknown> | null;
+  payload?: Record<string, unknown> | null;
+  extra?: Record<string, unknown> | null;
 }
 
 interface MessagesResponse {

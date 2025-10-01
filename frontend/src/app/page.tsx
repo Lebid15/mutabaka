@@ -1843,11 +1843,25 @@ export default function Home() {
       const parts = text.split(re);
       return parts.map((part, idx) => (
         idx % 2 === 1
-          ? <span key={idx} className="bg-yellow-300/30 rounded px-0.5">{part}</span>
+          ? (
+            <span
+              key={idx}
+              className="bg-amber-300/70 text-gray-900 rounded px-1 font-semibold"
+            >
+              {part}
+            </span>
+          )
           : <span key={idx}>{part}</span>
       ));
     } catch { return text; }
   };
+
+  const resolveMessageRefKey = useCallback((msg: any, idx: number) => {
+    if (isWalletSettlementMessage(msg)) return buildMessageKey(msg, idx, 'wallet');
+    if (msg?.kind === 'transaction' && msg.tx) return buildMessageKey(msg, idx, 'tx');
+    if (msg?.kind === 'system') return buildMessageKey(msg, idx, 'sys');
+    return buildMessageKey(msg, idx, 'msg');
+  }, []);
 
   // Manual refresh of conversations/contacts mapping
   const refreshContacts = async () => {
@@ -1989,7 +2003,7 @@ export default function Home() {
     if (!q) return [] as { key: string; index: number }[];
     const re = new RegExp(escapeRegExp(q), 'i');
     const matches: { key: string; index: number }[] = [];
-    messages.forEach((m, idx) => {
+    visibleMessages.forEach((m, idx) => {
       const surfaces: string[] = [];
       if (m.kind === 'transaction' && m.tx) {
         if (typeof m.tx.note === 'string') surfaces.push(m.tx.note);
@@ -2002,12 +2016,12 @@ export default function Home() {
         surfaces.push(m.text);
       }
       if (surfaces.some(surface => surface && re.test(surface))) {
-        const key = String(m.id ?? `i_${idx}`);
+        const key = resolveMessageRefKey(m, idx);
         matches.push({ key, index: idx });
       }
     });
     return matches;
-  }, [messages, searchQuery]);
+  }, [visibleMessages, searchQuery, resolveMessageRefKey]);
 
   useEffect(() => {
     if (!searchQuery.trim()) {

@@ -30,6 +30,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import BackgroundGradient from '../components/BackgroundGradient';
 import ChatBubble from '../components/ChatBubble';
+import WalletSettlementCard from '../components/WalletSettlementCard';
 import { conversations, messages } from '../data/mock';
 import type { RootStackParamList } from '../navigation';
 import { useThemeMode } from '../theme';
@@ -265,9 +266,13 @@ interface NormalizedMessage {
   timestamp: string | null;
   status?: 'sent' | 'delivered' | 'read';
   deliveredPassively?: boolean;
-  variant: 'text' | 'transaction' | 'system' | 'attachment';
+  variant: 'text' | 'transaction' | 'system' | 'attachment' | 'wallet';
   transaction?: TransactionDetails;
   attachment?: AttachmentMeta | null;
+  walletSettlement?: {
+    label: string;
+    settledAt: string | null;
+  };
 }
 
 type DeliveryContext = 'passive' | 'active';
@@ -617,6 +622,124 @@ function isMemberSystemMessage(type: string | null | undefined, body: string | n
     }
   }
   return isMemberEventBody(body);
+}
+
+const WALLET_SETTLED_MATCHES = [
+  'الحساب صفر',
+  'الحساب 000 صفر',
+  'الحساب 800 صفر',
+  'تمت تسوية جميع المحافظ',
+  'تم تصفير جميع المحافظ',
+  'تم تصفير المحافظ',
+];
+
+const DEFAULT_WALLET_SETTLEMENT_LABEL = 'الحساب صفر';
+
+function normalizeWalletText(value?: string | null): string {
+  return (value ?? '').replace(/[\u200e\u200f\u202a-\u202e]/g, '').trim();
+}
+
+function matchesWalletSettlementPhrase(value?: string | null): boolean {
+  const normalized = normalizeWalletText(value);
+  if (!normalized) {
+    return false;
+  }
+  return WALLET_SETTLED_MATCHES.some((token) => normalized.includes(token));
+}
+
+function extractWalletSubtype(message: MessageDto): string | null {
+  const subtypeCandidates: unknown[] = [
+    (message as { systemSubtype?: unknown }).systemSubtype,
+    (message as { system_subtype?: unknown }).system_subtype,
+  ];
+  for (const candidate of subtypeCandidates) {
+    if (typeof candidate === 'string') {
+      const trimmed = candidate.trim();
+      if (trimmed) {
+        return trimmed;
+      }
+    }
+  }
+  const typeCandidate = (message as { type?: unknown }).type;
+  if (typeof typeCandidate === 'string') {
+    const trimmed = typeCandidate.trim();
+    if (trimmed.toLowerCase() === 'wallet_settled') {
+      return trimmed;
+    }
+  }
+  return null;
+}
+
+function readNestedString(source: unknown, keys: string[]): string | null {
+  if (!source || typeof source !== 'object') {
+    return null;
+  }
+  for (const key of keys) {
+    const value = (source as Record<string, unknown>)[key];
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed) {
+        return trimmed;
+      }
+    }
+  }
+  return null;
+}
+
+function resolveWalletSettlementTimestamp(message: MessageDto): string | null {
+  const directCandidates: unknown[] = [
+    (message as { settled_at?: unknown }).settled_at,
+    (message as { settledAt?: unknown }).settledAt,
+  ];
+  for (const candidate of directCandidates) {
+    if (typeof candidate === 'string') {
+      const trimmed = candidate.trim();
+      if (trimmed) {
+        return trimmed;
+      }
+    }
+  }
+  const nestedSources: Array<Record<string, unknown> | null | undefined> = [
+    (message as { metadata?: Record<string, unknown> | null | undefined }).metadata,
+    (message as { payload?: Record<string, unknown> | null | undefined }).payload,
+    (message as { extra?: Record<string, unknown> | null | undefined }).extra,
+  ];
+  for (const source of nestedSources) {
+    const value = readNestedString(source, ['settled_at', 'settledAt', 'timestamp', 'created_at']);
+    if (value) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function detectWalletSettlement(message: MessageDto): { detected: boolean; label: string; settledAt: string | null } {
+  const subtype = extractWalletSubtype(message);
+  const rawBody = typeof message.body === 'string' ? message.body : '';
+  const trimmedBody = normalizeWalletText(rawBody);
+  const isWallet = Boolean(
+    (subtype && subtype.toLowerCase() === 'wallet_settled')
+      || matchesWalletSettlementPhrase(trimmedBody),
+  );
+  if (!isWallet) {
+    return { detected: false, label: DEFAULT_WALLET_SETTLEMENT_LABEL, settledAt: null };
+  }
+  const settledAt = resolveWalletSettlementTimestamp(message) || message.created_at || null;
+  const label = trimmedBody || DEFAULT_WALLET_SETTLEMENT_LABEL;
+  return { detected: true, label, settledAt };
+}
+
+function formatWalletSettlementTimestamp(value: string | null | undefined): string {
+  if (!value) {
+    return '';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  const datePart = formatMessageDate(value);
+  const timePart = formatMessageTime(value);
+  return [datePart, timePart].filter(Boolean).join(' ').trim();
 }
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -1206,6 +1329,38 @@ export default function ChatScreen() {
           }
         : { id: -1, username: senderUsername || 'unknown' };
 
+      const systemSubtypeValue = (() => {
+        const camel = typeof payload.systemSubtype === 'string' ? payload.systemSubtype.trim() : '';
+        if (camel) {
+          return camel;
+        }
+        const snake = typeof payload.system_subtype === 'string' ? payload.system_subtype.trim() : '';
+        if (snake) {
+          return snake;
+        }
+        return undefined;
+      })();
+      const settledAtValue = (() => {
+        const camel = typeof payload.settledAt === 'string' ? payload.settledAt.trim() : '';
+        if (camel) {
+          return camel;
+        }
+        const snake = typeof payload.settled_at === 'string' ? payload.settled_at.trim() : '';
+        if (snake) {
+          return snake;
+        }
+        return undefined;
+      })();
+      const payloadMetadata = typeof payload.metadata === 'object' && payload.metadata !== null
+        ? payload.metadata as Record<string, unknown>
+        : null;
+      const payloadExtra = typeof payload.extra === 'object' && payload.extra !== null
+        ? payload.extra as Record<string, unknown>
+        : null;
+      const payloadBody = typeof payload.payload === 'object' && payload.payload !== null
+        ? payload.payload as Record<string, unknown>
+        : null;
+
       const rawAttachment = payload.attachment && typeof payload.attachment === 'object'
         ? payload.attachment as Record<string, unknown>
         : null;
@@ -1261,6 +1416,13 @@ export default function ChatScreen() {
           }
           return undefined;
         })(),
+        systemSubtype: systemSubtypeValue,
+        system_subtype: systemSubtypeValue,
+        settledAt: settledAtValue,
+        settled_at: settledAtValue,
+        metadata: payloadMetadata,
+        payload: payloadBody,
+        extra: payloadExtra,
       };
 
       setRemoteMessages((prev) => {
@@ -1755,10 +1917,11 @@ export default function ChatScreen() {
         const transaction = parseTransactionMessage(msg.body);
         const rawBody = typeof msg.body === 'string' ? msg.body : '';
         const trimmedBody = rawBody.trim();
+        const walletMeta = detectWalletSettlement(msg);
         const hasRemoteAttachment = Boolean(msg.attachment_url || msg.attachment_name);
         const attachmentFallback = msg.attachment_name || (msg.attachment_url ? DEFAULT_ATTACHMENT_PREVIEW : '');
-        const body = trimmedBody || attachmentFallback;
-        const isSystem = isMemberSystemMessage(msg.type, msg.body);
+        const body = walletMeta.detected ? walletMeta.label : (trimmedBody || attachmentFallback);
+        const isSystem = walletMeta.detected ? false : isMemberSystemMessage(msg.type, msg.body);
         const attachmentMeta: AttachmentMeta | null = hasRemoteAttachment
           ? {
               url: typeof msg.attachment_url === 'string' ? msg.attachment_url : null,
@@ -1767,13 +1930,15 @@ export default function ChatScreen() {
               size: msg.attachment_size ?? null,
             }
           : null;
-        const variant: NormalizedMessage['variant'] = isSystem
-          ? 'system'
-          : transaction
-            ? 'transaction'
-            : attachmentMeta
-              ? 'attachment'
-              : 'text';
+        const variant: NormalizedMessage['variant'] = walletMeta.detected
+          ? 'wallet'
+          : isSystem
+            ? 'system'
+            : transaction
+              ? 'transaction'
+              : attachmentMeta
+                ? 'attachment'
+                : 'text';
         const numericMessageId = Number.isFinite(msg.id) ? Number(msg.id) : undefined;
         const computedIsMine = (numericMessageId !== undefined && myMessageIdsRef.current.has(numericMessageId))
           || isMessageFromUser(msg, currentUser);
@@ -1802,15 +1967,16 @@ export default function ChatScreen() {
           conversationId: String(msg.conversation),
           author,
           text: body,
-          caption: trimmedBody || null,
+          caption: walletMeta.detected ? null : (trimmedBody || null),
           time: formatMessageTime(msg.created_at),
           date: formatMessageDate(msg.created_at),
           timestamp: msg.created_at ?? null,
-          status: deliveryDisplay?.status,
+          status: walletMeta.detected ? undefined : deliveryDisplay?.status,
           deliveredPassively: deliveryDisplay?.status === 'delivered' ? deliveryDisplay.passive : undefined,
           variant,
-          transaction: transaction ?? undefined,
-          attachment: attachmentMeta,
+          transaction: walletMeta.detected ? undefined : transaction ?? undefined,
+          attachment: walletMeta.detected ? null : attachmentMeta,
+          walletSettlement: walletMeta.detected ? { label: walletMeta.label, settledAt: walletMeta.settledAt } : undefined,
         };
       });
     }
@@ -2656,6 +2822,32 @@ export default function ChatScreen() {
 
     const isSearchMatch = searchMatchSet.has(item.id);
     const isActiveSearchMatch = activeSearchMatchId === item.id;
+    if (item.variant === 'wallet') {
+      const walletTimestamp = formatWalletSettlementTimestamp(item.walletSettlement?.settledAt ?? item.timestamp);
+      const walletLabel = item.walletSettlement?.label || item.text || DEFAULT_WALLET_SETTLEMENT_LABEL;
+      return (
+        <View style={styles.messageItem}>
+          {dayLabel ? (
+            <View
+              style={[
+                styles.daySeparator,
+                { backgroundColor: daySeparatorBackground, borderColor: daySeparatorBorder },
+              ]}
+            >
+              <Text style={[styles.daySeparatorText, { color: daySeparatorTextColor }]}>{dayLabel}</Text>
+            </View>
+          ) : null}
+          <View style={styles.walletCardWrapper}>
+            <WalletSettlementCard
+              label={walletLabel}
+              timestamp={walletTimestamp}
+              highlightQuery={isSearchMatch ? normalizedSearchQuery : ''}
+              highlightActive={isSearchMatch && isActiveSearchMatch}
+            />
+          </View>
+        </View>
+      );
+    }
     return (
       <View style={styles.messageItem}>
         {dayLabel ? (
@@ -4189,6 +4381,9 @@ const styles = StyleSheet.create({
   },
   messageItem: {
     marginBottom: 16,
+  },
+  walletCardWrapper: {
+    alignItems: 'center',
   },
   jumpToLatestButton: {
     position: 'absolute',
