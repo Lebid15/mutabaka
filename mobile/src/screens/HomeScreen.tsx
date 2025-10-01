@@ -23,6 +23,7 @@ import {
   unmuteConversation,
   type ConversationDto,
 } from '../services/conversations';
+import { fetchSubscriptionOverview, type SubscriptionOverviewResponse } from '../services/subscriptions';
 import { fetchCurrentUser, searchUsers, type CurrentUser, type PublicUser } from '../services/user';
 
 function formatTimestamp(value: string | null | undefined): string {
@@ -229,6 +230,28 @@ function mergeUnreadCounts(
 
 type MenuAction = 'profile' | 'matches' | 'settings' | 'subscriptions' | 'team' | 'refresh' | 'logout';
 
+function decodeJwtPayload(token?: string | null): Record<string, unknown> | null {
+  if (!token) {
+    return null;
+  }
+  const segments = token.split('.');
+  if (segments.length < 2) {
+    return null;
+  }
+  try {
+    const base64 = segments[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+    if (typeof globalThis.atob !== 'function') {
+      return null;
+    }
+    const decoded = globalThis.atob(padded);
+    return decoded ? JSON.parse(decoded) : null;
+  } catch (error) {
+    console.warn('[Mutabaka] Failed to decode JWT payload', error);
+    return null;
+  }
+}
+
 interface MenuItem {
   key: MenuAction;
   label: string;
@@ -255,6 +278,8 @@ export default function HomeScreen() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [remoteLoadAttempted, setRemoteLoadAttempted] = useState(false);
+  const [throttleUntil, setThrottleUntil] = useState<number | null>(null);
   const isMountedRef = useRef(true);
   const [isAddContactOpen, setIsAddContactOpen] = useState(false);
   const [contactQuery, setContactQuery] = useState('');
@@ -265,6 +290,9 @@ export default function HomeScreen() {
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeSearchQueryRef = useRef('');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isTeamActor, setIsTeamActor] = useState(false);
+  const [showTrialBanner, setShowTrialBanner] = useState(false);
+  const [trialBannerMessage, setTrialBannerMessage] = useState<string | null>(null);
   const [pinnedConversationIds, setPinnedConversationIds] = useState<number[]>([]);
   const [conversationMenu, setConversationMenu] = useState<{ id: number; title: string; subtitle: string; isMuted: boolean; isPinned: boolean } | null>(null);
   const [conversationActionState, setConversationActionState] = useState<{ id: number; action: 'pin' | 'unpin' | 'mute' | 'unmute' | 'clear' | 'delete' } | null>(null);
@@ -273,6 +301,7 @@ export default function HomeScreen() {
   const webAppBaseUrl = useMemo(() => environment.apiBaseUrl.replace(/\/api\/?$/, ''), []);
   const remoteConversationsRef = useRef<ConversationRecord[]>(remoteConversations);
   const locallyClearedUnreadRef = useRef<Set<number>>(new Set());
+  const loadConversationsInFlightRef = useRef(false);
 
   useEffect(() => {
     remoteConversationsRef.current = remoteConversations;
@@ -284,6 +313,29 @@ export default function HomeScreen() {
       clearTimeout(searchDebounceRef.current);
     }
     activeSearchQueryRef.current = '';
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const token = await getAccessToken();
+        if (!active) {
+          return;
+        }
+        const payload = decodeJwtPayload(token) as { actor?: unknown } | null;
+        const actorRaw = typeof payload?.actor === 'string' ? payload.actor.toLowerCase() : '';
+        setIsTeamActor(actorRaw === 'team_member');
+      } catch (error) {
+        console.warn('[Mutabaka] Failed to decode auth token for subscription banner', error);
+        if (active) {
+          setIsTeamActor(false);
+        }
+      }
+    })();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const resetAddContactState = useCallback(() => {
@@ -383,12 +435,35 @@ export default function HomeScreen() {
 
 
   const loadConversations = useCallback(async () => {
+    const now = Date.now();
+    if (throttleUntil && now < throttleUntil) {
+      const remainingSeconds = Math.max(0, Math.round((throttleUntil - now) / 1000));
+      if (remainingSeconds > 0) {
+        const minutes = Math.max(1, Math.ceil(remainingSeconds / 60));
+        setErrorMessage(`تم إيقاف الطلبات مؤقتًا. حاول مرة أخرى خلال حوالي ${minutes} دقيقة.`);
+      }
+      setRemoteLoadAttempted(true);
+      setLoading(false);
+      return;
+    }
+    if (loadConversationsInFlightRef.current) {
+      return;
+    }
     try {
+      loadConversationsInFlightRef.current = true;
       setLoading(true);
       setErrorMessage(null);
-      const [me, conversationResponse] = await Promise.all([
+      const subscriptionPromise: Promise<SubscriptionOverviewResponse | null> = !isTeamActor
+        ? fetchSubscriptionOverview().catch((error) => {
+          console.warn('[Mutabaka] Failed to load subscription overview', error);
+          return null;
+        })
+        : Promise.resolve(null);
+
+      const [me, conversationResponse, subscriptionOverview] = await Promise.all([
         fetchCurrentUser(),
         fetchConversations(),
+        subscriptionPromise,
       ]);
 
       if (!isMountedRef.current) {
@@ -396,6 +471,27 @@ export default function HomeScreen() {
       }
 
       setCurrentUser(me);
+      if (!isTeamActor) {
+        const subscription = subscriptionOverview?.subscription ?? null;
+        const remaining = typeof subscription?.remaining_days === 'number'
+          ? subscription.remaining_days
+          : (typeof me?.subscription_remaining_days === 'number' && Number.isFinite(me.subscription_remaining_days)
+            ? me.subscription_remaining_days
+            : null);
+        const planCode = subscription?.plan?.code;
+        const isTrialPlan = subscription?.is_trial === true || (typeof planCode === 'string' && planCode.toLowerCase() === 'trial');
+
+        if (subscription && isTrialPlan && typeof remaining === 'number' && remaining > 0) {
+          setTrialBannerMessage(`أنت على النسخة المجانية — متبقٍ ${remaining} يوم`);
+          setShowTrialBanner(true);
+        } else {
+          setTrialBannerMessage(null);
+          setShowTrialBanner(false);
+        }
+      } else {
+        setTrialBannerMessage(null);
+        setShowTrialBanner(false);
+      }
       const incoming = Array.isArray(conversationResponse.results)
         ? conversationResponse.results
         : [];
@@ -403,24 +499,93 @@ export default function HomeScreen() {
       const merged = mergeUnreadCounts(normalized, remoteConversationsRef.current, locallyClearedUnreadRef.current);
       const sorted = [...merged].sort((a, b) => getConversationSortValue(b) - getConversationSortValue(a));
       setRemoteConversations(sorted);
+      setRemoteLoadAttempted(true);
     } catch (error) {
       if (!isMountedRef.current) {
         return;
       }
       console.warn('[Mutabaka] Failed to load conversations', error);
-      setErrorMessage('تعذر تحميل المحادثات. تحقق من الاتصال بالخادم.');
+      let message = 'تعذر تحميل المحادثات. تحقق من الاتصال بالخادم.';
+      if (error instanceof HttpError) {
+        if (error.status === 429) {
+          let retrySeconds: number | null = null;
+          const details = typeof error.message === 'string' ? error.message : '';
+          let payloadDetail = '';
+          if (error.payload && typeof error.payload === 'object' && 'detail' in error.payload) {
+            const detailValue = (error.payload as Record<string, unknown>).detail;
+            if (typeof detailValue === 'string') {
+              payloadDetail = detailValue;
+            }
+          }
+          const sourceText = payloadDetail || details;
+          const secondsMatch = sourceText.match(/(\d+(?:\.\d+)?)\s*second/i);
+          if (secondsMatch) {
+            retrySeconds = Number.parseFloat(secondsMatch[1]);
+            if (!Number.isFinite(retrySeconds)) {
+              retrySeconds = null;
+            }
+          }
+          if (retrySeconds && retrySeconds > 0) {
+            const retryTimestamp = Date.now() + retrySeconds * 1000;
+            setThrottleUntil(retryTimestamp);
+            const minutes = Math.max(1, Math.ceil(retrySeconds / 60));
+            message = `تم إيقاف الطلبات مؤقتًا بسبب معدل الاستخدام. حاول مرة أخرى خلال حوالي ${minutes} دقيقة.`;
+          } else {
+            message = 'تم إرسال طلبات كثيرة خلال وقت قصير. حاول مرة أخرى بعد لحظات.';
+          }
+        } else if (error.status >= 500) {
+          message = 'الخادم يواجه انقطاعًا مؤقتًا. حاول مرة أخرى لاحقًا.';
+        } else {
+          const extracted = extractErrorMessage(error);
+          if (extracted) {
+            message = extracted;
+          }
+        }
+      }
+      setErrorMessage(message);
+      setRemoteLoadAttempted(true);
     } finally {
+      loadConversationsInFlightRef.current = false;
       if (isMountedRef.current) {
         setLoading(false);
       }
     }
-  }, []);
+  }, [isTeamActor, throttleUntil]);
 
   useFocusEffect(
     useCallback(() => {
       loadConversations();
     }, [loadConversations]),
   );
+
+  useEffect(() => {
+    if (!throttleUntil) {
+      return;
+    }
+
+    const tick = () => {
+      if (!isMountedRef.current) {
+        return;
+      }
+      const now = Date.now();
+      if (now >= throttleUntil) {
+        setThrottleUntil(null);
+        setErrorMessage(null);
+        loadConversations();
+        return;
+      }
+      const remainingSeconds = Math.max(0, Math.round((throttleUntil - now) / 1000));
+      const minutes = Math.max(1, Math.ceil(remainingSeconds / 60));
+      setErrorMessage(`تم إيقاف الطلبات مؤقتًا. حاول مرة أخرى خلال حوالي ${minutes} دقيقة.`);
+    };
+
+    tick();
+    const interval = setInterval(tick, 15000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [loadConversations, throttleUntil]);
 
   useEffect(() => {
     setPinnedConversationIds((prev) => {
@@ -667,9 +832,11 @@ export default function HomeScreen() {
       } catch (error) {
         console.warn('[Mutabaka] Failed to clear tokens during logout', error);
       }
-  setRemoteConversations([]);
+    setRemoteConversations([]);
   locallyClearedUnreadRef.current.clear();
       setCurrentUser(null);
+      setRemoteLoadAttempted(false);
+    setThrottleUntil(null);
       resetAddContactState();
       navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
       return;
@@ -929,6 +1096,10 @@ export default function HomeScreen() {
       });
     }
 
+    if (environment.name === 'production' || remoteLoadAttempted) {
+      return [];
+    }
+
     return mockConversations.map((conv, index) => {
   const numericId = Number((conv as { id?: string | number }).id);
       const meta = conv as unknown as { isPinned?: boolean };
@@ -944,7 +1115,7 @@ export default function HomeScreen() {
         avatarUri: undefined,
       };
     });
-  }, [currentUser, pinnedSet, remoteConversations, searchValue]);
+  }, [currentUser, pinnedSet, remoteConversations, remoteLoadAttempted, searchValue]);
 
   const filteredConversations = useMemo(() => (
     augmentedConversations.filter((conv) => {
@@ -1102,33 +1273,47 @@ export default function HomeScreen() {
     </Modal>
   );
 
+  const handleBannerCtaPress = useCallback(() => {
+    navigation.navigate('Subscriptions');
+  }, [navigation]);
+
+  const handleDismissTrialBanner = useCallback(() => {
+    setShowTrialBanner(false);
+  }, []);
+
   const listHeader = (
     <View style={styles.listHeader}>
-      <View
-        style={[styles.banner, { backgroundColor: bannerBg, borderColor: bannerBorder }]}
-        accessibilityRole="alert"
-      >
-        <Text
-          style={[styles.bannerText, { color: bannerText }]}
-          numberOfLines={2}
+      {showTrialBanner && trialBannerMessage ? (
+        <View
+          style={[styles.banner, { backgroundColor: bannerBg, borderColor: bannerBorder }]}
+          accessibilityRole="alert"
         >
-          أنت على النسخة المجانية — متبقٍ 24 يوم
-        </Text>
-        <View style={styles.bannerActions}>
-          <Pressable
-            accessibilityRole="button"
-            style={[styles.bannerAction, { backgroundColor: bannerCtaBg }]}
+          <Text
+            style={[styles.bannerText, { color: bannerText }]}
+            numberOfLines={2}
           >
-            <Text style={[styles.bannerActionText, { color: bannerCtaText }]}>اذهب لصفحة الاشتراك</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            style={styles.bannerClose}
-          >
-            <FeatherIcon name="x" size={16} color={bannerCloseColor} />
-          </Pressable>
+            {trialBannerMessage}
+          </Text>
+          <View style={styles.bannerActions}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="الانتقال إلى صفحة الاشتراك"
+              style={[styles.bannerAction, { backgroundColor: bannerCtaBg }]}
+              onPress={handleBannerCtaPress}
+            >
+              <Text style={[styles.bannerActionText, { color: bannerCtaText }]}>اذهب لصفحة الاشتراك</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="إغلاق التنبيه"
+              style={styles.bannerClose}
+              onPress={handleDismissTrialBanner}
+            >
+              <FeatherIcon name="x" size={16} color={bannerCloseColor} />
+            </Pressable>
+          </View>
         </View>
-      </View>
+      ) : null}
 
       <View style={styles.headerRow}>
         <View style={styles.headerTitleGroup}>
@@ -1377,7 +1562,19 @@ export default function HomeScreen() {
             onRefresh={loadConversations}
             ListEmptyComponent={(
               <View style={styles.emptyState}>
-                <Text style={[styles.emptyText, { color: emptyTextColor }]}>لا توجد محادثات مطابقة للبحث</Text>
+                {loading ? (
+                  <ActivityIndicator size="small" color={actionTint} />
+                ) : throttleUntil && throttleUntil > Date.now() ? (
+                  <Text style={[styles.emptyText, { color: emptyTextColor }]}>انتظر انتهاء الإيقاف المؤقت قبل إعادة المحاولة.</Text>
+                ) : errorMessage ? (
+                  <Text style={[styles.emptyText, { color: emptyTextColor }]}>اسحب للأسفل لإعادة المحاولة.</Text>
+                ) : searchValue.trim() ? (
+                  <Text style={[styles.emptyText, { color: emptyTextColor }]}>لا توجد محادثات مطابقة للبحث</Text>
+                ) : remoteLoadAttempted ? (
+                  <Text style={[styles.emptyText, { color: emptyTextColor }]}>لا توجد محادثات بعد.</Text>
+                ) : (
+                  <Text style={[styles.emptyText, { color: emptyTextColor }]}>جارٍ تحميل المحادثات...</Text>
+                )}
               </View>
             )}
           />

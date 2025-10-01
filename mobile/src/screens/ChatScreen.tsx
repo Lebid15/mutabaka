@@ -1,5 +1,6 @@
 import FeatherIcon from '@expo/vector-icons/Feather';
 import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
@@ -15,11 +16,14 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
   TouchableWithoutFeedback,
   View,
+  type ListRenderItemInfo,
+  type NativeScrollEvent,
   type NativeSyntheticEvent,
   type TextInputContentSizeChangeEventData,
 } from 'react-native';
@@ -44,7 +48,8 @@ import {
 } from '../services/conversations';
 import { fetchMessages, fetchMessagesSince, sendMessage, sendAttachment, type MessageDto, type UploadAttachmentAsset } from '../services/messages';
 import { fetchCurrencies, bootstrapCurrencies, type CurrencyDto } from '../services/currencies';
-import { createTransaction } from '../services/transactions';
+import { createTransaction, fetchTransactions } from '../services/transactions';
+import type { TransactionDto } from '../services/transactions';
 import { fetchCurrentUser, type CurrentUser } from '../services/user';
 import { emitConversationPreviewUpdate } from '../lib/conversationEvents';
 import { createWebSocket } from '../lib/wsClient';
@@ -259,14 +264,18 @@ interface NormalizedMessage {
   date: string;
   timestamp: string | null;
   status?: 'sent' | 'delivered' | 'read';
+  deliveredPassively?: boolean;
   variant: 'text' | 'transaction' | 'system' | 'attachment';
   transaction?: TransactionDetails;
   attachment?: AttachmentMeta | null;
 }
 
-type ConversationListItem =
-  | { kind: 'message'; message: NormalizedMessage }
-  | { kind: 'separator'; id: string; label: string };
+type DeliveryContext = 'passive' | 'active';
+
+type DeliveryDisplay = {
+  status: 'sent' | 'delivered' | 'read';
+  passive: boolean;
+};
 
 function normalizeIdentity(value?: string | null): string | null {
   if (!value) {
@@ -526,19 +535,58 @@ function parseTransactionMessage(body: string | null | undefined): TransactionDe
   };
 }
 
-function mapDeliveryStatus(status?: number, fallback?: string | null): 'sent' | 'delivered' | 'read' {
+function resolveDeliveryContext(
+  status?: number,
+  fallback?: string | null,
+  hint?: DeliveryContext | null,
+  previous?: DeliveryContext | null,
+): DeliveryContext | undefined {
   if (typeof status === 'number') {
     if (status >= 2) {
-      return 'read';
+      return 'active';
     }
     if (status >= 1) {
-      return 'delivered';
+      if (hint === 'active' || previous === 'active') {
+        return 'active';
+      }
+      return hint ?? previous ?? 'passive';
+    }
+  }
+  if (fallback === 'read') {
+    return 'active';
+  }
+  if (fallback === 'delivered') {
+    if (hint === 'active' || previous === 'active') {
+      return 'active';
+    }
+    return hint ?? previous ?? 'passive';
+  }
+  return previous ?? hint ?? undefined;
+}
+
+function mapDeliveryStatus(
+  status?: number,
+  fallback?: string | null,
+  context?: DeliveryContext | null,
+): DeliveryDisplay {
+  if (typeof status === 'number') {
+    if (status >= 2) {
+      return { status: 'read', passive: false };
+    }
+    if (status >= 1) {
+      return { status: 'delivered', passive: context !== 'active' };
     }
   }
   if (fallback === 'read' || fallback === 'delivered' || fallback === 'sent') {
-    return fallback;
+    if (fallback === 'read') {
+      return { status: 'read', passive: false };
+    }
+    if (fallback === 'delivered') {
+      return { status: 'delivered', passive: context !== 'active' };
+    }
+    return { status: 'sent', passive: true };
   }
-  return 'sent';
+  return { status: 'sent', passive: true };
 }
 
 const MEMBER_EVENT_PATTERNS: RegExp[] = [
@@ -607,6 +655,220 @@ function formatDaySeparatorLabel(date: Date): string {
   }
 }
 
+type ExportFormat = 'excel' | 'pdf';
+
+type ExportRow = {
+  index: number;
+  senderName: string;
+  directionLabel: 'لنا' | 'لكم';
+  amountDisplay: string;
+  amountNumber: number;
+  positive: boolean;
+  noteText: string;
+  dateTimeDisplay: string;
+  createdAtISO?: string | null;
+};
+
+type NamedEntity = {
+  display_name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  username?: string | null;
+  name?: string | null;
+};
+
+const EXPORT_DEFAULT_RANGE_DAYS = 30;
+
+function toDateInputValue(date: Date): string {
+  return `${date.getFullYear()}-${padTwoDigits(date.getMonth() + 1)}-${padTwoDigits(date.getDate())}`;
+}
+
+function safeFilename(raw: string, ext: string): string {
+  const sanitized = raw
+    .trim()
+    .replace(/\s+/g, '-').replace(/[^0-9A-Za-z\u0600-\u06FF_-]+/g, '')
+    .slice(0, 80);
+  const base = sanitized || 'transactions';
+  const normalizedExt = ext.startsWith('.') ? ext.slice(1) : ext;
+  return `${base}.${normalizedExt}`;
+}
+
+function pickDisplayName(entity: NamedEntity | null | undefined): string {
+  if (!entity) {
+    return '';
+  }
+  const candidates = [
+    entity.display_name,
+    entity.name,
+    entity.first_name && entity.last_name ? `${entity.first_name} ${entity.last_name}` : '',
+    entity.first_name,
+    entity.last_name,
+    entity.username,
+  ];
+  for (const candidate of candidates) {
+    if (candidate && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  return '';
+}
+
+function formatAmountLabel(amount: number, symbol?: string | null): string {
+  const formatted = formatBalance(Math.abs(amount));
+  return symbol ? `${formatted} ${symbol}` : formatted;
+}
+
+function escapeHtml(raw: string): string {
+  return raw
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+async function exportRowsToExcelMobile(
+  rows: ExportRow[],
+  parties: { a: string; b: string },
+  rangeLabel: string,
+  filename: string,
+): Promise<string> {
+  const XLSX = await import('xlsx');
+  const workbook = XLSX.utils.book_new();
+  const sheetData: (string | number)[][] = [
+    [`معاملات مالية بين ${parties.a} و ${parties.b}`],
+  ];
+  if (rangeLabel) {
+    sheetData.push([rangeLabel]);
+  }
+  sheetData.push(['رقم المعاملة', 'اسم المرسل', 'لمن', 'المبلغ و العملة', 'ملاحظة', 'التاريخ و الوقت']);
+  rows.forEach((row) => {
+    sheetData.push([
+      row.index,
+      row.senderName,
+      row.directionLabel,
+      row.amountDisplay,
+      row.noteText,
+      row.dateTimeDisplay,
+    ]);
+  });
+  const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
+  worksheet['!cols'] = [
+    { wch: 16 },
+    { wch: 28 },
+    { wch: 16 },
+    { wch: 26 },
+    { wch: 38 },
+    { wch: 28 },
+  ];
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'التقرير');
+  const wbout = XLSX.write(workbook, { type: 'base64', bookType: 'xlsx' });
+  const directory = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
+  if (!directory) {
+    throw new Error('تعذر تحديد موقع الحفظ');
+  }
+  const targetUri = `${directory}${filename}`;
+  await FileSystem.writeAsStringAsync(targetUri, wbout, { encoding: FileSystem.EncodingType.Base64 });
+  return targetUri;
+}
+
+async function exportRowsToPdfMobile(
+  rows: ExportRow[],
+  parties: { a: string; b: string },
+  rangeLabel: string,
+  filename: string,
+): Promise<string> {
+  const tableRows = rows
+    .map((row, index) => {
+      const directionClass = row.positive ? 'positive' : 'negative';
+      const noteSafe = row.noteText ? escapeHtml(row.noteText) : '';
+      return `
+        <tr>
+          <td>${row.index}</td>
+          <td>${escapeHtml(row.senderName)}</td>
+          <td class="${directionClass}">${escapeHtml(row.directionLabel)}</td>
+          <td class="${directionClass}">${escapeHtml(row.amountDisplay)}</td>
+          <td>${noteSafe}</td>
+          <td>${escapeHtml(row.dateTimeDisplay)}</td>
+        </tr>
+      `;
+    })
+    .join('');
+
+  const html = `<!DOCTYPE html>
+  <html dir="rtl" lang="ar">
+    <head>
+      <meta charSet="utf-8" />
+      <style>
+        body { font-family: 'Tajawal', 'Cairo', 'Segoe UI', sans-serif; color: #0f172a; margin: 0; padding: 24px; background: #f8fafc; }
+        .container { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 18px; padding: 24px; box-shadow: 0 24px 48px rgba(15, 31, 37, 0.12); }
+        h1 { font-size: 20px; margin: 0 0 12px; text-align: center; }
+        p.range { font-size: 12px; color: #64748b; text-align: center; margin: 0 0 18px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { border: 1px solid #e2e8f0; padding: 10px 8px; text-align: center; }
+        th { background: #102030; color: #f8fafc; font-weight: 600; }
+        tbody tr:nth-child(even) { background: #f8fafc; }
+        tbody tr:nth-child(odd) { background: #ffffff; }
+        td.positive { color: #16a34a; font-weight: 600; }
+        td.negative { color: #dc2626; font-weight: 600; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>معاملات مالية بين ${escapeHtml(parties.a)} و ${escapeHtml(parties.b)}</h1>
+        ${rangeLabel ? `<p class="range">${escapeHtml(rangeLabel)}</p>` : ''}
+        <table>
+          <thead>
+            <tr>
+              <th>رقم المعاملة</th>
+              <th>اسم المرسل</th>
+              <th>لمن</th>
+              <th>المبلغ و العملة</th>
+              <th>ملاحظة</th>
+              <th>التاريخ و الوقت</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableRows}
+          </tbody>
+        </table>
+      </div>
+    </body>
+  </html>`;
+
+  let PrintModule: typeof import('expo-print') | null = null;
+  try {
+    PrintModule = await import('expo-print');
+  } catch (error) {
+    if (error instanceof Error && /ExpoPrint|ExponentPrint|expo-print/.test(error.message)) {
+      throw new Error('لا يدعم هذا الإصدار من التطبيق إنشاء ملفات PDF بعد. يُرجى إعادة بناء التطبيق بعد تثبيت مكتبة expo-print ثم المحاولة من جديد.');
+    }
+    throw error;
+  }
+
+  let result;
+  try {
+    result = await PrintModule.printToFileAsync({ html, base64: false });
+  } catch (error) {
+    if (error instanceof Error && /ExpoPrint|ExponentPrint|expo-print/.test(error.message)) {
+      throw new Error('لا يدعم هذا الإصدار من التطبيق إنشاء ملفات PDF بعد. يُرجى إعادة بناء التطبيق بعد تثبيت مكتبة expo-print ثم المحاولة من جديد.');
+    }
+    throw error;
+  }
+  const directory = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
+  if (!directory) {
+    return result.uri;
+  }
+  const targetUri = `${directory}${filename}`;
+  try {
+    await FileSystem.deleteAsync(targetUri, { idempotent: true });
+  } catch (error) {
+    console.warn('[Mutabaka] Failed to clean previous export file', error);
+  }
+  await FileSystem.moveAsync({ from: result.uri, to: targetUri });
+  return targetUri;
+}
+
 function resolveConversationPeer(conversation: ConversationDto, viewerId: number) {
   const isUserA = conversation.user_a.id === viewerId;
   return isUserA ? conversation.user_b : conversation.user_a;
@@ -623,6 +885,15 @@ export default function ChatScreen() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [actionsMenuVisible, setActionsMenuVisible] = useState(false);
   const [exportModalVisible, setExportModalVisible] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('excel');
+  const [exportDateFrom, setExportDateFrom] = useState<string>(() => {
+    const today = new Date();
+    const start = new Date(today.getTime() - (EXPORT_DEFAULT_RANGE_DAYS - 1) * DAY_IN_MS);
+    return toDateInputValue(start);
+  });
+  const [exportDateTo, setExportDateTo] = useState<string>(() => toDateInputValue(new Date()));
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSearchIndex, setActiveSearchIndex] = useState(0);
   const [ourShare, setOurShare] = useState('');
@@ -651,6 +922,7 @@ export default function ChatScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusBanner, setStatusBanner] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   const [composerHeight, setComposerHeight] = useState(0);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [transactionLoading, setTransactionLoading] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [attachmentUploading, setAttachmentUploading] = useState(false);
@@ -666,13 +938,11 @@ export default function ChatScreen() {
   const ackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastInboundMessageIdRef = useRef(0);
   const pendingReadRef = useRef<number | null>(null);
-  const listRef = useRef<FlatList<ConversationListItem> | null>(null);
-  const initialScrollDoneRef = useRef(false);
-  const initialScrollAttemptsRef = useRef(0);
-  const initialScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const listRef = useRef<FlatList<NormalizedMessage> | null>(null);
   const otpResolverRef = useRef<((value: string | null) => void) | null>(null);
   const loggedAttachmentIdsRef = useRef<Set<number>>(new Set());
   const myMessageIdsRef = useRef<Set<number>>(new Set());
+  const isAtBottomRef = useRef(true);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -797,12 +1067,6 @@ export default function ChatScreen() {
   }, [numericConversationId, shouldUseBackend]);
 
   useEffect(() => {
-    initialScrollDoneRef.current = false;
-    initialScrollAttemptsRef.current = 0;
-    if (initialScrollTimerRef.current) {
-      clearTimeout(initialScrollTimerRef.current);
-      initialScrollTimerRef.current = null;
-    }
     setEmojiPickerVisible(false);
     setMembersModalVisible(false);
     setMembersError(null);
@@ -810,41 +1074,6 @@ export default function ChatScreen() {
     setMembersLoading(false);
     setMembersBusy(false);
   }, [conversationId]);
-
-  const scrollToBottom = useCallback((animated = false, onSuccess?: () => void): boolean => {
-    const list = listRef.current;
-    if (list) {
-      try {
-        list.scrollToEnd({ animated });
-        onSuccess?.();
-        return true;
-      } catch (error) {
-        console.warn('[Mutabaka] Failed to scroll to bottom', error);
-      }
-    }
-
-    InteractionManager.runAfterInteractions(() => {
-      const listAfter = listRef.current;
-      if (!listAfter) {
-        return;
-      }
-      try {
-        listAfter.scrollToEnd({ animated });
-        onSuccess?.();
-      } catch (error) {
-        console.warn('[Mutabaka] (retry) Failed to scroll to bottom', error);
-      }
-    });
-
-    return Boolean(list);
-  }, []);
-
-  const clearInitialScrollTimer = useCallback(() => {
-    if (initialScrollTimerRef.current) {
-      clearTimeout(initialScrollTimerRef.current);
-      initialScrollTimerRef.current = null;
-    }
-  }, []);
 
   const flushAck = useCallback(() => {
     if (!pendingAckRef.current.size) {
@@ -1023,6 +1252,15 @@ export default function ChatScreen() {
         attachment_name: attachmentName,
         attachment_mime: attachmentMime,
         attachment_size: attachmentSize,
+        delivery_context: (() => {
+          if (deliveryStatus >= 2) {
+            return 'active' as DeliveryContext;
+          }
+          if (deliveryStatus >= 1) {
+            return isMine ? 'passive' : 'active';
+          }
+          return undefined;
+        })(),
       };
 
       setRemoteMessages((prev) => {
@@ -1046,6 +1284,12 @@ export default function ChatScreen() {
             attachment_name: nextMessage.attachment_name ?? msg.attachment_name ?? null,
             attachment_mime: nextMessage.attachment_mime ?? msg.attachment_mime ?? null,
             attachment_size: nextMessage.attachment_size ?? msg.attachment_size ?? null,
+            delivery_context: resolveDeliveryContext(
+              nextMessage.delivery_status ?? msg.delivery_status,
+              nextMessage.status ?? msg.status ?? null,
+              nextMessage.delivery_context ?? null,
+              msg.delivery_context ?? null,
+            ),
           };
         });
 
@@ -1066,7 +1310,15 @@ export default function ChatScreen() {
           });
         }
         if (!updated) {
-          mapped.push(nextMessage);
+          mapped.push({
+            ...nextMessage,
+            delivery_context: resolveDeliveryContext(
+              nextMessage.delivery_status,
+              nextMessage.status ?? null,
+              nextMessage.delivery_context ?? null,
+              undefined,
+            ),
+          });
         }
 
         mapped.sort((a, b) => {
@@ -1091,7 +1343,23 @@ export default function ChatScreen() {
             }
             const found = refreshed.find((entry: MessageDto) => entry.id === messageId);
             if (found) {
-              setRemoteMessages((prev) => prev.map((msg) => (msg.id === messageId ? { ...msg, ...found } : msg)));
+              setRemoteMessages((prev) => prev.map((msg) => {
+                if (msg.id !== messageId) {
+                  return msg;
+                }
+                const mergedDelivery = found.delivery_status ?? msg.delivery_status;
+                const mergedStatus = found.status ?? msg.status ?? null;
+                return {
+                  ...msg,
+                  ...found,
+                  delivery_context: resolveDeliveryContext(
+                    mergedDelivery,
+                    mergedStatus,
+                    found.delivery_context ?? null,
+                    msg.delivery_context ?? null,
+                  ),
+                };
+              }));
             }
           } catch (error) {
             console.warn('[Mutabaka] Failed to refresh attachment metadata', error);
@@ -1136,12 +1404,37 @@ export default function ChatScreen() {
             ? Math.max(msg.delivery_status ?? 0, deliveryStatus)
             : msg.delivery_status ?? 0;
           const nextStatus: MessageDto['status'] = nextDelivery >= 2 ? 'read' : nextDelivery >= 1 ? 'delivered' : msg.status ?? 'sent';
+          const eventContext: DeliveryContext | null = (() => {
+            if (deliveryStatus === undefined) {
+              return null;
+            }
+            if (deliveryStatus >= 2) {
+              return 'active';
+            }
+            if (deliveryStatus >= 1) {
+              const rawConversationId = (payload as Record<string, unknown> | null | undefined)?.conversation_id;
+              const numericContextId = typeof rawConversationId === 'string' || typeof rawConversationId === 'number'
+                ? Number(rawConversationId)
+                : NaN;
+              if (Number.isFinite(numericContextId) && numericContextId === numericConversationId) {
+                return 'active';
+              }
+              return 'passive';
+            }
+            return null;
+          })();
           return {
             ...msg,
             delivery_status: nextDelivery,
             status: nextStatus,
             read_at: readAt ?? msg.read_at ?? (nextStatus === 'read' ? msg.read_at ?? new Date().toISOString() : msg.read_at),
             delivered_at: deliveredAt ?? msg.delivered_at ?? (nextDelivery >= 1 ? (msg.delivered_at ?? msg.created_at) : msg.delivered_at),
+            delivery_context: resolveDeliveryContext(
+              nextDelivery,
+              nextStatus ?? null,
+              eventContext,
+              msg.delivery_context ?? null,
+            ),
           };
         }),
       );
@@ -1171,6 +1464,12 @@ export default function ChatScreen() {
               delivery_status: 2,
               status: 'read',
               read_at: msg.read_at ?? new Date().toISOString(),
+              delivery_context: resolveDeliveryContext(
+                2,
+                'read',
+                'active',
+                msg.delivery_context ?? null,
+              ),
             };
           }
           return msg;
@@ -1251,7 +1550,20 @@ export default function ChatScreen() {
       const sortedMessages = (messagesResponse.results || [])
         .filter((msg) => msg.conversation === numericConversationId)
         .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-      setRemoteMessages(sortedMessages);
+      const normalizedMessages = sortedMessages.map((msg) => ({
+        ...msg,
+        delivery_context: resolveDeliveryContext(
+          msg.delivery_status,
+          msg.status ?? null,
+          msg.delivery_context ?? null,
+          undefined,
+        ) ?? msg.delivery_context ?? (msg.delivery_status && msg.delivery_status >= 2
+          ? 'active'
+          : msg.delivery_status && msg.delivery_status >= 1
+            ? 'passive'
+            : undefined),
+      }));
+      setRemoteMessages(normalizedMessages);
       if (sortedMessages.length) {
         const inboundMax = sortedMessages.reduce((max, msg) => {
           if (msg.sender?.id && msg.sender.id !== me.id) {
@@ -1482,6 +1794,9 @@ export default function ChatScreen() {
           }
         }
         const author: NormalizedMessage['author'] = computedIsMine ? 'me' : 'them';
+        const deliveryDisplay = isSystem
+          ? null
+          : mapDeliveryStatus(msg.delivery_status, msg.status, msg.delivery_context ?? null);
         return {
           id: String(msg.id),
           conversationId: String(msg.conversation),
@@ -1491,7 +1806,8 @@ export default function ChatScreen() {
           time: formatMessageTime(msg.created_at),
           date: formatMessageDate(msg.created_at),
           timestamp: msg.created_at ?? null,
-          status: isSystem ? undefined : mapDeliveryStatus(msg.delivery_status, msg.status),
+          status: deliveryDisplay?.status,
+          deliveredPassively: deliveryDisplay?.status === 'delivered' ? deliveryDisplay.passive : undefined,
           variant,
           transaction: transaction ?? undefined,
           attachment: attachmentMeta,
@@ -1502,6 +1818,8 @@ export default function ChatScreen() {
   }, [currentUser, remoteMessages, fallbackMessages]);
 
   const headerTitle = remoteTitle ?? fallbackConversation?.title ?? 'محادثة';
+  const viewerDisplayName = pickDisplayName(currentUser) || currentUser?.username || 'أنت';
+  const peerDisplayName = pickDisplayName(peerUser) || remoteTitle || 'الطرف الآخر';
 
   const normalizedSearchQuery = searchQuery.trim();
 
@@ -1565,28 +1883,15 @@ export default function ChatScreen() {
     return searchMatches[index]?.messageId ?? null;
   }, [activeSearchIndex, searchMatches]);
 
-  const { items: conversationListItems, map: messageIndexMap } = useMemo(() => {
-    const items: ConversationListItem[] = [];
+  const listData = useMemo(() => [...visibleMessages].reverse(), [visibleMessages]);
+
+  const messageIndexMap = useMemo(() => {
     const map = new Map<string, number>();
-    let lastDayKey: string | null = null;
-
-    visibleMessages.forEach((message) => {
-      const info = getLocalDateInfo(message.timestamp);
-      if (info && info.key !== lastDayKey) {
-        items.push({
-          kind: 'separator',
-          id: `day-${info.key}`,
-          label: formatDaySeparatorLabel(info.date),
-        });
-        lastDayKey = info.key;
-      }
-      const messageIndex = items.length;
-      items.push({ kind: 'message', message });
-      map.set(message.id, messageIndex);
+    listData.forEach((message, index) => {
+      map.set(message.id, index);
     });
-
-    return { items, map };
-  }, [visibleMessages]);
+    return map;
+  }, [listData]);
 
   useEffect(() => {
     if (!normalizedSearchQuery) {
@@ -1607,12 +1912,15 @@ export default function ChatScreen() {
     if (index === undefined) {
       return;
     }
+    isAtBottomRef.current = false;
+    setShowJumpToLatest(true);
     InteractionManager.runAfterInteractions(() => {
       try {
         list.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
       } catch (error) {
+        console.warn('[Mutabaka] Failed to scroll to message, falling back to offset', error);
         try {
-          list.scrollToEnd({ animated: true });
+          list.scrollToOffset({ offset: 0, animated: true });
         } catch {}
       }
     });
@@ -1641,6 +1949,29 @@ export default function ChatScreen() {
     setActiveSearchIndex((prev) => (prev - 1 + count) % count);
   }, [searchMatches.length]);
 
+  const handleListScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const offsetY = event?.nativeEvent?.contentOffset?.y ?? 0;
+    const nearBottom = offsetY <= 24;
+    if (nearBottom !== isAtBottomRef.current) {
+      isAtBottomRef.current = nearBottom;
+      setShowJumpToLatest(!nearBottom);
+    }
+  }, []);
+
+  const handleJumpToLatest = useCallback(() => {
+    const list = listRef.current;
+    if (!list) {
+      return;
+    }
+    try {
+      list.scrollToOffset({ offset: 0, animated: true });
+      isAtBottomRef.current = true;
+      setShowJumpToLatest(false);
+    } catch (error) {
+      console.warn('[Mutabaka] Failed to jump to latest message', error);
+    }
+  }, []);
+
   const toggleSearch = useCallback(() => {
     setSearchOpen((prev) => {
       if (prev) {
@@ -1650,6 +1981,17 @@ export default function ChatScreen() {
       return !prev;
     });
   }, []);
+
+  useEffect(() => {
+    isAtBottomRef.current = true;
+    setShowJumpToLatest(false);
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (isAtBottomRef.current) {
+      setShowJumpToLatest(false);
+    }
+  }, [visibleMessages.length]);
 
   const closeActionsMenu = useCallback(() => {
     setActionsMenuVisible(false);
@@ -1665,105 +2007,201 @@ export default function ChatScreen() {
   }, [closeActionsMenu]);
 
   const closeExportModal = useCallback(() => {
+    if (exportBusy) {
+      return;
+    }
     setExportModalVisible(false);
-  }, []);
+    setExportError(null);
+  }, [exportBusy]);
 
   const handleSelectExportAction = useCallback(() => {
     closeActionsMenu();
+    if (!shouldUseBackend || !Number.isFinite(numericConversationId)) {
+      setExportError('هذه المحادثة غير متاحة للتصدير حالياً');
+      return;
+    }
+    const now = new Date();
+    const to = toDateInputValue(now);
+    const from = toDateInputValue(new Date(now.getTime() - (EXPORT_DEFAULT_RANGE_DAYS - 1) * DAY_IN_MS));
+    setExportDateFrom(from);
+    setExportDateTo(to);
+    setExportFormat('excel');
+    setExportError(null);
+    setExportBusy(false);
     setExportModalVisible(true);
-  }, [closeActionsMenu]);
+  }, [closeActionsMenu, numericConversationId, shouldUseBackend]);
+
+  const handleConfirmExport = useCallback(async () => {
+    if (exportBusy) {
+      return;
+    }
+    if (!shouldUseBackend || !Number.isFinite(numericConversationId)) {
+      setExportError('هذه المحادثة غير متاحة للتصدير حالياً');
+      return;
+    }
+    if (!currentUser) {
+      setExportError('لا تزال بيانات المستخدم قيد التحميل، حاول بعد قليل');
+      return;
+    }
+
+    const fromValue = exportDateFrom.trim();
+    const toValue = exportDateTo.trim();
+    if (!fromValue || !toValue) {
+      setExportError('يرجى اختيار تاريخ البداية والنهاية');
+      return;
+    }
+
+    const fromDate = new Date(`${fromValue}T00:00:00`);
+    const toDate = new Date(`${toValue}T23:59:59`);
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+      setExportError('تنسيق التاريخ غير صالح');
+      return;
+    }
+    if (fromDate > toDate) {
+      setExportError('تاريخ البداية يجب أن يسبق تاريخ النهاية');
+      return;
+    }
+
+    setExportBusy(true);
+    setExportError(null);
+
+    try {
+      const pageSize = 200;
+      let page = 1;
+      let hasNext = true;
+      const allTransactions: TransactionDto[] = [];
+
+      while (hasNext) {
+        const response = await fetchTransactions({
+          conversation: numericConversationId,
+          fromDate: fromValue,
+          toDate: toValue,
+          ordering: 'created_at',
+          page,
+          pageSize,
+        });
+        const batch = Array.isArray(response?.results) ? response.results : [];
+        if (batch.length) {
+          allTransactions.push(...batch);
+        }
+        if (response?.next && batch.length) {
+          page += 1;
+        } else {
+          hasNext = false;
+        }
+      }
+
+      if (!allTransactions.length) {
+        setExportError('لا توجد معاملات ضمن النطاق المحدد');
+        return;
+      }
+
+      const viewerName = pickDisplayName(currentUser) || currentUser.username || 'أنا';
+      const otherName = peerDisplayName || 'جهة الاتصال';
+
+      const rows: ExportRow[] = allTransactions
+        .map((item) => {
+          const directionLabel: 'لنا' | 'لكم' = item.direction_label === 'لكم' ? 'لكم' : 'لنا';
+          const amountSource = item.amount_value ?? item.amount ?? '0';
+          const parsedAmount = Number.parseFloat(String(amountSource));
+          const amountNumber = Number.isFinite(parsedAmount) ? parsedAmount : 0;
+          const currencySymbol = item.currency?.symbol || item.currency?.code || '';
+          const senderName = pickDisplayName(item.from_user_info) || item.from_user_info?.username || (directionLabel === 'لنا' ? otherName : viewerName);
+          const noteText = typeof item.note === 'string' ? item.note.trim() : '';
+          const createdAt = item.created_at;
+          const formattedDate = createdAt ? `${formatMessageDate(createdAt)} ${formatMessageTime(createdAt)}`.trim() : '';
+          return {
+            index: 0,
+            senderName,
+            directionLabel,
+            amountDisplay: formatAmountLabel(amountNumber, currencySymbol),
+            amountNumber: Math.abs(amountNumber),
+            positive: directionLabel === 'لنا',
+            noteText,
+            dateTimeDisplay: formattedDate,
+            createdAtISO: createdAt,
+          } as ExportRow;
+        })
+        .sort((a, b) => {
+          const aTime = a.createdAtISO ? new Date(a.createdAtISO).getTime() : 0;
+          const bTime = b.createdAtISO ? new Date(b.createdAtISO).getTime() : 0;
+          return aTime - bTime;
+        })
+        .map((row, index) => ({ ...row, index: index + 1 }));
+
+      if (!rows.length) {
+        setExportError('لا توجد معاملات ضمن النطاق المحدد');
+        return;
+      }
+
+      const rangeLabel = `الفترة: ${fromValue} → ${toValue}`;
+      const filename = safeFilename(
+        `transactions_${numericConversationId}_${exportFormat}_${fromValue}_${toValue}`,
+        exportFormat === 'excel' ? 'xlsx' : 'pdf',
+      );
+
+      const fileUri = exportFormat === 'excel'
+        ? await exportRowsToExcelMobile(rows, { a: viewerName, b: otherName }, rangeLabel, filename)
+        : await exportRowsToPdfMobile(rows, { a: viewerName, b: otherName }, rangeLabel, filename);
+
+      const mimeType = exportFormat === 'excel'
+        ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        : 'application/pdf';
+      let shared = false;
+      try {
+        const Sharing = await import('expo-sharing');
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType,
+            dialogTitle: filename,
+            UTI: exportFormat === 'pdf' ? 'com.adobe.pdf' : 'org.openxmlformats.spreadsheetml.sheet',
+          });
+          shared = true;
+        }
+      } catch (shareModuleError) {
+        console.warn('[Mutabaka] expo-sharing not available, falling back to native share', shareModuleError);
+      }
+
+      if (!shared) {
+        await Share.share({
+          url: fileUri,
+          message: `ملف التصدير: ${filename}`,
+          title: filename,
+        });
+      }
+
+      setStatusBanner({
+        kind: 'success',
+        text: exportFormat === 'excel'
+          ? 'تم إنشاء ملف Excel ويمكنك مشاركته الآن.'
+          : 'تم إنشاء ملف PDF ويمكنك مشاركته الآن.',
+      });
+      setExportError(null);
+      setExportModalVisible(false);
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : 'تعذر إكمال التصدير';
+      setExportError(message);
+    } finally {
+      setExportBusy(false);
+    }
+  }, [
+    currentUser,
+    exportBusy,
+    exportDateFrom,
+    exportDateTo,
+    exportFormat,
+    numericConversationId,
+    peerDisplayName,
+    setExportError,
+    setExportModalVisible,
+    setStatusBanner,
+    shouldUseBackend,
+  ]);
 
   const handleSelectSearchAction = useCallback(() => {
     closeActionsMenu();
     toggleSearch();
   }, [closeActionsMenu, toggleSearch]);
-
-  const requestInitialScroll = useCallback(
-    (animated = false) => {
-      if (!visibleMessages.length || initialScrollDoneRef.current) {
-        return;
-      }
-
-      const markDone = () => {
-        initialScrollDoneRef.current = true;
-        initialScrollAttemptsRef.current = 0;
-        clearInitialScrollTimer();
-      };
-
-      const success = scrollToBottom(animated, markDone);
-      if (success) {
-        markDone();
-        return;
-      }
-
-      if (initialScrollAttemptsRef.current >= 6) {
-        return;
-      }
-
-      initialScrollAttemptsRef.current += 1;
-      clearInitialScrollTimer();
-      initialScrollTimerRef.current = setTimeout(() => {
-        requestInitialScroll(animated);
-      }, 200);
-    },
-    [clearInitialScrollTimer, visibleMessages.length, scrollToBottom],
-  );
-
-  useEffect(() => () => {
-    clearInitialScrollTimer();
-  }, [clearInitialScrollTimer]);
-
-  const handleListContentSizeChange = useCallback(() => {
-    requestInitialScroll(false);
-  }, [requestInitialScroll]);
-
-  useFocusEffect(
-    useCallback(() => {
-      initialScrollDoneRef.current = false;
-      initialScrollAttemptsRef.current = 0;
-      requestInitialScroll(false);
-
-      return () => {
-        clearInitialScrollTimer();
-      };
-    }, [clearInitialScrollTimer, requestInitialScroll]),
-  );
-
-  useEffect(() => {
-    if (!visibleMessages.length) {
-      clearInitialScrollTimer();
-      return;
-    }
-    if (initialScrollDoneRef.current) {
-      return;
-    }
-    initialScrollAttemptsRef.current = 0;
-    requestInitialScroll(false);
-    return () => {
-      clearInitialScrollTimer();
-    };
-  }, [clearInitialScrollTimer, visibleMessages.length, requestInitialScroll]);
-
-  useEffect(() => {
-    if (composerHeight <= 0) {
-      return;
-    }
-    if (initialScrollDoneRef.current) {
-      if (!normalizedSearchQuery) {
-        scrollToBottom(false);
-      }
-    } else {
-      requestInitialScroll(false);
-    }
-  }, [composerHeight, normalizedSearchQuery, requestInitialScroll, scrollToBottom]);
-
-  const lastMessageKey = useMemo(() => {
-    if (!visibleMessages.length) {
-      return null;
-    }
-    const last = visibleMessages[visibleMessages.length - 1];
-    return `${last.id}-${last.time}`;
-  }, [visibleMessages]);
 
   const hasSearchResults = Boolean(normalizedSearchQuery) && searchMatches.length > 0;
   const clampedSearchIndex = hasSearchResults
@@ -1771,24 +2209,6 @@ export default function ChatScreen() {
     : 0;
   const searchResultPosition = hasSearchResults ? clampedSearchIndex + 1 : 0;
   const showSearchNavigation = hasSearchResults && searchMatches.length > 1;
-
-  useEffect(() => {
-    if (!initialScrollDoneRef.current) {
-      return;
-    }
-    if (!lastMessageKey) {
-      return;
-    }
-    if (normalizedSearchQuery) {
-      return;
-    }
-    const timer = setTimeout(() => {
-      scrollToBottom(true);
-    }, 120);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [lastMessageKey, normalizedSearchQuery, scrollToBottom]);
 
   const currencyMap = useMemo(() => {
     const map = new Map<string, CurrencyOption>();
@@ -2216,6 +2636,56 @@ export default function ChatScreen() {
     );
   }, [loadingMessages, shouldUseBackend, showTransactionsOnly, tokens.textMuted]);
 
+  const renderMessage = useCallback((
+    { item, index }: ListRenderItemInfo<NormalizedMessage>,
+  ) => {
+    const nextEntry = index < listData.length - 1 ? listData[index + 1] : null;
+    const info = getLocalDateInfo(item.timestamp);
+    let dayLabel: string | null = null;
+
+    if (info) {
+      if (!nextEntry) {
+        dayLabel = formatDaySeparatorLabel(info.date);
+      } else {
+        const nextInfo = getLocalDateInfo(nextEntry.timestamp);
+        if (!nextInfo || nextInfo.key !== info.key) {
+          dayLabel = formatDaySeparatorLabel(info.date);
+        }
+      }
+    }
+
+    const isSearchMatch = searchMatchSet.has(item.id);
+    const isActiveSearchMatch = activeSearchMatchId === item.id;
+    return (
+      <View style={styles.messageItem}>
+        {dayLabel ? (
+          <View
+            style={[
+              styles.daySeparator,
+              { backgroundColor: daySeparatorBackground, borderColor: daySeparatorBorder },
+            ]}
+          >
+            <Text style={[styles.daySeparatorText, { color: daySeparatorTextColor }]}>{dayLabel}</Text>
+          </View>
+        ) : null}
+        <ChatBubble
+          text={item.text}
+          caption={item.caption}
+          time={item.time}
+          date={item.date}
+          isMine={item.author === 'me'}
+          status={item.status}
+          deliveredPassively={item.deliveredPassively}
+          variant={item.variant}
+          transaction={item.transaction}
+          attachment={item.attachment}
+          highlightQuery={isSearchMatch ? normalizedSearchQuery : ''}
+          highlightActive={isSearchMatch && isActiveSearchMatch}
+        />
+      </View>
+    );
+  }, [activeSearchMatchId, daySeparatorBackground, daySeparatorBorder, daySeparatorTextColor, listData, normalizedSearchQuery, searchMatchSet]);
+
   const handleAttachmentPress = useCallback(async () => {
     if (attachmentUploading) {
       return;
@@ -2386,7 +2856,16 @@ export default function ChatScreen() {
       setRemoteMessages((prev) => {
         const withoutOptimistic = prev.filter((msg) => msg.id !== optimisticId);
         const withoutDuplicate = withoutOptimistic.filter((msg) => msg.id !== response!.id);
-        const next = [...withoutDuplicate, response!];
+        const normalizedResponse: MessageDto = {
+          ...response!,
+          delivery_context: resolveDeliveryContext(
+            response!.delivery_status,
+            response!.status ?? null,
+            response!.delivery_context ?? (response!.delivery_status && response!.delivery_status >= 1 ? 'passive' : null),
+            undefined,
+          ),
+        };
+        const next = [...withoutDuplicate, normalizedResponse];
         return next.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
       });
 
@@ -2526,7 +3005,16 @@ export default function ChatScreen() {
       setRemoteMessages((prev) => {
         const filtered = prev.filter((msg) => msg.id !== optimisticId);
         const withoutDuplicate = filtered.filter((msg) => msg.id !== response.id);
-        const next = [...withoutDuplicate, response];
+        const normalizedResponse: MessageDto = {
+          ...response,
+          delivery_context: resolveDeliveryContext(
+            response.delivery_status,
+            response.status ?? null,
+            response.delivery_context ?? (response.delivery_status && response.delivery_status >= 1 ? 'passive' : null),
+            undefined,
+          ),
+        };
+        const next = [...withoutDuplicate, normalizedResponse];
         return next.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
       });
 
@@ -2748,14 +3236,158 @@ export default function ChatScreen() {
                     style={[styles.modalCard, { backgroundColor: tokens.panel, borderColor: tokens.divider }]}
                     onStartShouldSetResponder={() => true}
                   >
-                    <Text style={[styles.modalTitle, { color: tokens.textPrimary }]}>تصدير المحادثة</Text>
-                    <Text style={[styles.modalEmptyText, { color: tokens.textMuted }]}>هذه النافذة فارغة مؤقتًا.</Text>
+                    <Text style={[styles.modalTitle, { color: tokens.textPrimary }]}>
+                      {`سجل المعاملات المالية بين ${viewerDisplayName} و ${peerDisplayName}`}
+                    </Text>
+                    <Text style={[styles.exportSubtitle, { color: tokens.textMuted }]}>
+                      سيتم تصدير المعاملات المالية بين التاريخين المحددين فقط
+                    </Text>
+                    <View style={styles.exportInputsRow}>
+                      <View style={styles.exportFieldGroup}>
+                        <Text style={[styles.exportLabel, { color: tokens.textMuted }]}>من تاريخ</Text>
+                        <TextInput
+                          value={exportDateFrom}
+                          onChangeText={(value) => {
+                            setExportDateFrom(value);
+                            setExportError(null);
+                          }}
+                          editable={!exportBusy}
+                          placeholder="YYYY-MM-DD"
+                          placeholderTextColor={tokens.textMuted}
+                          keyboardType="numbers-and-punctuation"
+                          textAlign="right"
+                          style={[
+                            styles.exportInput,
+                            {
+                              color: tokens.textPrimary,
+                              borderColor: tokens.divider,
+                              backgroundColor: tokens.panelAlt,
+                            },
+                          ]}
+                        />
+                      </View>
+                      <View style={styles.exportFieldGroup}>
+                        <Text style={[styles.exportLabel, { color: tokens.textMuted }]}>إلى تاريخ</Text>
+                        <TextInput
+                          value={exportDateTo}
+                          onChangeText={(value) => {
+                            setExportDateTo(value);
+                            setExportError(null);
+                          }}
+                          editable={!exportBusy}
+                          placeholder="YYYY-MM-DD"
+                          placeholderTextColor={tokens.textMuted}
+                          keyboardType="numbers-and-punctuation"
+                          textAlign="right"
+                          style={[
+                            styles.exportInput,
+                            {
+                              color: tokens.textPrimary,
+                              borderColor: tokens.divider,
+                              backgroundColor: tokens.panelAlt,
+                            },
+                          ]}
+                        />
+                      </View>
+                    </View>
+                    <View style={styles.exportFormatGroup}>
+                      <Text style={[styles.exportLabel, { color: tokens.textMuted }]}>صيغة الملف</Text>
+                      <View style={styles.exportRadioRow}>
+                        <Pressable
+                          style={[
+                            styles.exportRadioOption,
+                            { borderColor: tokens.divider, backgroundColor: tokens.panelAlt },
+                            exportFormat === 'excel' && styles.exportRadioOptionExcelActive,
+                            exportBusy && styles.modalButtonDisabled,
+                          ]}
+                          onPress={() => {
+                            if (!exportBusy) {
+                              setExportFormat('excel');
+                              setExportError(null);
+                            }
+                          }}
+                          disabled={exportBusy}
+                        >
+                          <FeatherIcon
+                            name={exportFormat === 'excel' ? 'check-circle' : 'circle'}
+                            size={16}
+                            color={exportFormat === 'excel' ? '#22c55e' : tokens.textMuted}
+                          />
+                          <Text
+                            style={[
+                              styles.exportRadioText,
+                              { color: exportFormat === 'excel' ? '#16a34a' : tokens.textPrimary },
+                            ]}
+                          >
+                            Excel
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          style={[
+                            styles.exportRadioOption,
+                            { borderColor: tokens.divider, backgroundColor: tokens.panelAlt },
+                            exportFormat === 'pdf' && styles.exportRadioOptionPdfActive,
+                            exportBusy && styles.modalButtonDisabled,
+                          ]}
+                          onPress={() => {
+                            if (!exportBusy) {
+                              setExportFormat('pdf');
+                              setExportError(null);
+                            }
+                          }}
+                          disabled={exportBusy}
+                        >
+                          <FeatherIcon
+                            name={exportFormat === 'pdf' ? 'check-circle' : 'circle'}
+                            size={16}
+                            color={exportFormat === 'pdf' ? '#3b82f6' : tokens.textMuted}
+                          />
+                          <Text
+                            style={[
+                              styles.exportRadioText,
+                              { color: exportFormat === 'pdf' ? '#2563eb' : tokens.textPrimary },
+                            ]}
+                          >
+                            PDF
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                    {exportError ? (
+                      <View
+                        style={[
+                          styles.exportErrorBox,
+                          { borderColor: '#fda4af', backgroundColor: 'rgba(248, 113, 113, 0.12)' },
+                        ]}
+                      >
+                        <Text style={[styles.exportErrorText, { color: '#b91c1c' }]}>{exportError}</Text>
+                      </View>
+                    ) : null}
                     <View style={styles.modalActions}>
                       <Pressable
-                        style={[styles.modalButton, styles.modalButtonPrimary]}
+                        style={[
+                          styles.modalButton,
+                          styles.modalButtonSecondary,
+                          { borderColor: tokens.divider },
+                          exportBusy && styles.modalButtonDisabled,
+                        ]}
                         onPress={closeExportModal}
+                        disabled={exportBusy}
                       >
-                        <Text style={styles.modalButtonTextPrimary}>إغلاق</Text>
+                        <Text style={[styles.modalButtonTextSecondary, { color: tokens.textPrimary }]}>إلغاء</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[
+                          styles.modalButton,
+                          styles.modalButtonPrimary,
+                          exportBusy && styles.modalButtonDisabled,
+                        ]}
+                        onPress={handleConfirmExport}
+                        disabled={exportBusy}
+                      >
+                        <Text style={styles.modalButtonTextPrimary}>
+                          {exportBusy ? 'جارٍ التصدير…' : 'موافق'}
+                        </Text>
                       </Pressable>
                     </View>
                   </View>
@@ -2829,50 +3461,47 @@ export default function ChatScreen() {
               </View>
             ) : null}
 
-            <FlatList<ConversationListItem>
-              ref={listRef}
-              data={conversationListItems}
-              keyExtractor={(item) => (item.kind === 'separator' ? item.id : item.message.id)}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={[styles.listContent, { paddingBottom: Math.max(composerHeight + 24, 80) }]}
-              onContentSizeChange={handleListContentSizeChange}
-              ListEmptyComponent={renderEmpty}
-              refreshing={shouldUseBackend ? loadingMessages : false}
-              onRefresh={loadConversationData}
-              ListFooterComponent={<View style={styles.listFooterSpacer} />}
-              renderItem={({ item }) => {
-                if (item.kind === 'separator') {
-                  return (
-                    <View
-                      style={[
-                        styles.daySeparator,
-                        { backgroundColor: daySeparatorBackground, borderColor: daySeparatorBorder },
-                      ]}
-                    >
-                      <Text style={[styles.daySeparatorText, { color: daySeparatorTextColor }]}>{item.label}</Text>
-                    </View>
-                  );
-                }
-                const message = item.message;
-                const isSearchMatch = searchMatchSet.has(message.id);
-                const isActiveSearchMatch = activeSearchMatchId === message.id;
-                return (
-                  <ChatBubble
-                    text={message.text}
-                    caption={message.caption}
-                    time={message.time}
-                    date={message.date}
-                    isMine={message.author === 'me'}
-                    status={message.status}
-                    variant={message.variant}
-                    transaction={message.transaction}
-                    attachment={message.attachment}
-                    highlightQuery={isSearchMatch ? normalizedSearchQuery : ''}
-                    highlightActive={isSearchMatch && isActiveSearchMatch}
-                  />
-                );
-              }}
-            />
+            <View style={styles.listWrapper}>
+              <FlatList<NormalizedMessage>
+                ref={listRef}
+                data={listData}
+                inverted
+                maintainVisibleContentPosition={{ minIndexForVisible: 1, autoscrollToTopThreshold: 20 }}
+                keyExtractor={(item) => String(item.id)}
+                renderItem={renderMessage}
+                contentContainerStyle={[
+                  styles.listContent,
+                  { paddingTop: 8, paddingBottom: composerHeight + 12 },
+                ]}
+                showsVerticalScrollIndicator={false}
+                ListEmptyComponent={renderEmpty}
+                refreshing={shouldUseBackend ? loadingMessages : false}
+                onRefresh={loadConversationData}
+                onScroll={handleListScroll}
+                scrollEventThrottle={16}
+                onScrollToIndexFailed={({ index }) => {
+                  requestAnimationFrame(() => {
+                    listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+                  });
+                }}
+              />
+              {showJumpToLatest ? (
+                <Pressable
+                  style={[
+                    styles.jumpToLatestButton,
+                    {
+                      backgroundColor: headerButtonBackground,
+                      borderColor: headerButtonBorder,
+                      bottom: composerHeight + 24,
+                    },
+                  ]}
+                  onPress={handleJumpToLatest}
+                  hitSlop={10}
+                >
+                  <Text style={[styles.jumpToLatestText, { color: headerPrimaryText }]}>⬇️</Text>
+                </Pressable>
+              ) : null}
+            </View>
 
             <View
               style={[styles.composer, { backgroundColor: composerBackground, borderColor: tokens.divider }]}
@@ -3542,14 +4171,13 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
+  listWrapper: {
+    flex: 1,
+    position: 'relative',
+  },
   listContent: {
     paddingHorizontal: 20,
-    paddingTop: 24,
     flexGrow: 1,
-    justifyContent: 'flex-end',
-  },
-  listFooterSpacer: {
-    height: 16,
   },
   daySeparator: {
     alignSelf: 'center',
@@ -3558,6 +4186,25 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     marginBottom: 16,
     borderWidth: 1,
+  },
+  messageItem: {
+    marginBottom: 16,
+  },
+  jumpToLatestButton: {
+    position: 'absolute',
+    alignSelf: 'center',
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    shadowColor: '#000000',
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  jumpToLatestText: {
+    fontSize: 18,
   },
   daySeparatorText: {
     fontSize: 12,
@@ -3701,6 +4348,75 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     textAlign: 'right',
+  },
+  exportSubtitle: {
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  exportInputsRow: {
+    width: '100%',
+    rowGap: 12,
+  },
+  exportFieldGroup: {
+    width: '100%',
+    rowGap: 6,
+  },
+  exportLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'right',
+  },
+  exportInput: {
+    width: '100%',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: Platform.OS === 'ios' ? 12 : 10,
+    paddingHorizontal: 12,
+    fontSize: 13,
+  },
+  exportFormatGroup: {
+    width: '100%',
+    rowGap: 10,
+  },
+  exportRadioRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    columnGap: 12,
+  },
+  exportRadioOption: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    columnGap: 8,
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  exportRadioOptionExcelActive: {
+    borderColor: '#22c55e',
+    backgroundColor: 'rgba(34, 197, 94, 0.12)',
+  },
+  exportRadioOptionPdfActive: {
+    borderColor: '#2563eb',
+    backgroundColor: 'rgba(37, 99, 235, 0.12)',
+  },
+  exportRadioText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  exportErrorBox: {
+    width: '100%',
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  exportErrorText: {
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+    fontWeight: '600',
   },
   otpPromptText: {
     fontSize: 13,

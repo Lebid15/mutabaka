@@ -41,6 +41,7 @@ interface ChatBubbleProps {
   date?: string;
   isMine?: boolean;
   status?: 'sent' | 'delivered' | 'read';
+  deliveredPassively?: boolean;
   variant?: 'text' | 'transaction' | 'system' | 'attachment';
   transaction?: TransactionPayload;
   attachment?: AttachmentData | null;
@@ -48,7 +49,7 @@ interface ChatBubbleProps {
   highlightActive?: boolean;
 }
 
-function ChatBubbleBase({ text, caption, time, date, isMine, status, variant = 'text', transaction, attachment, highlightQuery, highlightActive }: ChatBubbleProps) {
+function ChatBubbleBase({ text, caption, time, date, isMine, status, deliveredPassively, variant = 'text', transaction, attachment, highlightQuery, highlightActive }: ChatBubbleProps) {
   const { mode } = useThemeMode();
   const isLight = mode === 'light';
   const isTransaction = variant === 'transaction' && transaction;
@@ -461,12 +462,22 @@ function ChatBubbleBase({ text, caption, time, date, isMine, status, variant = '
     : undefined;
 
   const timeColor = isMine
-    ? isLight ? '#7c4a21' : '#a7f3d0'
+    ? isLight ? '#7c4a21' : '#aca7f3ff'
     : isLight ? '#8c6d52' : '#94a3b8';
 
-  const showTicks = Boolean(status);
-  const readColor = isLight ? '#38bdf8' : '#60a5fa';
-  const unreadColor = isLight ? '#7f6538ff' : '#a8a59aff';
+  const showTicks = Boolean(isMine && status);
+  const baseSentColor = isLight ? '#696552ff' : '#807a6bff';
+  const deliveredActiveColor = isLight ? '#38bdf8' : '#60a5fa';
+  const readColor = isLight ? '#10b981' : '#34d399';
+  const ticksColor = (() => {
+    if (!status || status === 'sent') {
+      return baseSentColor;
+    }
+    if (status === 'delivered') {
+      return deliveredPassively ? baseSentColor : deliveredActiveColor;
+    }
+    return readColor;
+  })();
 
   const badgeBackground = transaction?.direction === 'lna'
     ? (isLight ? '#dcfce7' : 'rgba(34,197,94,0.25)')
@@ -870,7 +881,7 @@ function ChatBubbleBase({ text, caption, time, date, isMine, status, variant = '
           <Text className="text-[11px]" style={{ color: timeColor }}>
             {time}
           </Text>
-          {showTicks ? <MessageTicks color={status === 'read' ? readColor : unreadColor} /> : null}
+          {showTicks ? <MessageTicks color={ticksColor} /> : null}
         </View>
       )}
     </View>

@@ -18,6 +18,10 @@ export interface SubscriptionSummary {
   status?: string | null;
   start_at?: string | null;
   end_at?: string | null;
+  last_renewed_at?: string | null;
+  auto_renew?: boolean | null;
+  remaining_days?: number | null;
+  is_trial?: boolean | null;
   plan?: {
     code?: PlanCode;
     name?: string | null;

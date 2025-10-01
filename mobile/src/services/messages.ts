@@ -22,6 +22,7 @@ export interface MessageDto {
   delivery_status?: number;
   delivered_at?: string | null;
   read_at?: string | null;
+  delivery_context?: 'passive' | 'active' | null;
 }
 
 interface MessagesResponse {
