@@ -1,7 +1,21 @@
 from rest_framework import serializers
 import re
 from django.contrib.auth import get_user_model
-from .models import ContactRelation, Conversation, Message, Transaction, PushSubscription, ConversationMute, TeamMember, ConversationMember, ConversationReadMarker, ContactLink, PrivacyPolicy
+from .models import (
+    ContactRelation,
+    Conversation,
+    Message,
+    Transaction,
+    PushSubscription,
+    ConversationMute,
+    TeamMember,
+    ConversationMember,
+    ConversationReadMarker,
+    ContactLink,
+    PrivacyPolicy,
+    ConversationSettlement,
+    is_wallet_settlement_body,
+)
 from finance.models import Currency
 from django.core.exceptions import ValidationError
 
@@ -244,13 +258,15 @@ class MessageSerializer(serializers.ModelSerializer):
     delivery_status = serializers.IntegerField(read_only=True)
     delivered_at = serializers.DateTimeField(read_only=True)
     read_at = serializers.DateTimeField(read_only=True)
+    systemSubtype = serializers.SerializerMethodField()
+    settled_at = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
         fields = [
             "id", "conversation", "sender", "senderType", "senderDisplay", "type", "body", "client_id", "created_at",
             "attachment_url", "attachment_name", "attachment_mime", "attachment_size",
-            "status", "delivery_status", "delivered_at", "read_at"
+            "status", "delivery_status", "delivered_at", "read_at", "systemSubtype", "settled_at"
         ]
         read_only_fields = ["id", "sender", "senderType", "senderDisplay", "type", "client_id", "created_at", "attachment_url", "delivery_status", "delivered_at", "read_at"]
 
@@ -287,6 +303,34 @@ class MessageSerializer(serializers.ModelSerializer):
             return 'sent'
         except Exception:
             return 'sent'
+
+    def get_systemSubtype(self, obj):
+        try:
+            if getattr(obj, 'type', None) != 'system':
+                return None
+            if is_wallet_settlement_body(getattr(obj, 'body', '')):
+                return 'wallet_settled'
+        except Exception:
+            return None
+        return None
+
+    def get_settled_at(self, obj):
+        subtype = self.get_systemSubtype(obj)
+        if subtype != 'wallet_settled':
+            return None
+        try:
+            settlement = ConversationSettlement.objects.filter(
+                conversation_id=obj.conversation_id,
+                settled_at=obj.created_at,
+            ).only('settled_at').first()
+            if settlement:
+                return settlement.settled_at.isoformat()
+        except Exception:
+            pass
+        try:
+            return obj.created_at.isoformat()
+        except Exception:
+            return None
 
     def create(self, validated_data):
         request = self.context['request']

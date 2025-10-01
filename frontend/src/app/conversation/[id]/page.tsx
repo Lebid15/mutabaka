@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { AiOutlineFileDone } from 'react-icons/ai';
 import { useParams, useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api';
 import { attachPrimingListeners, tryPlayMessageSound } from '@/lib/sound';
@@ -17,6 +18,8 @@ type Msg = {
   client_id?: string;
   status?: 'delivered' | 'read';
   delivery_status?: 1|2; // simplified: 1=delivered, 2=read
+  systemSubtype?: string;
+  settled_at?: string | null;
 };
 
 // Force wrap every HARD_WRAP_LIMIT grapheme clusters even inside a single long word.
@@ -122,6 +125,135 @@ export default function ConversationPage() {
     return null;
   };
 
+  const normalizeWalletText = (value: string): string =>
+    value.replace(/[\u200e\u200f\u202a-\u202e]/g, '').trim();
+
+  const WALLET_SETTLED_MATCHES = [
+    'الحساب صفر',
+    'الحساب 000 صفر',
+    'الحساب 800 صفر',
+    'تمت تسوية جميع المحافظ',
+    'تم تصفير جميع المحافظ',
+    'تم تصفير المحافظ',
+  ];
+
+  const WALLET_SETTLED_DISPLAY_TEXT = 'الحساب صفر';
+
+  const matchesWalletSettlementPhrase = (text?: string | null): boolean => {
+    if (!text) return false;
+    const normalized = normalizeWalletText(text);
+    return WALLET_SETTLED_MATCHES.some(token => normalized.includes(token));
+  };
+
+  const normalizeIncomingMessage = (raw: any): Msg => {
+    const fallbackId = Date.now();
+    const typeRaw = typeof raw?.type === 'string' ? raw.type : (typeof raw?.kind === 'string' ? raw.kind : 'text');
+    const type: Msg['type'] = (typeRaw === 'system' || typeRaw === 'transaction') ? typeRaw : 'text';
+    const body = typeof raw?.body === 'string' ? raw.body : '';
+    const senderDisplay = raw?.senderDisplay || raw?.sender_display || raw?.senderName;
+    const senderObj = (() => {
+      if (raw?.sender && typeof raw.sender === 'object') {
+        if (senderDisplay && !raw.sender.display_name) {
+          return { ...raw.sender, display_name: senderDisplay };
+        }
+        return raw.sender;
+      }
+      const username = typeof raw?.sender === 'string' ? raw.sender : (raw?.sender_username || raw?.username || '');
+      return { username, display_name: senderDisplay || username || '' };
+    })();
+    const created_at = typeof raw?.created_at === 'string'
+      ? raw.created_at
+      : (typeof raw?.createdAt === 'string' ? raw.createdAt : new Date().toISOString());
+    const read_at = typeof raw?.read_at === 'string' ? raw.read_at : (typeof raw?.readAt === 'string' ? raw.readAt : null);
+    const delivered_at = typeof raw?.delivered_at === 'string' ? raw.delivered_at : (typeof raw?.deliveredAt === 'string' ? raw.deliveredAt : null);
+    const delivery_status_raw = typeof raw?.delivery_status === 'number'
+      ? raw.delivery_status
+      : (typeof raw?.deliveryStatus === 'number' ? raw.deliveryStatus : undefined);
+    let delivery_status: 1|2|undefined = undefined;
+    if (typeof delivery_status_raw === 'number') {
+      delivery_status = delivery_status_raw <= 1 ? 1 : 2;
+    } else if (read_at) {
+      delivery_status = 2;
+    } else if (raw?.status === 'delivered') {
+      delivery_status = 1;
+    }
+    let status: Msg['status'] = delivery_status === 2 ? 'read' : (delivery_status === 1 ? 'delivered' : (raw?.status === 'read' ? 'read' : raw?.status === 'delivered' ? 'delivered' : undefined));
+    if (delivery_status === undefined) {
+      delivery_status = status === 'read' ? 2 : 1;
+    }
+    if (!status) {
+      status = delivery_status === 2 ? 'read' : 'delivered';
+    }
+    const systemSubtype = (() => {
+      const sub = raw?.systemSubtype || raw?.system_subtype;
+      if (typeof sub === 'string' && sub) return sub;
+      if (type === 'system' && matchesWalletSettlementPhrase(body)) return 'wallet_settled';
+      return undefined;
+    })();
+    const settled_at = (() => {
+      if (typeof raw?.settled_at === 'string') return raw.settled_at;
+      if (typeof raw?.settledAt === 'string') return raw.settledAt;
+      if (systemSubtype === 'wallet_settled') return created_at;
+      return null;
+    })();
+    const conversationId = Number(raw?.conversation || raw?.conversation_id || convId) || convId;
+    const client_id = typeof raw?.client_id === 'string' ? raw.client_id : (typeof raw?.clientId === 'string' ? raw.clientId : undefined);
+    const id = typeof raw?.id === 'number' ? raw.id : (raw?.id ? Number(raw.id) || fallbackId : fallbackId);
+    return {
+      id,
+      conversation: conversationId,
+      sender: senderObj,
+      type,
+      body,
+      created_at,
+      read_at,
+      delivered_at,
+      client_id,
+  status,
+  delivery_status,
+      systemSubtype,
+      settled_at,
+    };
+  };
+
+  const isWalletSettlementMessage = (msg: Msg): boolean => {
+    if (!msg) return false;
+    if (msg.systemSubtype === 'wallet_settled') return true;
+    const body = typeof msg.body === 'string' ? msg.body : '';
+    if (!body) return false;
+    return matchesWalletSettlementPhrase(body);
+  };
+
+  const formatSettlementTimestamp = (iso?: string | null): string => {
+    if (!iso) return '';
+    try {
+      const dt = new Date(iso);
+      if (Number.isNaN(dt.getTime())) return '';
+      const formatter = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Europe/Istanbul',
+        hour12: false,
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      const parts = formatter.formatToParts(dt);
+      const lookup = (type: Intl.DateTimeFormatPartTypes) => parts.find(p => p.type === type)?.value || '';
+      const day = lookup('day');
+      const month = lookup('month');
+      const year = lookup('year');
+      const hour = lookup('hour');
+      const minute = lookup('minute');
+      if (day && month && year && hour && minute) {
+        return `${day}/${month}/${year} ${hour}:${minute}`;
+      }
+      return formatter.format(dt).replace(',', '').trim();
+    } catch {
+      return '';
+    }
+  };
+
   // Redirect-to-login guard
   useEffect(() => {
     const hasTokens = typeof window !== 'undefined' && !!localStorage.getItem('auth_tokens_v1');
@@ -145,15 +277,16 @@ export default function ConversationPage() {
           apiClient.getMe(),
         ]);
         if (cancelled) return;
-        setConv(c);
-        setMe(meInfo);
-        const ordered = Array.isArray(msgs) ? msgs.sort((a:any,b:any)=> (a.id - b.id)) : [];
-        setMessages(ordered);
-        lastIdRef.current = ordered.length ? ordered[ordered.length-1].id : 0;
+  setConv(c);
+  setMe(meInfo);
+  const ordered = Array.isArray(msgs) ? [...msgs].sort((a:any,b:any)=> ((Number(a?.id)||0) - (Number(b?.id)||0))) : [];
+  const normalized = ordered.map((m:any) => normalizeIncomingMessage(m));
+  setMessages(normalized);
+  lastIdRef.current = normalized.length ? normalized[normalized.length-1].id : 0;
         // Initialize last read marker for my messages from persisted status
         try {
           const myUser = meInfo?.username;
-          const maxReadPersisted = ordered
+          const maxReadPersisted = normalized
             .filter((m:any) => m?.sender?.username === myUser && ((m?.delivery_status ?? 0) >= 2 || m?.status === 'read'))
             .reduce((acc:number, m:any) => Math.max(acc, Number(m.id)||0), 0);
           // Also consider sessionStorage fallback (from live WS events) to bridge any short API lag
@@ -230,19 +363,14 @@ export default function ConversationPage() {
             return;
           }
           if (data?.type === 'chat.message' || DEBUG_FORCE_APPEND) {
-            const msg: Msg = {
-              id: data.id || Date.now(),
-              conversation: convId,
-              sender: { username: data.sender, display_name: data.senderDisplay },
-              type: data.kind || 'text',
-              body: data.body || '',
-              created_at: data.created_at || new Date().toISOString(),
-              read_at: typeof data.read_at === 'string' ? data.read_at : undefined,
-              delivered_at: typeof data.delivered_at === 'string' ? data.delivered_at : undefined,
-              client_id: data.client_id,
-              status: ((data.status as any) === 'read') ? 'read' : 'delivered',
-              delivery_status: typeof data.delivery_status === 'number' ? ((data.delivery_status <= 1) ? 1 : 2) as 1|2 : 1,
+            const msgPayload = {
+              ...data,
+              type: data?.kind || data?.type,
+              sender: data?.sender && typeof data.sender === 'object'
+                ? data.sender
+                : { username: data?.sender, display_name: data?.senderDisplay },
             };
+            const msg = normalizeIncomingMessage(msgPayload);
             setMessages(prev => {
               // If this is an echo for a pending local message, update it instead of appending
               if (msg.client_id) {
@@ -253,11 +381,14 @@ export default function ConversationPage() {
                   copy[idx] = {
                     ...copy[idx],
                     id: msg.id,
-                    status: (msg.delivery_status === 2 ? 'read' : 'delivered'),
-                    delivery_status: (msg.delivery_status === 2 ? 2 : 1),
+                    status: msg.delivery_status === 2 ? 'read' : 'delivered',
+                    delivery_status: msg.delivery_status === 2 ? 2 : 1,
                     created_at: msg.created_at,
                     read_at: typeof msg.read_at === 'string' ? msg.read_at : copy[idx]?.read_at,
                     delivered_at: typeof msg.delivered_at === 'string' ? msg.delivered_at : copy[idx]?.delivered_at,
+                    systemSubtype: msg.systemSubtype || copy[idx]?.systemSubtype,
+                    settled_at: msg.settled_at ?? copy[idx]?.settled_at ?? null,
+                    body: msg.body || copy[idx]?.body || '',
                   };
                   lastIdRef.current = msg.id;
                   setTimeout(()=> listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' }), 0);
@@ -425,6 +556,24 @@ export default function ConversationPage() {
       </div>
       <div ref={listRef} className="flex-1 max-w-4xl mx-auto w-full overflow-auto p-3 space-y-2">
         {messages.map(m => {
+          if (isWalletSettlementMessage(m)) {
+            const timestamp = formatSettlementTimestamp(m.settled_at ?? m.created_at);
+            return (
+              <div key={`settlement-${m.id}`} className="flex justify-center">
+                <div
+                  className="bg-[#FDE8D8] text-[#8C4122] border border-[#F5C7A5] rounded-2xl px-6 py-5 shadow-sm max-w-xs sm:max-w-sm w-full flex flex-col items-center text-center gap-3"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span className="text-green-500 font-semibold text-base sm:text-lg">{WALLET_SETTLED_DISPLAY_TEXT}</span>
+                  <AiOutlineFileDone aria-hidden className="text-emerald-600" size={56} />
+                  <time className="text-xs sm:text-sm text-[#8C4122]" dir="ltr">
+                    {timestamp || '—'}
+                  </time>
+                </div>
+              </div>
+            );
+          }
           const isMine = m.sender?.username === me?.username;
           return (
           <div key={m.id} className={isMine ? 'self-end text-left' : 'self-start text-right'}>

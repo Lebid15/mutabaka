@@ -2,7 +2,7 @@ from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from finance.models import Currency, Wallet
-from .models import Conversation, Transaction, Message, ContactLink, PrivacyPolicy
+from .models import Conversation, Transaction, Message, ContactLink, PrivacyPolicy, ConversationSettlement
 from rest_framework.test import APIClient
 
 User = get_user_model()
@@ -96,6 +96,34 @@ class TransactionFlowTests(TestCase):
         w2 = Wallet.objects.get(user=self.user2, currency=self.currency)
         self.assertEqual(w1.balance, Decimal('12.12346'))
         self.assertEqual(w2.balance, Decimal('-12.12346'))
+
+    def test_settlement_event_and_message_created_on_zero_balance(self):
+        Transaction.create_transaction(
+            conversation=self.conv,
+            actor=self.user1,
+            currency=self.currency,
+            amount=50,
+            direction='lna'
+        )
+        Transaction.create_transaction(
+            conversation=self.conv,
+            actor=self.user1,
+            currency=self.currency,
+            amount=50,
+            direction='lkm'
+        )
+        settlements = ConversationSettlement.objects.filter(conversation=self.conv)
+        self.assertEqual(settlements.count(), 1)
+        settlement = settlements.first()
+        self.assertIsNotNone(settlement)
+        self.assertEqual(settlement.transaction.direction, 'lkm')
+        self.conv.refresh_from_db()
+        self.assertIsNotNone(self.conv.last_settled_at)
+        self.assertEqual(settlement.settled_at, self.conv.last_settled_at)
+        msg = Message.objects.filter(conversation=self.conv, type='system').order_by('created_at').last()
+        self.assertIsNotNone(msg)
+        self.assertEqual(msg.body, 'الحساب صفر')
+        self.assertGreaterEqual(msg.created_at, settlement.settled_at)
 
 
 class APIRoundingIntegrationTests(TestCase):

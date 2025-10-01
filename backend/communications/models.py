@@ -4,6 +4,24 @@ from django.conf import settings
 from django.utils import timezone
 from finance.models import Currency, Wallet
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+
+WALLET_SETTLEMENT_DISPLAY_TEXT = "الحساب صفر"
+WALLET_SETTLEMENT_MATCHES = (
+    "الحساب صفر",
+    "تمت تسوية جميع المحافظ",
+    "تم تصفير جميع المحافظ",
+    "تم تصفير المحافظ",
+)
+
+
+def is_wallet_settlement_body(body: str | None) -> bool:
+    if not body:
+        return False
+    try:
+        text = body.strip()
+    except Exception:
+        text = body or ""
+    return any(token and token in text for token in WALLET_SETTLEMENT_MATCHES)
 from django.contrib.auth import get_user_model
 
 UserModel = get_user_model()
@@ -139,6 +157,7 @@ class Conversation(models.Model):
     last_message_at = models.DateTimeField(null=True, blank=True)
     last_activity_at = models.DateTimeField(null=True, blank=True)
     last_message_preview = models.CharField(max_length=120, blank=True)
+    last_settled_at = models.DateTimeField(null=True, blank=True)
     # طلب حذف يحتاج موافقة الطرف الآخر
     delete_requested_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='conversations_delete_requested')
     delete_requested_at = models.DateTimeField(null=True, blank=True)
@@ -296,6 +315,47 @@ class Transaction(models.Model):
             'symbol': symbol or getattr(self.currency, 'code', ''),
             'note': self.note or '',
         }
+
+    @classmethod
+    def _conversation_net_totals(cls, conversation) -> dict[int, Decimal]:
+        totals: dict[int, Decimal] = {}
+        try:
+            qs = conversation.transactions.values('currency_id', 'amount', 'direction', 'from_user_id')
+            for row in qs:
+                cid = row.get('currency_id')
+                amt = row.get('amount')
+                if amt is None or cid is None:
+                    continue
+                if not isinstance(amt, Decimal):
+                    try:
+                        amt = Decimal(str(amt))
+                    except Exception:
+                        continue
+                prev = totals.get(cid, Decimal('0'))
+                direction = row.get('direction')
+                from_user_id = row.get('from_user_id')
+                if direction == 'lna':
+                    if from_user_id == conversation.user_a_id:
+                        prev += amt
+                    else:
+                        prev -= amt
+                else:  # lkm
+                    if from_user_id == conversation.user_a_id:
+                        prev -= amt
+                    else:
+                        prev += amt
+                totals[cid] = prev.quantize(Decimal('0.00001'), rounding=ROUND_HALF_UP)
+        except Exception:
+            return {}
+        return totals
+
+    @classmethod
+    def _conversation_is_settled(cls, conversation) -> bool:
+        totals = cls._conversation_net_totals(conversation)
+        if not totals:
+            return False
+        zero = Decimal('0')
+        return all(val == zero for val in totals.values())
 
     @classmethod
     def create_transaction(cls, conversation, actor, currency, amount, direction, note="", sender_team_member=None):
@@ -465,9 +525,116 @@ class Transaction(models.Model):
             except Exception:
                 pass
 
-            # Update conversation activity timestamp
-            Conversation.objects.filter(pk=conversation.pk).update(last_activity_at=timezone.now())
+            settlement_msg = None
+            settlement_time = None
+            if cls._conversation_is_settled(conversation):
+                settlement_body = "الحساب صفر"
+                settlement_msg = Message.objects.create(
+                    conversation=conversation,
+                    sender=actor,
+                    sender_team_member=sender_team_member,
+                    type='system',
+                    body=settlement_body
+                )
+                settlement_time = settlement_msg.created_at
+                ConversationSettlement.objects.create(
+                    conversation=conversation,
+                    transaction=txn,
+                    settled_at=settlement_time
+                )
+
+                try:
+                    from channels.layers import get_channel_layer
+                    from asgiref.sync import async_to_sync
+                    channel_layer = get_channel_layer()
+                    if channel_layer is not None:
+                        group = f"conv_{conversation.id}"
+                        payload = {
+                            'type': 'chat.message',
+                            'conversation_id': conversation.id,
+                            'id': settlement_msg.id,
+                            'message_id': settlement_msg.id,
+                            'seq': settlement_msg.id,
+                            'sender': actor.username,
+                            'senderDisplay': sender_display,
+                            'body': settlement_msg.body,
+                            'created_at': settlement_msg.created_at.isoformat(),
+                            'kind': 'system',
+                            'systemSubtype': 'wallet_settled',
+                            'settled_at': settlement_time.isoformat(),
+                        }
+                        async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': payload})
+                        from .models import get_conversation_viewer_ids  # local import
+                        last_msg_iso = settlement_msg.created_at.isoformat()
+                        for uid in get_conversation_viewer_ids(conversation):
+                            if uid == actor.id:
+                                continue
+                            async_to_sync(channel_layer.group_send)(f"user_{uid}", {
+                                'type': 'broadcast.message',
+                                'data': {
+                                    'type': 'inbox.update',
+                                    'conversation_id': conversation.id,
+                                    'last_message_preview': settlement_msg.body[:80],
+                                    'last_message_at': last_msg_iso,
+                                    'unread_count': 1,
+                                }
+                            })
+                except Exception:
+                    pass
+
+                try:
+                    from .pusher_client import pusher_client
+                    if pusher_client:
+                        pusher_client.trigger(f"chat_{conversation.id}", 'message', {
+                            'username': actor.username,
+                            'display_name': sender_display,
+                            'senderDisplay': sender_display,
+                            'message': settlement_msg.body,
+                            'conversation_id': conversation.id,
+                            'id': settlement_msg.id,
+                            'message_id': settlement_msg.id,
+                            'seq': settlement_msg.id,
+                            'kind': 'system',
+                            'systemSubtype': 'wallet_settled',
+                            'settled_at': settlement_time.isoformat(),
+                        })
+                        from .models import get_conversation_viewer_ids  # local import
+                        last_msg_iso = settlement_msg.created_at.isoformat()
+                        for uid in get_conversation_viewer_ids(conversation):
+                            if uid == actor.id:
+                                continue
+                            pusher_client.trigger(f"user_{uid}", 'notify', {
+                                'type': 'system',
+                                'conversation_id': conversation.id,
+                                'from': sender_display,
+                                'preview': settlement_msg.body[:80],
+                                'last_message_at': last_msg_iso,
+                            })
+                except Exception:
+                    pass
+
+            activity_now = timezone.now()
+            update_kwargs = {'last_activity_at': activity_now}
+            if settlement_time:
+                update_kwargs['last_settled_at'] = settlement_time
+            Conversation.objects.filter(pk=conversation.pk).update(**update_kwargs)
             return txn
+
+
+class ConversationSettlement(models.Model):
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='settlements')
+    transaction = models.ForeignKey(Transaction, on_delete=models.SET_NULL, null=True, blank=True, related_name='settlement_events')
+    settled_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-settled_at', '-id']
+        indexes = [
+            models.Index(fields=['conversation', 'settled_at']),
+        ]
+
+    def __str__(self):  # pragma: no cover
+        return f"Settlement(conv={self.conversation_id}, at={self.settled_at.isoformat()})"
 
 # ---- Admin-facing proxy models (no DB changes) ----
 class ConversationInbox(Conversation):
