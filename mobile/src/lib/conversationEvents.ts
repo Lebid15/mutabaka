@@ -4,6 +4,7 @@ export interface ConversationPreviewUpdate {
   lastActivityAt?: string | null;
   lastMessagePreview?: string | null;
   unreadCount?: number;
+  removed?: boolean;
 }
 
 type Listener = (update: ConversationPreviewUpdate) => void;

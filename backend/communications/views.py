@@ -429,9 +429,40 @@ class ConversationViewSet(viewsets.ModelViewSet):
             from .pusher_client import pusher_client
             if pusher_client:
                 pusher_client.trigger(f"chat_{conv.id}", 'message', {
+<<<<<<< HEAD
                     **payload,
                     'requested_at': requested_at_iso,
+=======
+                    'type': 'delete.request',
+                    'conversation_id': conv.id,
+                    'user_id': user.id,
+                    'username': user.username,
+                    'display_name': getattr(user, 'display_name', '') or user.username,
+                    'requested_at': conv.delete_requested_at.isoformat() if conv.delete_requested_at else None,
+>>>>>>> 717f9ee (add icons for social media)
                 })
+        except Exception:
+            pass
+        # بث الحدث أيضاً عبر قنوات WebSocket الداخلية لكي تستلمه تطبيقاتنا المباشرة
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            channel_layer = get_channel_layer()
+            if channel_layer is not None:
+                async_to_sync(channel_layer.group_send)(
+                    f"conv_{conv.id}",
+                    {
+                        'type': 'broadcast.message',
+                        'data': {
+                            'type': 'delete.request',
+                            'conversation_id': conv.id,
+                            'user_id': user.id,
+                            'username': user.username,
+                            'display_name': getattr(user, 'display_name', '') or user.username,
+                            'requested_at': conv.delete_requested_at.isoformat() if conv.delete_requested_at else None,
+                        },
+                    },
+                )
         except Exception:
             pass
         return Response({'status': 'ok'})
@@ -479,7 +510,38 @@ class ConversationViewSet(viewsets.ModelViewSet):
         try:
             from .pusher_client import pusher_client
             if pusher_client:
+<<<<<<< HEAD
                 pusher_client.trigger(f"chat_{cid}", 'message', payload)
+=======
+                pusher_client.trigger(f"chat_{cid}", 'message', {
+                    'type': 'delete.approved',
+                    'conversation_id': cid,
+                    'user_id': user.id,
+                    'username': user.username,
+                    'display_name': getattr(user, 'display_name', '') or user.username,
+                })
+>>>>>>> 717f9ee (add icons for social media)
+        except Exception:
+            pass
+        # بث عبر قنوات WebSocket الداخلية
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            channel_layer = get_channel_layer()
+            if channel_layer is not None:
+                async_to_sync(channel_layer.group_send)(
+                    f"conv_{cid}",
+                    {
+                        'type': 'broadcast.message',
+                        'data': {
+                            'type': 'delete.approved',
+                            'conversation_id': cid,
+                            'user_id': user.id,
+                            'username': user.username,
+                            'display_name': getattr(user, 'display_name', '') or user.username,
+                        },
+                    },
+                )
         except Exception:
             pass
         return Response({'status': 'ok'})
@@ -522,7 +584,38 @@ class ConversationViewSet(viewsets.ModelViewSet):
         try:
             from .pusher_client import pusher_client
             if pusher_client:
+<<<<<<< HEAD
                 pusher_client.trigger(f"chat_{conv.id}", 'message', payload)
+=======
+                pusher_client.trigger(f"chat_{conv.id}", 'message', {
+                    'type': 'delete.declined',
+                    'conversation_id': conv.id,
+                    'user_id': user.id,
+                    'username': user.username,
+                    'display_name': getattr(user, 'display_name', '') or user.username,
+                })
+>>>>>>> 717f9ee (add icons for social media)
+        except Exception:
+            pass
+        # بث عبر قنوات WebSocket الداخلية
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            channel_layer = get_channel_layer()
+            if channel_layer is not None:
+                async_to_sync(channel_layer.group_send)(
+                    f"conv_{conv.id}",
+                    {
+                        'type': 'broadcast.message',
+                        'data': {
+                            'type': 'delete.declined',
+                            'conversation_id': conv.id,
+                            'user_id': user.id,
+                            'username': user.username,
+                            'display_name': getattr(user, 'display_name', '') or user.username,
+                        },
+                    },
+                )
         except Exception:
             pass
         return Response({'status': 'ok'})

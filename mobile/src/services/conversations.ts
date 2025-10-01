@@ -22,6 +22,12 @@ export interface ConversationDto {
   isMuted: boolean;
   unread_count?: number;
   unreadCount?: number;
+  delete_requested_by?: ConversationUser | number | null;
+  delete_requested_by_id?: number | null;
+  delete_requested_at?: string | null;
+  deleteRequestedBy?: ConversationUser | number | null;
+  deleteRequestedById?: number | null;
+  deleteRequestedAt?: string | null;
 }
 
 export interface ConversationMemberSummary {
@@ -126,6 +132,20 @@ export async function requestDeleteConversation(conversationId: number, otpCode?
     path: `conversations/${conversationId}/request_delete/`,
     method: 'POST',
     headers,
+  });
+}
+
+export async function approveDeleteConversation(conversationId: number): Promise<{ status: string }> {
+  return request<{ status: string }>({
+    path: `conversations/${conversationId}/approve_delete/`,
+    method: 'POST',
+  });
+}
+
+export async function declineDeleteConversation(conversationId: number): Promise<{ status: string }> {
+  return request<{ status: string }>({
+    path: `conversations/${conversationId}/decline_delete/`,
+    method: 'POST',
   });
 }
 

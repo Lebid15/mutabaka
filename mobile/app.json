@@ -4,21 +4,23 @@
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-  "icon": "./assets/mlogo.png",
+    "icon": "./assets/iosimage.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/mlogo.png",
+      "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#F8E7D5"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "icon": "./assets/iosimage.png"
     },
     "android": {
+      "icon": "./assets/iosimage.png",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/mlogo_adaptive_432.png",
-        "backgroundColor": "#FFFFFF"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#F8E7D5"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,

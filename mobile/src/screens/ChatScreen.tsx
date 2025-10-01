@@ -43,6 +43,8 @@ import {
   fetchConversationMembers,
   addConversationTeamMember,
   removeConversationMember,
+  approveDeleteConversation,
+  declineDeleteConversation,
   type ConversationDto,
   type NetBalanceResponse,
   type ConversationMemberSummary,
@@ -514,12 +516,12 @@ function parseTransactionMessage(body: string | null | undefined): TransactionDe
   if (!normalizedBody) {
     return null;
   }
-  const transactionPattern = /^معاملة:\s*(لنا|لكم)\s*([\d\u0660-\u0669\u06F0-\u06F9]+(?:[.,\u066B][\d\u0660-\u0669\u06F0-\u06F9]+)?)\s*([^\s]+)(?:\s*-\s*(.*))?$/u;
-  const match = normalizedBody.match(transactionPattern);
+  const headerPattern = /^معاملة:\s*(لنا|لكم)\s*([\d\u0660-\u0669\u06F0-\u06F9]+(?:[.,\u066B][\d\u0660-\u0669\u06F0-\u06F9]+)?)\s*([^\s]+)/u;
+  const match = normalizedBody.match(headerPattern);
   if (!match) {
     return null;
   }
-  const [, directionRaw, amountRaw, symbolRaw, noteRaw] = match;
+  const [matchedHeader, directionRaw, amountRaw, symbolRaw] = match;
   if (!directionRaw || !amountRaw || !symbolRaw) {
     return null;
   }
@@ -530,13 +532,24 @@ function parseTransactionMessage(body: string | null | undefined): TransactionDe
     return null;
   }
   const symbol = symbolRaw.trim();
-  const note = noteRaw?.trim();
+  const remainder = normalizedBody.slice(matchedHeader.length);
+  let note: string | undefined;
+  if (remainder) {
+    const trimmedRemainder = remainder.replace(/^\s+/u, '');
+    const withoutDash = trimmedRemainder.startsWith('-')
+      ? trimmedRemainder.slice(1).replace(/^\s+/u, '')
+      : trimmedRemainder;
+    const cleaned = withoutDash.replace(/\r\n/g, '\n').trim();
+    if (cleaned) {
+      note = cleaned;
+    }
+  }
   return {
     direction,
     amount,
     symbol,
     currency: symbol,
-    note: note ? (note.length ? note : undefined) : undefined,
+    note,
   };
 }
 
@@ -1053,6 +1066,13 @@ export default function ChatScreen() {
   const [otpCodeInput, setOtpCodeInput] = useState('');
   const [otpPromptMessage, setOtpPromptMessage] = useState(DEFAULT_OTP_PROMPT_MESSAGE);
   const [balancesError, setBalancesError] = useState(false);
+  const [pendingDeleteRequest, setPendingDeleteRequest] = useState<{
+    fromUserId: number | null;
+    fromUsername: string | null;
+    fromDisplayName: string | null;
+    at: string | null;
+  } | null>(null);
+  const [deleteRequestBusy, setDeleteRequestBusy] = useState<'approve' | 'decline' | null>(null);
   const isMountedRef = useRef(true);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1066,6 +1086,7 @@ export default function ChatScreen() {
   const loggedAttachmentIdsRef = useRef<Set<number>>(new Set());
   const myMessageIdsRef = useRef<Set<number>>(new Set());
   const isAtBottomRef = useRef(true);
+  const deleteResolutionRef = useRef<'none' | 'approved' | 'declined'>('none');
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -1078,6 +1099,12 @@ export default function ChatScreen() {
         otpResolverRef.current = null;
       }
     };
+  }, [conversationId]);
+
+  useEffect(() => {
+    deleteResolutionRef.current = 'none';
+    setDeleteRequestBusy(null);
+    setPendingDeleteRequest(null);
   }, [conversationId]);
 
   useEffect(() => {
@@ -1286,6 +1313,96 @@ export default function ChatScreen() {
 
   const handleWsMessage = useCallback((payload: any) => {
     if (!payload || typeof payload !== 'object') {
+      return;
+    }
+
+    if (payload.type === 'delete.request') {
+      const rawIdValue = (payload.user_id ?? payload.userId ?? payload.requester_id ?? payload.requesterId) as number | string | null | undefined;
+      const numericId = typeof rawIdValue === 'number'
+        ? rawIdValue
+        : Number(rawIdValue);
+      const usernameRaw = typeof payload.username === 'string' ? payload.username.trim() : '';
+      const displayNameRaw = typeof payload.display_name === 'string' ? payload.display_name.trim() : '';
+      const requestedAt = typeof payload.requested_at === 'string' && payload.requested_at
+        ? payload.requested_at
+        : new Date().toISOString();
+      const normalizedUsername = usernameRaw || null;
+      const normalizedDisplayName = displayNameRaw || null;
+
+      let resolvedId: number | null = Number.isFinite(numericId) ? Number(numericId) : null;
+      if (!resolvedId && normalizedUsername) {
+        const lower = normalizedUsername.toLowerCase();
+        if (currentUser?.username && currentUser.username.trim().toLowerCase() === lower) {
+          resolvedId = currentUser.id;
+        } else if (peerUser?.username && peerUser.username.trim().toLowerCase() === lower) {
+          resolvedId = peerUser.id;
+        }
+      }
+
+      deleteResolutionRef.current = 'none';
+      setDeleteRequestBusy(null);
+      setPendingDeleteRequest({
+        fromUserId: resolvedId,
+        fromUsername: normalizedUsername,
+        fromDisplayName: normalizedDisplayName,
+        at: requestedAt,
+      });
+
+      return;
+    }
+
+    if (payload.type === 'delete.approved') {
+      const actorDisplayRaw = typeof payload.display_name === 'string' ? payload.display_name.trim() : '';
+      const actorUsernameRaw = typeof payload.username === 'string' ? payload.username.trim() : '';
+      const actorLabel = actorDisplayRaw
+        || actorUsernameRaw
+        || (pickDisplayName(peerUser) || peerUser?.username || 'الطرف الآخر');
+      const wasLocal = deleteResolutionRef.current === 'approved';
+      deleteResolutionRef.current = 'approved';
+      setDeleteRequestBusy(null);
+      setPendingDeleteRequest(null);
+      if (Number.isFinite(numericConversationId)) {
+        emitConversationPreviewUpdate({ id: numericConversationId, removed: true });
+      }
+      const isActorMe = actorUsernameRaw && currentUser?.username
+        ? actorUsernameRaw.toLowerCase() === currentUser.username.trim().toLowerCase()
+        : false;
+      if (!wasLocal) {
+        setStatusBanner({
+          kind: 'success',
+          text: isActorMe
+            ? 'تم حذف المحادثة.'
+            : `${actorLabel} وافق على حذف هذه المحادثة وسيتم إغلاقها الآن.`,
+        });
+        navigation.navigate('Home');
+      }
+      return;
+    }
+
+    if (payload.type === 'delete.declined') {
+      const actorDisplayRaw = typeof payload.display_name === 'string' ? payload.display_name.trim() : '';
+      const actorUsernameRaw = typeof payload.username === 'string' ? payload.username.trim() : '';
+      const actorLabel = actorDisplayRaw
+        || actorUsernameRaw
+        || (pickDisplayName(peerUser) || peerUser?.username || 'الطرف الآخر');
+      const wasLocal = deleteResolutionRef.current === 'declined';
+      deleteResolutionRef.current = 'declined';
+      setDeleteRequestBusy(null);
+      setPendingDeleteRequest(null);
+      if (Number.isFinite(numericConversationId)) {
+        emitConversationPreviewUpdate({ id: numericConversationId });
+      }
+      const isActorMe = actorUsernameRaw && currentUser?.username
+        ? actorUsernameRaw.toLowerCase() === currentUser.username.trim().toLowerCase()
+        : false;
+      if (!wasLocal) {
+        setStatusBanner({
+          kind: isActorMe ? 'success' : 'error',
+          text: isActorMe
+            ? 'قمت برفض طلب حذف المحادثة.'
+            : `${actorLabel} رفض طلب حذف المحادثة.`,
+        });
+      }
       return;
     }
 
@@ -1638,7 +1755,7 @@ export default function ChatScreen() {
         }),
       );
     }
-  }, [currentUser, peerUser, numericConversationId, queueAck, queueRead, refreshNetBalance, shouldUseBackend]);
+  }, [currentUser, peerUser, numericConversationId, queueAck, queueRead, refreshNetBalance, shouldUseBackend, navigation]);
 
   const loadCurrencyOptions = useCallback(async () => {
     try {
@@ -1680,6 +1797,7 @@ export default function ChatScreen() {
       lastInboundMessageIdRef.current = 0;
       setPairBalances([]);
       setBalancesError(false);
+      setPendingDeleteRequest(null);
       return;
     }
 
@@ -1709,6 +1827,42 @@ export default function ChatScreen() {
       setRemoteAvatar(peer.logo_url || null);
       setPeerUser(peer);
       setConversationMeta({ userAId: conversationData.user_a.id, userBId: conversationData.user_b.id });
+      const rawDeleteRequester = (conversationData.delete_requested_by ?? conversationData.deleteRequestedBy) as (ConversationDto['user_a'] | number | null | undefined);
+      const rawDeleteRequesterId = conversationData.delete_requested_by_id
+        ?? conversationData.deleteRequestedById
+        ?? (typeof rawDeleteRequester === 'object' && rawDeleteRequester ? rawDeleteRequester.id : undefined)
+        ?? (typeof rawDeleteRequester === 'number' ? rawDeleteRequester : undefined);
+      const deleteRequestedById = Number.isFinite(Number(rawDeleteRequesterId)) ? Number(rawDeleteRequesterId) : null;
+      const deleteRequestedAt = conversationData.delete_requested_at ?? conversationData.deleteRequestedAt ?? null;
+      let deleteRequesterUsername: string | null = null;
+      let deleteRequesterDisplayName: string | null = null;
+      if (rawDeleteRequester && typeof rawDeleteRequester === 'object') {
+        deleteRequesterUsername = typeof rawDeleteRequester.username === 'string' ? rawDeleteRequester.username : null;
+        const display = typeof rawDeleteRequester.display_name === 'string' && rawDeleteRequester.display_name.trim()
+          ? rawDeleteRequester.display_name.trim()
+          : null;
+        deleteRequesterDisplayName = display ?? deleteRequesterUsername;
+      }
+      if (!deleteRequesterDisplayName && deleteRequestedById) {
+        const match = [conversationData.user_a, conversationData.user_b].find((entry) => entry?.id === deleteRequestedById);
+        if (match) {
+          deleteRequesterUsername = deleteRequesterUsername ?? (typeof match.username === 'string' ? match.username : null);
+          const display = typeof match.display_name === 'string' && match.display_name.trim()
+            ? match.display_name.trim()
+            : null;
+          deleteRequesterDisplayName = display ?? deleteRequesterUsername;
+        }
+      }
+      if (deleteRequestedById) {
+        setPendingDeleteRequest({
+          fromUserId: deleteRequestedById,
+          fromUsername: deleteRequesterUsername ?? null,
+          fromDisplayName: deleteRequesterDisplayName ?? null,
+          at: deleteRequestedAt,
+        });
+      } else {
+        setPendingDeleteRequest(null);
+      }
       const sortedMessages = (messagesResponse.results || [])
         .filter((msg) => msg.conversation === numericConversationId)
         .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
@@ -1768,6 +1922,7 @@ export default function ChatScreen() {
   console.warn('[Mutabaka] Failed to load conversation messages', error);
   setErrorMessage('تعذر تحميل الرسائل. تحقق من الاتصال بالخادم.');
       setBalancesError(true);
+      setPendingDeleteRequest(null);
     } finally {
       if (isMountedRef.current) {
         setLoadingMessages(false);
@@ -2196,6 +2351,69 @@ export default function ChatScreen() {
     setExportBusy(false);
     setExportModalVisible(true);
   }, [closeActionsMenu, numericConversationId, shouldUseBackend]);
+
+  const handleApproveDeleteRequest = useCallback(async () => {
+    if (!pendingDeleteRequest || deleteRequestBusy === 'approve') {
+      return;
+    }
+    if (!shouldUseBackend || !Number.isFinite(numericConversationId)) {
+      Alert.alert('غير متاح حالياً', 'لا يمكن معالجة طلب الحذف بدون اتصال بالخادم.');
+      return;
+    }
+    if (!currentUser) {
+      Alert.alert('المستخدم غير معروف', 'يرجى إعادة فتح المحادثة ثم المحاولة من جديد.');
+      return;
+    }
+    if (pendingDeleteRequest.fromUserId && pendingDeleteRequest.fromUserId === currentUser.id) {
+      Alert.alert('بانتظار الطرف الآخر', 'لا يمكنك الموافقة على طلب أرسلته بنفسك.');
+      return;
+    }
+    setDeleteRequestBusy('approve');
+    try {
+      await approveDeleteConversation(numericConversationId);
+      deleteResolutionRef.current = 'approved';
+      setPendingDeleteRequest(null);
+      emitConversationPreviewUpdate({ id: numericConversationId, removed: true });
+      setStatusBanner({ kind: 'success', text: 'تم حذف جهة الاتصال.' });
+      navigation.navigate('Home');
+    } catch (error) {
+      const message = extractErrorMessage(error, 'تعذر الموافقة على طلب الحذف.');
+      setStatusBanner({ kind: 'error', text: message });
+    } finally {
+      if (isMountedRef.current) {
+        setDeleteRequestBusy(null);
+      }
+    }
+  }, [pendingDeleteRequest, deleteRequestBusy, shouldUseBackend, numericConversationId, currentUser, navigation]);
+
+  const handleDeclineDeleteRequest = useCallback(async () => {
+    if (!pendingDeleteRequest || deleteRequestBusy === 'decline') {
+      return;
+    }
+    if (!shouldUseBackend || !Number.isFinite(numericConversationId)) {
+      Alert.alert('غير متاح حالياً', 'لا يمكن معالجة طلب الحذف بدون اتصال بالخادم.');
+      return;
+    }
+    if (pendingDeleteRequest.fromUserId && currentUser && pendingDeleteRequest.fromUserId === currentUser.id) {
+      Alert.alert('طلبك قيد الانتظار', 'لا يمكنك رفض طلب أرسلته بنفسك. يمكنك سحب الطلب من خلال مراسلة الدعم.');
+      return;
+    }
+    setDeleteRequestBusy('decline');
+    try {
+      await declineDeleteConversation(numericConversationId);
+      deleteResolutionRef.current = 'declined';
+      setPendingDeleteRequest(null);
+      emitConversationPreviewUpdate({ id: numericConversationId });
+      setStatusBanner({ kind: 'success', text: 'تم رفض طلب الحذف.' });
+    } catch (error) {
+      const message = extractErrorMessage(error, 'تعذر رفض طلب الحذف.');
+      setStatusBanner({ kind: 'error', text: message });
+    } finally {
+      if (isMountedRef.current) {
+        setDeleteRequestBusy(null);
+      }
+    }
+  }, [pendingDeleteRequest, deleteRequestBusy, shouldUseBackend, numericConversationId, currentUser]);
 
   const handleConfirmExport = useCallback(async () => {
     if (exportBusy) {
@@ -2639,6 +2857,18 @@ export default function ChatScreen() {
 
   const actionsMenuTriggerActive = actionsMenuVisible || showTransactionsOnly || membersModalVisible || searchOpen || exportModalVisible;
 
+  const deleteBannerBackground = isLight ? 'rgba(251, 191, 36, 0.16)' : 'rgba(120, 53, 15, 0.45)';
+  const deleteBannerBorder = isLight ? '#facc15' : '#fbbf24';
+  const deleteBannerTitleColor = isLight ? '#92400e' : '#fde68a';
+  const deleteBannerSubtitleColor = isLight ? '#b45309' : '#facc15';
+  const deleteBannerInfoColor = isLight ? '#78350f' : '#fef3c7';
+  const deleteApproveBackground = isLight ? '#dc2626' : '#b91c1c';
+  const deleteApproveBorder = isLight ? '#b91c1c' : '#ef4444';
+  const deleteApproveText = isLight ? '#fef2f2' : '#fee2e2';
+  const deleteDeclineBackground = isLight ? '#f8fafc' : 'rgba(148, 163, 184, 0.2)';
+  const deleteDeclineBorder = isLight ? '#cbd5f5' : '#94a3b8';
+  const deleteDeclineText = isLight ? '#0f172a' : '#e2e8f0';
+
   const membersCardBackground = isLight ? '#fff7ed' : tokens.panelAlt;
   const membersAvatarBackground = isLight ? '#fffaf4' : tokens.panel;
   const membersAvatarBorder = isLight ? '#fce7c3' : tokens.divider;
@@ -2783,6 +3013,55 @@ export default function ChatScreen() {
     !hideFinancialTools && (balances.length > 0 || balancesError)
   ), [balances.length, balancesError, hideFinancialTools]);
 
+  const deleteRequestIsMine = useMemo(() => {
+    if (!pendingDeleteRequest || !currentUser) {
+      return false;
+    }
+    const requesterId = pendingDeleteRequest.fromUserId;
+    if (typeof requesterId === 'number' && Number.isFinite(requesterId) && requesterId === currentUser.id) {
+      return true;
+    }
+    const requesterUsername = pendingDeleteRequest.fromUsername?.trim().toLowerCase();
+    if (requesterUsername && currentUser.username?.trim().toLowerCase() === requesterUsername) {
+      return true;
+    }
+    return false;
+  }, [pendingDeleteRequest, currentUser]);
+
+  const deleteRequesterName = useMemo(() => {
+    if (!pendingDeleteRequest) {
+      return null;
+    }
+    if (deleteRequestIsMine) {
+      return pickDisplayName(currentUser) || currentUser?.username || 'أنت';
+    }
+    const display = pendingDeleteRequest.fromDisplayName?.trim();
+    if (display) {
+      return display;
+    }
+    const username = pendingDeleteRequest.fromUsername?.trim();
+    if (username) {
+      return username;
+    }
+    const requesterId = pendingDeleteRequest.fromUserId;
+    if (typeof requesterId === 'number' && peerUser?.id === requesterId) {
+      return pickDisplayName(peerUser) || peerUser?.username || 'الطرف الآخر';
+    }
+    return pickDisplayName(peerUser) || peerUser?.username || 'الطرف الآخر';
+  }, [pendingDeleteRequest, deleteRequestIsMine, currentUser, peerUser]);
+
+  const deleteRequestTimestampLabel = useMemo(() => {
+    if (!pendingDeleteRequest?.at) {
+      return null;
+    }
+    const datePart = formatMessageDate(pendingDeleteRequest.at);
+    const timePart = formatMessageTime(pendingDeleteRequest.at);
+    if (datePart && timePart) {
+      return `${datePart} ${timePart}`;
+    }
+    return datePart || timePart || null;
+  }, [pendingDeleteRequest]);
+
   const renderEmpty = useCallback(() => {
     if (shouldUseBackend && loadingMessages) {
       return (
@@ -2791,16 +3070,11 @@ export default function ChatScreen() {
         </View>
       );
     }
-    const message = showTransactionsOnly
-      ? 'لا توجد معاملات محفوظة بعد في هذه المحادثة.'
-      : 'ابدأ المحادثة بكتابة رسالة في الأسفل.';
-
     return (
-      <View style={styles.emptyState}>
-        <Text style={[styles.emptyText, { color: tokens.textMuted }]}>{message}</Text>
+      <View style={[styles.emptyState, { transform: [{ scaleY: -1 }] }]}>
       </View>
     );
-  }, [loadingMessages, shouldUseBackend, showTransactionsOnly, tokens.textMuted]);
+  }, [loadingMessages, shouldUseBackend, tokens.textMuted]);
 
   const renderMessage = useCallback((
     { item, index }: ListRenderItemInfo<NormalizedMessage>,
@@ -3642,6 +3916,66 @@ export default function ChatScreen() {
                   )}
                 </View>
               ) : null}
+
+              {pendingDeleteRequest ? (
+                <View
+                  style={[styles.deleteBanner, { backgroundColor: deleteBannerBackground, borderColor: deleteBannerBorder }]}
+                >
+                  <Text style={[styles.deleteBannerTitle, { color: deleteBannerTitleColor }]}>
+                    {deleteRequestIsMine
+                      ? 'تم إرسال طلب حذف جهة الاتصال.'
+                      : `${deleteRequesterName || 'الطرف الآخر'} طلب حذف جهة الاتصال.`}
+                  </Text>
+                  <Text style={[styles.deleteBannerSubtitle, { color: deleteBannerSubtitleColor }]}>
+                    سيتم حذف المطابقة المالية بين الطرفين بمجرد الموافقة.
+                  </Text>
+                  {deleteRequestTimestampLabel ? (
+                    <Text style={[styles.deleteBannerInfo, { color: deleteBannerInfoColor }]}>
+                      {`التوقيت: ${deleteRequestTimestampLabel}`}
+                    </Text>
+                  ) : null}
+                  {deleteRequestIsMine ? (
+                    <Text style={[styles.deleteBannerInfo, { color: deleteBannerInfoColor }]}>
+                      بانتظار موافقة الطرف الآخر على الطلب.
+                    </Text>
+                  ) : (
+                    <View style={styles.deleteBannerActions}>
+                      <Pressable
+                        style={[
+                          styles.deleteBannerButton,
+                          { backgroundColor: deleteApproveBackground, borderColor: deleteApproveBorder },
+                          deleteRequestBusy ? { opacity: 0.7 } : null,
+                        ]}
+                        accessibilityLabel="الموافقة على حذف جهة الاتصال"
+                        onPress={handleApproveDeleteRequest}
+                        disabled={deleteRequestBusy !== null}
+                      >
+                        {deleteRequestBusy === 'approve' ? (
+                          <ActivityIndicator size="small" color={deleteApproveText} />
+                        ) : (
+                          <Text style={[styles.deleteBannerButtonText, { color: deleteApproveText }]}>موافقة</Text>
+                        )}
+                      </Pressable>
+                      <Pressable
+                        style={[
+                          styles.deleteBannerButton,
+                          { backgroundColor: deleteDeclineBackground, borderColor: deleteDeclineBorder },
+                          deleteRequestBusy ? { opacity: 0.7 } : null,
+                        ]}
+                        accessibilityLabel="رفض طلب حذف جهة الاتصال"
+                        onPress={handleDeclineDeleteRequest}
+                        disabled={deleteRequestBusy !== null}
+                      >
+                        {deleteRequestBusy === 'decline' ? (
+                          <ActivityIndicator size="small" color={deleteDeclineText} />
+                        ) : (
+                          <Text style={[styles.deleteBannerButtonText, { color: deleteDeclineText }]}>رفض</Text>
+                        )}
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
+              ) : null}
             </View>
 
             {errorMessage ? (
@@ -4362,6 +4696,48 @@ const styles = StyleSheet.create({
   balanceCurrency: {
     fontSize: 11,
     fontWeight: '600',
+  },
+  deleteBanner: {
+    marginTop: 16,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    rowGap: 6,
+  },
+  deleteBannerTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'right',
+  },
+  deleteBannerSubtitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'right',
+  },
+  deleteBannerInfo: {
+    fontSize: 12,
+    fontWeight: '500',
+    textAlign: 'right',
+    lineHeight: 18,
+  },
+  deleteBannerActions: {
+    flexDirection: 'row-reverse',
+    columnGap: 12,
+    marginTop: 4,
+  },
+  deleteBannerButton: {
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingVertical: 6,
+    paddingHorizontal: 18,
+    minWidth: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteBannerButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   listWrapper: {
     flex: 1,

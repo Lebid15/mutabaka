@@ -9,8 +9,8 @@ import { apiClient } from '../lib/api';
 import { listTeam, listConversationMembers, addTeamMemberToConversation, removeMemberFromConversation, TeamMember } from '../lib/api-team';
 import { attachPrimingListeners, tryPlayMessageSound, setRuntimeSoundUrl } from '../lib/sound';
 import { useThemeMode } from './theme-context';
-import { FaMoneyBillTrendUp } from 'react-icons/fa6';
-import { FaWhatsapp, FaFacebookF, FaYoutube, FaTelegramPlane, FaInstagram, FaTwitter, FaSnapchatGhost, FaLinkedinIn } from 'react-icons/fa';
+import { FaMoneyBillTrendUp, FaXTwitter } from 'react-icons/fa6';
+import { FaWhatsapp, FaFacebookF, FaYoutube, FaTelegramPlane, FaInstagram, FaSnapchatGhost, FaLinkedinIn } from 'react-icons/fa';
 import { SiTiktok } from 'react-icons/si';
 import { HiOutlineEnvelope } from 'react-icons/hi2';
 import { FiLink } from 'react-icons/fi';
@@ -258,6 +258,7 @@ type ContactIconMeta = {
   Icon: IconType;
   bubbleClass: string;
   iconClass: string;
+  glowClass?: string;
 };
 
 type ContactLinkView = ContactLinkDTO & {
@@ -268,22 +269,73 @@ type ContactLinkView = ContactLinkDTO & {
 };
 
 const CONTACT_ICON_META: Record<string, ContactIconMeta> = {
-  whatsapp: { Icon: FaWhatsapp, bubbleClass: 'bg-[#25D366]/15 dark:bg-[#25D366]/25', iconClass: 'text-[#25D366]' },
-  facebook: { Icon: FaFacebookF, bubbleClass: 'bg-[#1877F2]/15 dark:bg-[#1877F2]/25', iconClass: 'text-[#1877F2]' },
-  youtube: { Icon: FaYoutube, bubbleClass: 'bg-[#FF0000]/15 dark:bg-[#FF0000]/25', iconClass: 'text-[#FF0000]' },
-  telegram: { Icon: FaTelegramPlane, bubbleClass: 'bg-[#24A1DE]/15 dark:bg-[#24A1DE]/25', iconClass: 'text-[#24A1DE]' },
-  instagram: { Icon: FaInstagram, bubbleClass: 'bg-gradient-to-br from-[#f09433]/20 via-[#bc1888]/25 to-[#bc1888]/20 dark:via-[#bc1888]/30', iconClass: 'text-[#bc1888]' },
-  twitter: { Icon: FaTwitter, bubbleClass: 'bg-slate-300/20 dark:bg-slate-200/15', iconClass: 'text-slate-900 dark:text-slate-100' },
-  tiktok: { Icon: SiTiktok, bubbleClass: 'bg-[#010101]/10 dark:bg-[#010101]/35', iconClass: 'text-[#010101] dark:text-white' },
-  snapchat: { Icon: FaSnapchatGhost, bubbleClass: 'bg-[#FFFC00]/45 dark:bg-[#FFFC00]/35', iconClass: 'text-[#0f0f0f]' },
-  linkedin: { Icon: FaLinkedinIn, bubbleClass: 'bg-[#0A66C2]/15 dark:bg-[#0A66C2]/25', iconClass: 'text-[#0A66C2]' },
-  email: { Icon: HiOutlineEnvelope, bubbleClass: 'bg-[#0072C6]/15 dark:bg-[#0072C6]/25', iconClass: 'text-[#0072C6]' },
+  whatsapp: {
+    Icon: FaWhatsapp,
+    bubbleClass: 'bg-gradient-to-br from-[#43E97B] via-[#38F9D7] to-[#00C9A7] shadow-[0_12px_32px_-14px_rgba(16,185,129,0.85)] text-white',
+    iconClass: 'text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.45)]',
+    glowClass: 'bg-[#34d399]/45',
+  },
+  facebook: {
+    Icon: FaFacebookF,
+    bubbleClass: 'bg-gradient-to-br from-[#60A5FA] via-[#3B82F6] to-[#2563EB] shadow-[0_12px_32px_-14px_rgba(37,99,235,0.8)] text-white',
+    iconClass: 'text-white drop-shadow-[0_2px_5px_rgba(0,0,0,0.4)]',
+    glowClass: 'bg-[#2563eb]/35',
+  },
+  youtube: {
+    Icon: FaYoutube,
+    bubbleClass: 'bg-gradient-to-br from-[#FF0844] via-[#FF4B2B] to-[#FF512F] shadow-[0_12px_32px_-14px_rgba(239,68,68,0.85)] text-white',
+    iconClass: 'text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.45)]',
+    glowClass: 'bg-[#f87171]/45',
+  },
+  telegram: {
+    Icon: FaTelegramPlane,
+    bubbleClass: 'bg-gradient-to-br from-[#2AABEE] via-[#1E96C8] to-[#0F6DB5] shadow-[0_12px_32px_-14px_rgba(37,150,221,0.8)] text-white',
+    iconClass: 'text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.45)]',
+    glowClass: 'bg-[#38bdf8]/45',
+  },
+  instagram: {
+    Icon: FaInstagram,
+    bubbleClass: 'bg-[radial-gradient(circle_at_20%_20%,#fdf497_0%,#fdf497_25%,#fd5949_50%,#d6249f_75%,#285AEB_100%)] shadow-[0_12px_34px_-16px_rgba(214,36,159,0.8)] text-white',
+    iconClass: 'text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.5)]',
+    glowClass: 'bg-[#d946ef]/45',
+  },
+  twitter: {
+    Icon: FaXTwitter,
+    bubbleClass: 'bg-gradient-to-br from-[#0f172a] via-[#111827] to-[#020617] shadow-[0_12px_32px_-14px_rgba(15,23,42,0.85)] text-white',
+    iconClass: 'text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.45)]',
+    glowClass: 'bg-[#475569]/45',
+  },
+  tiktok: {
+    Icon: SiTiktok,
+    bubbleClass: 'bg-gradient-to-br from-[#FF0050] via-[#00F2EA] to-[#000000] shadow-[0_12px_34px_-16px_rgba(255,0,80,0.75)] text-white',
+    iconClass: 'text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.5)]',
+    glowClass: 'bg-[#ff0050]/40',
+  },
+  snapchat: {
+    Icon: FaSnapchatGhost,
+    bubbleClass: 'bg-gradient-to-br from-[#FFFC00] via-[#FDE047] to-[#FBBF24] shadow-[0_12px_32px_-14px_rgba(250,204,21,0.75)] text-neutral-900',
+    iconClass: 'text-neutral-900 drop-shadow-[0_1px_3px_rgba(255,255,255,0.8)]',
+    glowClass: 'bg-[#fde047]/50',
+  },
+  linkedin: {
+    Icon: FaLinkedinIn,
+    bubbleClass: 'bg-gradient-to-br from-[#60A5FA] via-[#3B82F6] to-[#0EA5E9] shadow-[0_12px_32px_-14px_rgba(37,99,235,0.75)] text-white',
+    iconClass: 'text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.4)]',
+    glowClass: 'bg-[#0ea5e9]/40',
+  },
+  email: {
+    Icon: HiOutlineEnvelope,
+    bubbleClass: 'bg-gradient-to-br from-[#FDE68A] via-[#F97316] to-[#EA580C] shadow-[0_12px_32px_-14px_rgba(234,88,12,0.65)] text-white',
+    iconClass: 'text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.45)]',
+    glowClass: 'bg-[#f97316]/45',
+  },
 };
 
 const DEFAULT_CONTACT_ICON_META: ContactIconMeta = {
   Icon: FiLink,
-  bubbleClass: 'bg-gray-300/30 dark:bg-gray-700/40',
-  iconClass: 'text-gray-600 dark:text-gray-100',
+  bubbleClass: 'bg-gradient-to-br from-gray-300 via-gray-200 to-gray-400/70 shadow-[0_10px_30px_-18px_rgba(100,116,139,0.55)] text-gray-800',
+  iconClass: 'text-gray-800 drop-shadow-[0_1px_3px_rgba(255,255,255,0.6)]',
+  glowClass: 'bg-gray-300/45',
 };
 
 const normalizeContactHref = (icon: string, raw: string): string => {
@@ -3265,9 +3317,10 @@ export default function Home() {
     const consentTextClass = isLightTheme ? 'text-xs text-gray-500 text-center leading-relaxed' : 'text-xs text-gray-400 text-center leading-relaxed';
     const consentLinkClass = isLightTheme ? 'text-blue-600 hover:text-blue-500 underline-offset-2 hover:underline' : 'text-blue-400 hover:text-blue-300 underline-offset-2 hover:underline';
     const contactIconButtonBase = isLightTheme
-      ? 'group relative flex h-12 w-12 items-center justify-center rounded-full border border-orange-100/80 bg-white/60 backdrop-blur focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300/70 shadow-sm transition'
-      : 'group relative flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500/40 transition';
-    const contactIconInnerBase = 'flex h-10 w-10 items-center justify-center rounded-full transition-transform duration-200 group-hover:scale-110 group-focus-visible:scale-110';
+      ? 'group relative flex h-14 w-14 items-center justify-center rounded-2xl overflow-hidden border border-white/60 bg-white/70 shadow-[0_24px_50px_-28px_rgba(249,115,22,0.55)] backdrop-blur-sm transition-all duration-300 hover:-translate-y-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300/60'
+      : 'group relative flex h-14 w-14 items-center justify-center rounded-2xl overflow-hidden border border-white/10 bg-white/5 shadow-[0_24px_50px_-28px_rgba(14,165,233,0.45)] backdrop-blur-sm transition-all duration-300 hover:-translate-y-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40';
+    const contactGlowBase = 'pointer-events-none absolute inset-0 rounded-2xl blur-xl opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-focus-visible:opacity-100';
+    const contactIconInnerBase = 'relative z-[1] flex h-11 w-11 items-center justify-center rounded-2xl transition-transform duration-300 group-hover:scale-[1.08] group-focus-visible:scale-[1.08]';
 
     return (
       <div className={`relative min-h-screen flex items-center justify-center p-6 md:p-8 transition-colors duration-500 ${isLightTheme ? 'bg-gradient-to-br from-white via-orange-50 to-orange-100 text-gray-900' : 'bg-chatBg text-gray-100'}`}>
@@ -3376,8 +3429,9 @@ export default function Home() {
                     title={link.display}
                     aria-label={link.display}
                   >
+                    <span aria-hidden className={`${contactGlowBase} ${link.meta.glowClass ?? 'bg-orange-400/30'}`} />
                     <span className={`${contactIconInnerBase} ${bubbleClass}`}>
-                      <Icon className={`h-5 w-5 ${iconClass}`} aria-hidden="true" />
+                      <Icon className={`h-6 w-6 ${iconClass}`} aria-hidden="true" />
                     </span>
                     <span className="sr-only">{link.display}</span>
                   </a>
@@ -3978,14 +4032,24 @@ export default function Home() {
                     </div>
                   );
                 }
-                if (visibleMessages.length === 0) {
-                  parts.push(
-                    <div key="empty_state" className={`mx-auto mt-10 text-sm ${isLightTheme ? 'text-gray-500 bg-white/70' : 'text-gray-300 bg-white/5'} border ${isLightTheme ? 'border-orange-200/60' : 'border-white/10'} px-4 py-2 rounded-2xl shadow-sm`}>
-                      {showOnlyTransactions ? 'لا توجد معاملات محفوظة بعد في هذه المحادثة.' : 'ابدأ المحادثة بكتابة رسالة في الأسفل.'}
-                    </div>
-                  );
-                  return parts;
-                }
+              if (visibleMessages.length === 0) {
+                parts.push(
+                  <div
+                    key="empty_state"
+                    dir="rtl"
+                    lang="ar"
+                    className={`mx-auto mt-10 text-sm ${isLightTheme ? 'text-gray-500 bg-white/70' : 'text-gray-300 bg-white/5'} border ${isLightTheme ? 'border-orange-200/60' : 'border-white/10'} px-4 py-2 rounded-2xl shadow-sm text-right`}
+                  >
+                    <bdi style={{ unicodeBidi: 'isolate' }}>
+                      {showOnlyTransactions
+                        ? 'لا توجد معاملات محفوظة بعد في هذه المحادثة.'
+                        : 'ابدأ المحادثة بكتابة رسالة في الأسفل.'}
+                    </bdi>
+                  </div>
+                );
+                return parts;
+              }
+
                 visibleMessages.forEach((m, i) => {
                   const dk = dayKeyOf(m.created_at);
                   if (dk !== lastDayKey && dk !== 'unknown') {

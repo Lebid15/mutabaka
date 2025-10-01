@@ -4,6 +4,14 @@ export interface BrandingResponse {
   logo_url: string | null;
 }
 
+export interface ContactLink {
+  id: number;
+  icon: string;
+  icon_display: string;
+  label: string;
+  value: string;
+}
+
 export interface PolicyDocument {
   id: number;
   title: string;
@@ -18,6 +26,14 @@ export type PolicyDocumentType = 'privacy' | 'terms';
 export async function getBranding(): Promise<BrandingResponse> {
   return request<BrandingResponse>({
     path: 'branding',
+    method: 'GET',
+    auth: false,
+  });
+}
+
+export async function getContactLinks(): Promise<ContactLink[]> {
+  return request<ContactLink[]>({
+    path: 'contact-links',
     method: 'GET',
     auth: false,
   });

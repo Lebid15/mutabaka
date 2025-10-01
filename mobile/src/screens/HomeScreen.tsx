@@ -610,6 +610,21 @@ export default function HomeScreen() {
       if (!update || !Number.isFinite(update.id)) {
         return;
       }
+      if (update.removed) {
+        setRemoteConversations((prev) => {
+          if (!prev.length) {
+            return prev;
+          }
+          const filtered = prev.filter((conv) => conv.id !== update.id);
+          if (filtered.length === prev.length) {
+            return prev;
+          }
+          return filtered;
+        });
+        locallyClearedUnreadRef.current.delete(update.id);
+        setConversationMenu((current) => (current && current.id === update.id ? null : current));
+        return;
+      }
       let handled = false;
       setRemoteConversations((prev) => {
         if (!prev.length) {

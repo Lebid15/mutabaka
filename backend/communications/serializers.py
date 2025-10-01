@@ -121,16 +121,29 @@ class ContactRelationSerializer(serializers.ModelSerializer):
 class ConversationSerializer(serializers.ModelSerializer):
     user_a = PublicUserSerializer(read_only=True)
     user_b = PublicUserSerializer(read_only=True)
+    delete_requested_by = PublicUserSerializer(read_only=True)
     mutedUntil = serializers.SerializerMethodField()
     isMuted = serializers.SerializerMethodField()
+<<<<<<< HEAD
     deleteRequest = serializers.SerializerMethodField()
+=======
+    deleteRequestedBy = serializers.SerializerMethodField()
+    deleteRequestedById = serializers.SerializerMethodField()
+    deleteRequestedAt = serializers.SerializerMethodField()
+>>>>>>> 717f9ee (add icons for social media)
 
     class Meta:
         model = Conversation
         fields = [
             "id", "user_a", "user_b", "created_at",
             "last_message_at", "last_activity_at", "last_message_preview",
+<<<<<<< HEAD
             "mutedUntil", "isMuted", "deleteRequest",
+=======
+            "mutedUntil", "isMuted",
+            "delete_requested_by", "delete_requested_by_id", "delete_requested_at",
+            "deleteRequestedBy", "deleteRequestedById", "deleteRequestedAt",
+>>>>>>> 717f9ee (add icons for social media)
         ]
 
     def get_mutedUntil(self, obj):
@@ -184,6 +197,35 @@ class ConversationSerializer(serializers.ModelSerializer):
             return m.muted_until > timezone.now()
         except Exception:
             return False
+
+    def get_deleteRequestedBy(self, obj):
+        user = getattr(obj, 'delete_requested_by', None)
+        if not user:
+            return None
+        try:
+            serializer = PublicUserSerializer(user, context=getattr(self, 'context', {}))
+            return serializer.data
+        except Exception:
+            return None
+
+    def get_deleteRequestedById(self, obj):
+        value = getattr(obj, 'delete_requested_by_id', None)
+        if value is None:
+            return None
+        try:
+            numeric = int(value)
+            return numeric
+        except Exception:
+            return None
+
+    def get_deleteRequestedAt(self, obj):
+        value = getattr(obj, 'delete_requested_at', None)
+        if not value:
+            return None
+        try:
+            return value.isoformat()
+        except Exception:
+            return None
 
 
 class TeamMemberSerializer(serializers.ModelSerializer):
