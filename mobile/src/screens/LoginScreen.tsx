@@ -719,7 +719,8 @@ const styles = StyleSheet.create({
     maxHeight: '100%',
   },
   modalScrollContent: {
-    paddingBottom: 12,
+    paddingBottom: 32,
+    paddingTop: 4,
     alignItems: 'stretch',
   },
   modalRtlContainer: {
