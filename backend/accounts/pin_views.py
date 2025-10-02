@@ -40,6 +40,7 @@ class GeneratePinOnFirstMobileLogin(APIView):
     permission_classes = [IsAuthenticated]
     throttle_scope = 'pin_generate'
     throttle_classes = [ScopedRateThrottle]
+    skip_device_check = True
 
     def post(self, request):
         if not _channel_requires_pin(request):
@@ -65,6 +66,7 @@ class VerifyPinView(APIView):
     permission_classes = [IsAuthenticated]
     throttle_scope = 'pin_verify'
     throttle_classes = [ScopedRateThrottle]
+    skip_device_check = True
 
     def post(self, request):
         if not _channel_requires_pin(request):
@@ -121,6 +123,7 @@ class DevicesRegisterView(APIView):
     permission_classes = [IsAuthenticated]
     throttle_scope = 'devices_register'
     throttle_classes = [ScopedRateThrottle]
+    skip_device_check = True
 
     def post(self, request):
         if not _channel_requires_pin(request):
@@ -152,6 +155,7 @@ class DevicesApproveView(APIView):
     permission_classes = [IsAuthenticated]
     throttle_scope = 'devices_approve'
     throttle_classes = [ScopedRateThrottle]
+    skip_device_check = True
 
     def post(self, request):
         u = request.user
@@ -173,6 +177,7 @@ class DevicesApproveView(APIView):
 
 class DevicesDeleteView(APIView):
     permission_classes = [IsAuthenticated]
+    skip_device_check = True
 
     def delete(self, request, id: int):
         u = request.user
@@ -184,6 +189,7 @@ class DevicesDeleteView(APIView):
 
 class DevicesListView(APIView):
     permission_classes = [IsAuthenticated]
+    skip_device_check = True
 
     def get(self, request):
         u = request.user
@@ -194,6 +200,7 @@ class DevicesListView(APIView):
 
 class PinStatusView(APIView):
     permission_classes = [IsAuthenticated]
+    skip_device_check = True
 
     def get(self, request):
         u = request.user
@@ -220,6 +227,7 @@ class PinStatusView(APIView):
 
 class AdminResetUserPinView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
+    skip_device_check = True
 
     def post(self, request):
         target_id = request.data.get('user_id') or request.data.get('id')

@@ -35,6 +35,15 @@ from accounts.pin_views import (
     DevicesRegisterView, DevicesApproveView, DevicesDeleteView, DevicesListView,
     PinStatusView, AdminResetUserPinView,
 )
+from accounts.device_views import (
+    DeviceLinkView,
+    DeviceListView,
+    DeviceApproveView,
+    DeviceRejectView,
+    DeviceRevokeView,
+    DeviceReplaceView,
+    DeviceRenameView,
+)
 from django.utils import timezone
 
 
@@ -141,6 +150,13 @@ urlpatterns = [
     path('api/devices/approve', DevicesApproveView.as_view(), name='devices_approve'),
     path('api/devices/<int:id>', DevicesDeleteView.as_view(), name='devices_delete'),
     path('api/devices/list', DevicesListView.as_view(), name='devices_list'),
+    path('api/auth/devices/link', DeviceLinkView.as_view(), name='device_link'),
+    path('api/auth/devices', DeviceListView.as_view(), name='device_list'),
+    path('api/auth/devices/approve', DeviceApproveView.as_view(), name='device_approve'),
+    path('api/auth/devices/reject', DeviceRejectView.as_view(), name='device_reject'),
+    path('api/auth/devices/revoke', DeviceRevokeView.as_view(), name='device_revoke'),
+    path('api/auth/devices/replace', DeviceReplaceView.as_view(), name='device_replace'),
+    path('api/auth/devices/rename', DeviceRenameView.as_view(), name='device_rename'),
 ]
 
 if settings.DEBUG:

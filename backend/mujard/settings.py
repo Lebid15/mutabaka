@@ -201,6 +201,10 @@ AUTH_USER_MODEL = 'accounts.CustomUser'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# Device management defaults
+USER_DEVICE_MAX_ACTIVE = int(os.getenv('USER_DEVICE_MAX_ACTIVE', '3'))
+USER_DEVICE_PENDING_TTL_MINUTES = int(os.getenv('USER_DEVICE_PENDING_TTL_MINUTES', '15'))
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         # نضع JWT أولاً لضمان التقاط Authorization قبل جلسة فارغة
@@ -209,6 +213,7 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
+        'accounts.permissions.ActiveDeviceRequired',
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.LimitOffsetPagination',
     'PAGE_SIZE': 50,

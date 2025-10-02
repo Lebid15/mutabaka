@@ -1,5 +1,6 @@
 import { environment } from '../config/environment';
 import { getAccessToken, getRefreshToken, storeAuthTokens, clearAuthTokens } from './authStorage';
+import { getStoredDeviceId } from './deviceIdentity';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
@@ -11,6 +12,7 @@ export interface RequestOptions<TBody = unknown> {
   query?: Record<string, string | number | boolean | undefined | null>;
   auth?: boolean;
   skipJson?: boolean;
+  deviceId?: string | null | false;
 }
 
 interface RefreshResponse {
@@ -32,6 +34,7 @@ class HttpError extends Error {
 const DEFAULT_HEADERS: Record<string, string> = {
   Accept: 'application/json',
   'X-Tenant-Host': environment.tenantHost,
+  'X-Client': 'mobile',
 };
 
 async function safeFetch(url: string, init: RequestInit): Promise<Response> {
@@ -88,7 +91,7 @@ async function refreshTokens(): Promise<string | null> {
 }
 
 export async function request<TResponse = unknown, TBody = unknown>(options: RequestOptions<TBody>): Promise<TResponse> {
-  const { path, method = 'GET', body, headers = {}, query, auth = true, skipJson = false } = options;
+  const { path, method = 'GET', body, headers = {}, query, auth = true, skipJson = false, deviceId } = options;
   let accessToken: string | null = null;
   if (auth) {
     accessToken = await getAccessToken();
@@ -101,10 +104,39 @@ export async function request<TResponse = unknown, TBody = unknown>(options: Req
     }
   }
 
+  const lowerHeaderKeys = Object.keys(headers).map((key) => key.toLowerCase());
+  const hasExplicitDeviceHeader = lowerHeaderKeys.includes('x-device-id');
+
   const finalHeaders: Record<string, string> = {
     ...DEFAULT_HEADERS,
     ...headers,
   };
+
+  if (hasExplicitDeviceHeader) {
+    // Honor explicit caller-provided header regardless of deviceId parameter unless forced off
+    if (deviceId === false) {
+      delete finalHeaders['X-Device-Id'];
+      if (Object.prototype.hasOwnProperty.call(finalHeaders, 'x-device-id')) {
+        delete (finalHeaders as Record<string, string>)['x-device-id'];
+      }
+    }
+  } else if (deviceId !== false) {
+    let resolvedDeviceId: string | null = null;
+    if (typeof deviceId === 'string' && deviceId.length) {
+      resolvedDeviceId = deviceId;
+    } else if (deviceId === null) {
+      resolvedDeviceId = null;
+    } else {
+      resolvedDeviceId = await getStoredDeviceId();
+    }
+    if (resolvedDeviceId) {
+      finalHeaders['X-Device-Id'] = resolvedDeviceId;
+    } else {
+      delete finalHeaders['X-Device-Id'];
+    }
+  } else {
+    delete finalHeaders['X-Device-Id'];
+  }
 
   if (auth && accessToken) {
     finalHeaders.Authorization = `Bearer ${accessToken}`;

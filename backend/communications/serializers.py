@@ -16,6 +16,7 @@ from .models import (
     ConversationSettlement,
     is_wallet_settlement_body,
 )
+from .push import send_message_push
 from finance.models import Currency
 from django.core.exceptions import ValidationError
 
@@ -519,6 +520,32 @@ class TransactionSerializer(serializers.ModelSerializer):
             note=note,
             sender_team_member=tm
         )
+        try:
+            message = getattr(txn, 'message', None)
+            if message:
+                meta = txn.build_message_meta()
+                sender_display = getattr(request.user, 'display_name', '') or request.user.username
+                direction_label = 'لنا' if meta.get('direction') == 'lna' else 'لكم'
+                amount_display = meta.get('amount')
+                symbol = meta.get('symbol') or meta.get('currency') or ''
+                preview_text = f"معاملة: {direction_label} {amount_display} {symbol}".strip()
+                note_val = meta.get('note')
+                if note_val:
+                    preview_text = f"{preview_text} - {note_val}".strip()
+                send_message_push(
+                    conv,
+                    message,
+                    title=sender_display,
+                    body=preview_text[:80],
+                    data={
+                        'sender_display': sender_display,
+                        'preview': preview_text,
+                        'kind': message.type,
+                        'transaction': meta,
+                    },
+                )
+        except Exception:
+            pass
         return txn
 
     def to_representation(self, instance):

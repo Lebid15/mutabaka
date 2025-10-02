@@ -28,11 +28,11 @@ import { logoDefault } from '../assets/logoDefault';
 import type { RootStackParamList } from '../navigation';
 import { useThemeMode } from '../theme';
 import { cn } from '../utils/cn';
-import { loginAsTeamMember, loginWithIdentifier } from '../services/auth';
-import { fetchPinStatus } from '../services/pin';
-import { fetchCurrentUser } from '../services/user';
+import { performLogin, AuthenticationError, type LoginCredentials, type LoginResponse } from '../services/auth';
+import { linkCurrentDevice, isDeviceActive, HttpError } from '../services/devices';
+import { navigateAfterLogin } from '../utils/loginFlow';
 import type { AuthTokens } from '../lib/authStorage';
-import { clearAll, inspectState } from '../lib/pinSession';
+import { inspectState } from '../lib/pinSession';
 import {
   getBranding,
   getContactLinks,
@@ -236,74 +236,151 @@ export default function LoginScreen() {
     };
   }, []);
 
+  const shouldRetryWithoutDevice = (code?: string) => Boolean(code && code.startsWith('device_'));
+
+  const handleLoginResponse = useCallback(async (loginData: LoginResponse, credentials: LoginCredentials) => {
+    if (!loginData || !loginData.access) {
+      throw new Error('تعذر استلام رمز الدخول من الخادم.');
+    }
+
+    if (loginData.refresh) {
+      const tokens: AuthTokens = {
+        accessToken: loginData.access,
+        refreshToken: loginData.refresh,
+      };
+      await navigateAfterLogin(navigation, tokens);
+      return;
+    }
+
+    let linkResult;
+    try {
+      linkResult = await linkCurrentDevice({ accessToken: loginData.access });
+    } catch (error) {
+      if (error instanceof AuthenticationError) {
+        throw error;
+      }
+      if (error instanceof HttpError) {
+        const detail = typeof error.payload === 'object' && error.payload && 'detail' in error.payload
+          ? String((error.payload as Record<string, unknown>).detail)
+          : null;
+        throw new Error(detail || 'تعذر ربط الجهاز، حاول مرة أخرى.');
+      }
+      if (error instanceof Error) {
+        throw new Error(error.message || 'تعذر ربط الجهاز، حاول مرة أخرى.');
+      }
+      throw new Error('تعذر ربط الجهاز، حاول مرة أخرى.');
+    }
+
+    const device = linkResult.device;
+
+    if (isDeviceActive(device?.status)) {
+      const retry = await performLogin(credentials, { includeDeviceId: true });
+      if (retry.refresh) {
+        const tokens: AuthTokens = {
+          accessToken: retry.access,
+          refreshToken: retry.refresh,
+        };
+        await navigateAfterLogin(navigation, tokens);
+        return;
+      }
+    }
+
+    navigation.reset({
+      index: 0,
+      routes: [
+        {
+          name: 'DevicePending',
+          params: {
+            credentials,
+            device,
+            pendingToken: device?.pending_token ?? null,
+            expiresAt: device?.pending_expires_at ?? null,
+            requiresReplace: Boolean(device?.requires_replace),
+            lastAccessToken: loginData.access,
+          },
+        },
+      ],
+    });
+  }, [navigation]);
+
+  const runLoginFlow = useCallback(async (credentials: LoginCredentials) => {
+    setLoading(true);
+    try {
+      const initialResponse = await performLogin(credentials, { includeDeviceId: true });
+      await handleLoginResponse(initialResponse, credentials);
+      return;
+    } catch (error) {
+      if (error instanceof AuthenticationError && shouldRetryWithoutDevice(error.code)) {
+        try {
+          const fallbackResponse = await performLogin(credentials, { includeDeviceId: false });
+          await handleLoginResponse(fallbackResponse, credentials);
+          return;
+        } catch (fallbackError) {
+          if (fallbackError instanceof AuthenticationError) {
+            setErrorMessage(fallbackError.message);
+            return;
+          }
+          if (fallbackError instanceof Error) {
+            setErrorMessage(fallbackError.message || 'تعذر تسجيل الدخول، حاول مرة أخرى');
+            return;
+          }
+          setErrorMessage('تعذر تسجيل الدخول، حاول مرة أخرى');
+          return;
+        }
+      }
+
+      if (error instanceof AuthenticationError) {
+        setErrorMessage(error.message);
+        return;
+      }
+
+      if (error instanceof Error) {
+        setErrorMessage(error.message || 'تعذر تسجيل الدخول، حاول مرة أخرى');
+        return;
+      }
+
+      setErrorMessage('تعذر تسجيل الدخول، حاول مرة أخرى');
+    } finally {
+      setLoading(false);
+    }
+  }, [handleLoginResponse]);
+
   const handleSubmit = useCallback(async () => {
     if (loading) {
       return;
     }
-    try {
-      setErrorMessage(null);
-      setLoading(true);
-      let tokens: AuthTokens;
-      if (useTeamLogin) {
-        if (!ownerUsername.trim() || !teamUsername.trim() || !password.trim()) {
-          setErrorMessage('الرجاء إدخال جميع الحقول المطلوبة');
-          return;
-        }
-        tokens = await loginAsTeamMember({
-          ownerUsername: ownerUsername.trim(),
-          teamUsername: teamUsername.trim(),
-          password: password,
-        });
-      } else {
-        if (!identifier.trim() || !password.trim()) {
-          setErrorMessage('البريد الإلكتروني أو اسم المستخدم وكلمة المرور مطلوبة');
-          return;
-        }
-        tokens = await loginWithIdentifier({
-          identifier: identifier.trim(),
-          password: password,
-        });
-      }
 
-      const [meInfo, pinStatus] = await Promise.all([
-        fetchCurrentUser(),
-        fetchPinStatus(),
-      ]);
+    const trimmedPassword = password.trim();
+    setErrorMessage(null);
 
-      if (!pinStatus.pin_enabled) {
-        await clearAll({ keepTokens: true });
-        navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+    if (useTeamLogin) {
+      const owner = ownerUsername.trim();
+      const team = teamUsername.trim();
+      if (!owner || !team || !trimmedPassword) {
+        setErrorMessage('الرجاء إدخال جميع الحقول المطلوبة');
         return;
       }
-
-      await clearAll({ keepTokens: true });
-      navigation.reset({
-        index: 0,
-        routes: [
-          {
-            name: 'PinSetup',
-            params: {
-              userId: meInfo.id,
-              tokens,
-              pinStatus,
-              displayName: meInfo.display_name ?? meInfo.username,
-              username: meInfo.username,
-              mode: 'initial',
-            },
-          },
-        ],
+      await runLoginFlow({
+        mode: 'team',
+        ownerUsername: owner,
+        teamUsername: team,
+        password: trimmedPassword,
       });
-    } catch (error) {
-      console.warn('[Mutabaka] login failed', error);
-      if (error instanceof Error) {
-        setErrorMessage(error.message || 'تعذر تسجيل الدخول، حاول مرة أخرى');
-      } else {
-        setErrorMessage('تعذر تسجيل الدخول، حاول مرة أخرى');
-      }
-    } finally {
-      setLoading(false);
+      return;
     }
-  }, [identifier, navigation, ownerUsername, password, teamUsername, useTeamLogin, loading]);
+
+    const trimmedIdentifier = identifier.trim();
+    if (!trimmedIdentifier || !trimmedPassword) {
+      setErrorMessage('البريد الإلكتروني أو اسم المستخدم وكلمة المرور مطلوبة');
+      return;
+    }
+
+    await runLoginFlow({
+      mode: 'user',
+      identifier: trimmedIdentifier,
+      password: trimmedPassword,
+    });
+  }, [identifier, loading, ownerUsername, password, runLoginFlow, teamUsername, useTeamLogin]);
 
   const helperTextClass = cn('text-xs text-center mt-1', isDark ? 'text-[#94a3b8]' : 'text-[#857a72]');
   const policyLinkClass = cn('font-semibold', isDark ? 'text-[#34d399]' : 'text-[#2f9d73]');

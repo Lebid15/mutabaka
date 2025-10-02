@@ -1,0 +1,275 @@
+{
+  "info": {
+    "name": "Mutabaka Device QA",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Handy requests for testing /api/auth/devices flows during Phase 4 validation."
+  },
+  "item": [
+    {
+      "name": "List devices",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{device_id}}",
+            "disabled": false
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/auth/devices",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "auth",
+            "devices"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Approve pending device",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{device_id}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"device_id\": \"<pending-device-id>\",\n  \"replace_device_id\": null,\n  \"pending_token\": {{pending_token}}\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/auth/devices/approve",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "auth",
+            "devices",
+            "approve"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Reject pending device",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{device_id}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"device_id\": \"<pending-device-id>\",\n  \"pending_token\": {{pending_token}}\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/auth/devices/reject",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "auth",
+            "devices",
+            "reject"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Replace (approve with swap)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{device_id}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"device_id\": \"<pending-device-id>\",\n  \"replace_device_id\": \"<active-device-id>\",\n  \"pending_token\": {{pending_token}}\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/auth/devices/replace",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "auth",
+            "devices",
+            "replace"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Revoke active device",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{device_id}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"device_id\": \"<active-device-id>\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/auth/devices/revoke",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "auth",
+            "devices",
+            "revoke"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Rename device",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{device_id}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"device_id\": \"<device-id>\",\n  \"label\": \"My QA Device\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/auth/devices/rename",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "auth",
+            "devices",
+            "rename"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Create pending (QA helper)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "qa-{{timestamp}}",
+            "description": "Override to simulate a brand new device id."
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"label\": \"QA Virtual Device\",\n  \"platform\": \"qa\",\n  \"app_version\": \"qa-debug\",\n  \"push_token\": null\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/auth/devices/link",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "auth",
+            "devices",
+            "link"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "if (!pm.environment.get('timestamp')) {",
+              "  pm.environment.set('timestamp', Date.now());",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body && body.device && body.device.device_id) {",
+              "  pm.environment.set('pending_device_id', body.device.device_id);",
+              "  if (body.device.pending_token) {",
+              "    pm.environment.set('pending_token', body.device.pending_token);",
+              "  }",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    }
+  ]
+}

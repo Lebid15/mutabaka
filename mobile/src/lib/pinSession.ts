@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import CryptoJS from 'crypto-js';
 import { setUnlockedTokens, clearAuthTokens, type AuthTokens } from './authStorage';
+import { clearAppBadge } from './appBadge';
 
 const META_KEY = '@mutabaka/pin/meta';
 const PIN_RECORD_KEY = 'mutabaka_pin_record';
@@ -303,6 +304,11 @@ export async function clearAll(options?: { keepTokens?: boolean }): Promise<void
   await Promise.all([deleteMetadata(), clearSecureRecords()]);
   if (!options?.keepTokens) {
     await clearAuthTokens();
+  }
+  try {
+    await clearAppBadge();
+  } catch (error) {
+    console.warn('[Mutabaka] Failed to reset app badge during clearAll', error);
   }
 }
 

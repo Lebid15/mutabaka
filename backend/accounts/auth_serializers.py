@@ -4,6 +4,7 @@ from rest_framework import serializers
 from django.contrib.auth.hashers import make_password
 from django.utils import timezone
 import os
+from .models import UserDevice
 try:
     import pyotp
 except Exception:
@@ -50,12 +51,35 @@ class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
             if not getattr(user, 'totp_secret', '') or not totp.verify(otp, valid_window=1):
                 raise serializers.ValidationError({'otp_required': True, 'detail': 'Invalid OTP'})
         attrs[self.username_field] = user.username
-        data = super().validate(attrs)
-        # PIN channel check
+        request = None
         try:
             request = self.context.get('request') if hasattr(self, 'context') else None
         except Exception:
             request = None
+        device_id = None
+        if request is not None:
+            headers = getattr(request, 'headers', {})
+            device_id = headers.get('X-Device-Id') or request.META.get('HTTP_X_DEVICE_ID')
+            if isinstance(device_id, str):
+                device_id = device_id.strip()
+        device = None
+        if device_id:
+            try:
+                device = UserDevice.objects.get(id=device_id, user=user)
+            except UserDevice.DoesNotExist:
+                device = None
+        if device is not None:
+            if device.status == UserDevice.Status.PENDING:
+                raise serializers.ValidationError({'detail': 'device_pending', 'device_pending': True})
+            if device.status == UserDevice.Status.REVOKED:
+                raise serializers.ValidationError({'detail': 'device_revoked', 'device_revoked': True})
+        data = super().validate(attrs)
+        if request is None:
+            try:
+                request = self.context.get('request') if hasattr(self, 'context') else None
+            except Exception:
+                request = None
+        # PIN channel check
         client = ''
         if request is not None:
             client = (request.headers.get('X-Client') or request.META.get('HTTP_X_CLIENT') or '').strip().lower()
@@ -78,6 +102,17 @@ class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
                 data['pin'] = pin
             else:
                 data['pin_required'] = True
+        # Device metadata for clients
+        if device is not None and device.status in {UserDevice.Status.PRIMARY, UserDevice.Status.ACTIVE}:
+            device.last_seen_at = timezone.now()
+            device.save(update_fields=['last_seen_at'])
+            data['device_id'] = device.id
+            data['device_status'] = device.status
+        else:
+            data['device_registration_required'] = True
+            data['device_status'] = 'unknown'
+            if 'refresh' in data:
+                data.pop('refresh')
         return data
 
 from rest_framework_simplejwt.views import TokenObtainPairView

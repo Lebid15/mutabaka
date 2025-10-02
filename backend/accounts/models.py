@@ -1,7 +1,18 @@
 from __future__ import annotations
 from django.db import models
+from django.db.models import Q
 from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
+import secrets
+
+
+def _generate_device_id() -> str:
+    # 32-character url-safe token (approx 192 bits entropy)
+    return secrets.token_urlsafe(24)[:48]
+
+
+def _generate_pending_token() -> str:
+    return secrets.token_urlsafe(32)
 
 
 class CustomUser(AbstractUser):
@@ -99,3 +110,63 @@ class UserSecurityAudit(models.Model):
         subject = getattr(self.subject, 'username', self.subject_id)
         actor = getattr(self.actor, 'username', self.actor_id)
         return f"{self.get_action_display()} for {subject} by {actor} at {self.created_at:%Y-%m-%d %H:%M:%S}"
+
+
+class UserDevice(models.Model):
+    class Status(models.TextChoices):
+        PRIMARY = 'primary', 'Primary'
+        ACTIVE = 'active', 'Active'
+        PENDING = 'pending', 'Pending'
+        REVOKED = 'revoked', 'Revoked'
+
+    id = models.CharField(primary_key=True, max_length=64, default=_generate_device_id, editable=False)
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='devices')
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
+    label = models.CharField(max_length=120, blank=True)
+    platform = models.CharField(max_length=40, blank=True)
+    app_version = models.CharField(max_length=40, blank=True)
+    push_token = models.CharField(max_length=256, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    pending_token = models.CharField(max_length=96, blank=True)
+    pending_expires_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['user', 'status']),
+            models.Index(fields=['pending_token']),
+            models.Index(fields=['user', 'last_seen_at']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user'],
+                condition=Q(status='primary'),
+                name='unique_primary_device_per_user'
+            ),
+        ]
+
+    def mark_seen(self):
+        self.last_seen_at = timezone.now()
+        self.save(update_fields=['last_seen_at'])
+
+    def issue_pending_token(self, minutes_valid: int = 15) -> str:
+        token = _generate_pending_token()
+        self.pending_token = token
+        self.pending_expires_at = timezone.now() + timezone.timedelta(minutes=minutes_valid)
+        self.save(update_fields=['pending_token', 'pending_expires_at'])
+        return token
+
+    def clear_pending_token(self):
+        self.pending_token = ''
+        self.pending_expires_at = None
+        self.save(update_fields=['pending_token', 'pending_expires_at'])
+
+    def set_status(self, status: str, *, save: bool = True):
+        if status not in self.Status.values:
+            raise ValueError('Invalid status')
+        self.status = status
+        if save:
+            self.save(update_fields=['status'])
+
+    def __str__(self):  # pragma: no cover - debug read
+        return f"{self.user_id}:{self.id}({self.status})"

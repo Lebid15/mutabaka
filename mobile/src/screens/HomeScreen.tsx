@@ -14,6 +14,7 @@ import { getAccessToken } from '../lib/authStorage';
 import { inspectState } from '../lib/pinSession';
 import { HttpError } from '../lib/httpClient';
 import { emitConversationPreviewUpdate, subscribeToConversationPreviewUpdates } from '../lib/conversationEvents';
+import { setAppBadgeCount } from '../lib/appBadge';
 import { createWebSocket } from '../lib/wsClient';
 import {
   clearConversation,
@@ -304,10 +305,18 @@ export default function HomeScreen() {
   const remoteConversationsRef = useRef<ConversationRecord[]>(remoteConversations);
   const locallyClearedUnreadRef = useRef<Set<number>>(new Set());
   const loadConversationsInFlightRef = useRef(false);
+  const totalUnreadCount = useMemo(
+    () => remoteConversations.reduce((sum, conversation) => sum + getConversationUnread(conversation), 0),
+    [remoteConversations],
+  );
 
   useEffect(() => {
     remoteConversationsRef.current = remoteConversations;
   }, [remoteConversations]);
+
+  useEffect(() => {
+    void setAppBadgeCount(totalUnreadCount);
+  }, [totalUnreadCount]);
 
   useEffect(() => () => {
     isMountedRef.current = false;

@@ -23,6 +23,7 @@ from .models import (
     ContactLink,
     get_conversation_viewer_ids,
 )
+from .push import send_message_push
 from .serializers import (
     PublicUserSerializer, ContactRelationSerializer, ConversationSerializer,
     MessageSerializer, TransactionSerializer, PushSubscriptionSerializer,
@@ -996,6 +997,39 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     send_web_push_to_user(user_obj, payload)
                 except Exception:
                     pass
+        except Exception:
+            pass
+        try:
+            sender_display = getattr(request.user, 'display_name', '') or request.user.username
+            preview_text = _normalize_bubble_text(msg.body)[:80] if msg.body else (msg.attachment_name or '')[:80]
+            send_message_push(
+                conv,
+                msg,
+                title=sender_display,
+                body=preview_text,
+                data={
+                    'sender_display': sender_display,
+                    'preview': preview_text,
+                    'kind': msg.type,
+                },
+            )
+        except Exception:
+            pass
+        try:
+            sender_display = getattr(request.user, 'display_name', '') or request.user.username
+            preview_text = _normalize_bubble_text(preview_label)[:80] if preview_label else '📎 مرفق'
+            send_message_push(
+                conv,
+                msg,
+                title=sender_display,
+                body=preview_text,
+                data={
+                    'sender_display': sender_display,
+                    'preview': preview_text,
+                    'kind': msg.type,
+                    'attachment': attachment_payload,
+                },
+            )
         except Exception:
             pass
         return Response(MessageSerializer(msg, context={'request': request}).data)
