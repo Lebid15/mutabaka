@@ -11,29 +11,14 @@
   "theme_color": "#FFFFFF",
   "icons": [
     {
-      "src": "icons/mlogo.jpg",
-      "type": "image/x-icon",
-      "sizes": "256x256",
-      "isSquare": true,
-      "isPng": false,
-      "isWebp": false,
-      "isJpg": false,
-      "width": 256,
-      "is512x512": false,
-      "is256x256": true,
-      "is192x192": false
+      "src": "icons/favicon.png",
+      "type": "image/png",
+      "sizes": "64x64"
     },
     {
-      "src": "https://mutabaka.com/favicon.ico",
-      "type": "image/x-icon",
-      "isSquare": false,
-      "isPng": false,
-      "isWebp": false,
-      "isJpg": false,
-      "width": 0,
-      "is512x512": false,
-      "is256x256": false,
-      "is192x192": false
+      "src": "icons/mlogo.jpg",
+      "type": "image/jpeg",
+      "sizes": "256x256"
     }
   ]
 }
