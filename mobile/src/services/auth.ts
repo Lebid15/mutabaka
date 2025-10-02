@@ -84,6 +84,9 @@ export async function loginAsTeamMember(payload: TeamLoginPayload): Promise<Auth
   }
 }
 
-export async function logout(): Promise<void> {
-  await Promise.all([clearAuthTokens(), clearPinSession()]);
+export async function logout(options?: { wipePinSession?: boolean }): Promise<void> {
+  await clearAuthTokens();
+  if (options?.wipePinSession) {
+    await clearPinSession();
+  }
 }

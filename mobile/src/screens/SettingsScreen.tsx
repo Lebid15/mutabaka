@@ -31,6 +31,9 @@ import {
   type TotpStatus,
 } from '../services/security';
 import { clearAll, inspectState } from '../lib/pinSession';
+import { fetchPinStatus } from '../services/pin';
+import { fetchCurrentUser } from '../services/user';
+import { getAccessToken, getRefreshToken, type AuthTokens } from '../lib/authStorage';
 
 const QR_SIZE = 180;
 const SOUND_TEST_TIMEOUT_MS = 2500;
@@ -119,6 +122,39 @@ export default function SettingsScreen() {
       setPinState({ enabled: false });
     }
   }, []);
+
+  const handleCreatePin = useCallback(async () => {
+    if (pinBusy) {
+      return;
+    }
+    setPinBusy(true);
+    try {
+      const [accessToken, refreshToken] = await Promise.all([getAccessToken(), getRefreshToken()]);
+      if (!accessToken || !refreshToken) {
+        Alert.alert('تعذر المتابعة', 'الرجاء تسجيل الدخول مرة أخرى لإنشاء رمز PIN.');
+        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+        return;
+      }
+      const tokens: AuthTokens = { accessToken, refreshToken };
+      const [pinStatus, meInfo] = await Promise.all([
+        fetchPinStatus(),
+        fetchCurrentUser(),
+      ]);
+      navigation.navigate('PinSetup', {
+        userId: meInfo.id,
+        tokens,
+        pinStatus,
+        displayName: meInfo.display_name ?? meInfo.username,
+        username: meInfo.username,
+        mode: 'initial',
+      });
+    } catch (error) {
+      console.warn('[Mutabaka] Failed to start PIN creation flow', error);
+      Alert.alert('تعذر المتابعة', 'حدث خطأ أثناء التحضير لإنشاء رمز PIN. حاول مرة أخرى لاحقاً.');
+    } finally {
+      setPinBusy(false);
+    }
+  }, [navigation, pinBusy]);
 
   const loadSoundPreferences = useCallback(async () => {
     try {
@@ -361,31 +397,48 @@ export default function SettingsScreen() {
               <View style={styles.cardsContainer}>
                 <View style={[styles.card, { backgroundColor: palette.cardBg, borderColor: palette.cardBorder }]}
                 >
-                  <View style={[styles.cardHeader, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}
+                  <View style={[styles.cardHeader, { flexDirection: 'column', alignItems: 'flex-end' }]}
                   >
                     <View style={styles.cardHeaderText}>
                       <Text style={[styles.cardTitle, { color: palette.heading }]}>الوصول السريع برمز PIN</Text>
                       <Text style={[styles.cardSubtitle, { color: palette.subText }]}>إدارة رمز PIN المحلي لهذا الجهاز لتسجيل الدخول السريع.</Text>
                       {renderBadge(pinState?.enabled ? 'مفعّل' : 'غير مفعّل', Boolean(pinState?.enabled))}
                     </View>
-                    <View style={[styles.inlineRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}
+                    <View style={[styles.buttonStack, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}
                     >
-                      <Pressable
-                        style={[styles.primaryButton, { backgroundColor: palette.primaryButtonBg, opacity: pinBusy ? 0.6 : 1 }]}
-                        onPress={handleChangePin}
-                        disabled={!pinState?.enabled || pinBusy}
-                        accessibilityRole="button"
-                      >
-                        <Text style={[styles.buttonText, { color: palette.primaryButtonText }]}>تغيير PIN</Text>
-                      </Pressable>
-                      <Pressable
-                        style={[styles.ghostButton, { backgroundColor: palette.ghostButtonBg, borderColor: palette.pillBorder, opacity: pinBusy ? 0.6 : 1 }]}
-                        onPress={handleDisablePin}
-                        disabled={!pinState?.enabled || pinBusy}
-                        accessibilityRole="button"
-                      >
-                        <Text style={[styles.buttonText, { color: palette.ghostButtonText }]}>إلغاء على هذا الجهاز</Text>
-                      </Pressable>
+                      {pinState?.enabled ? (
+                        <>
+                          <Pressable
+                            style={[styles.primaryButton, { backgroundColor: palette.primaryButtonBg, opacity: pinBusy ? 0.6 : 1 }]}
+                            onPress={handleChangePin}
+                            disabled={!pinState?.enabled || pinBusy}
+                            accessibilityRole="button"
+                          >
+                            <Text style={[styles.buttonText, { color: palette.primaryButtonText }]}>تغيير PIN</Text>
+                          </Pressable>
+                          <Pressable
+                            style={[styles.ghostButton, { backgroundColor: palette.ghostButtonBg, borderColor: palette.pillBorder, opacity: pinBusy ? 0.6 : 1 }]}
+                            onPress={handleDisablePin}
+                            disabled={!pinState?.enabled || pinBusy}
+                            accessibilityRole="button"
+                          >
+                            <Text style={[styles.buttonText, { color: palette.ghostButtonText }]}>إلغاء على هذا الجهاز</Text>
+                          </Pressable>
+                        </>
+                      ) : (
+                        <Pressable
+                          style={[styles.primaryButton, { backgroundColor: palette.primaryButtonBg, opacity: pinBusy ? 0.6 : 1, minWidth: 160 }]}
+                          onPress={handleCreatePin}
+                          disabled={pinBusy}
+                          accessibilityRole="button"
+                        >
+                          {pinBusy ? (
+                            <ActivityIndicator size="small" color={palette.primaryButtonText} />
+                          ) : (
+                            <Text style={[styles.buttonText, { color: palette.primaryButtonText }]}>إنشاء PIN</Text>
+                          )}
+                        </Pressable>
+                      )}
                     </View>
                   </View>
                   {pinState?.enabled ? (
@@ -394,7 +447,7 @@ export default function SettingsScreen() {
                       <Text style={[styles.pinMetaText, { color: palette.subText }]}>مفعّل لحساب {pinState.displayName || pinState.username || 'الحالي'}.</Text>
                     </View>
                   ) : (
-                    <Text style={[styles.cardSubtitle, { color: palette.subText }]}>قم بتسجيل الدخول وتفعيل PIN من شاشة الدخول لحماية الجلسة.</Text>
+                    <Text style={[styles.cardSubtitle, { color: palette.subText }]}>لتمكين الوصول السريع، أنشئ رمز PIN لهذا الجهاز.</Text>
                   )}
                 </View>
 
@@ -699,6 +752,12 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
     justifyContent: 'space-between',
     gap: 12,
+  },
+  buttonStack: {
+    gap: 8,
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    flexWrap: 'wrap',
   },
   cardHeaderText: {
     flex: 1,

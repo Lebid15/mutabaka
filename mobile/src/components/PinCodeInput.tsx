@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View, Platform, type KeyboardTypeOptions } from 'react-native';
 
 export type PinCodeInputStatus = 'default' | 'error' | 'success';
 
@@ -44,6 +44,9 @@ const PinCodeInput = forwardRef<PinCodeInputHandle, PinCodeInputProps>((props, r
 
   const inputRef = useRef<TextInput | null>(null);
   const lastFilledValueRef = useRef<string>('');
+  const keyboardType = useMemo<KeyboardTypeOptions>(() => (
+    Platform.OS === 'android' ? 'numeric' : 'number-pad'
+  ), []);
 
   const colors = useMemo(() => {
     if (isDark) {
@@ -167,7 +170,8 @@ const PinCodeInput = forwardRef<PinCodeInputHandle, PinCodeInputProps>((props, r
           ref={inputRef}
           value={value}
           onChangeText={handleChangeText}
-          keyboardType="number-pad"
+          keyboardType={keyboardType}
+          inputMode="numeric"
           secureTextEntry
           caretHidden
           maxLength={length}

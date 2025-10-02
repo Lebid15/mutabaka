@@ -365,7 +365,7 @@ export async function setPinForSession(options: {
     userId,
     username: username ?? undefined,
     displayName: displayName ?? undefined,
-    pinEnabledLocal: Boolean(serverStatus.pin_enabled),
+    pinEnabledLocal: true,
     pinEpochLocal: Number(serverStatus.pin_epoch) || 0,
     attemptCount: 0,
     lastAttemptTs: now(),
@@ -388,7 +388,7 @@ export async function updateSessionAfterUnlock(options: {
   await storeEncryptedSession(pin, tokens);
   const nextMeta: PinMetadata = {
     ...metadata,
-    pinEnabledLocal: Boolean(serverStatus.pin_enabled),
+    pinEnabledLocal: Boolean(serverStatus.pin_enabled || metadata.pinEnabledLocal),
     pinEpochLocal: Number(serverStatus.pin_epoch) || metadata.pinEpochLocal,
     attemptCount: 0,
     lastAttemptTs: now(),

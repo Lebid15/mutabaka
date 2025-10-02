@@ -11,6 +11,7 @@ import type { RootStackParamList } from '../navigation';
 import { useThemeMode } from '../theme';
 import { environment } from '../config/environment';
 import { getAccessToken } from '../lib/authStorage';
+import { inspectState } from '../lib/pinSession';
 import { HttpError } from '../lib/httpClient';
 import { emitConversationPreviewUpdate, subscribeToConversationPreviewUpdates } from '../lib/conversationEvents';
 import { createWebSocket } from '../lib/wsClient';
@@ -848,13 +849,27 @@ export default function HomeScreen() {
       } catch (error) {
         console.warn('[Mutabaka] Failed to clear tokens during logout', error);
       }
+
+      let pinState: Awaited<ReturnType<typeof inspectState>> | null = null;
+      try {
+        pinState = await inspectState();
+      } catch (error) {
+        console.warn('[Mutabaka] Failed to inspect PIN state after logout', error);
+      }
+
       setRemoteConversations([]);
       locallyClearedUnreadRef.current.clear();
       setCurrentUser(null);
       setRemoteLoadAttempted(false);
       setThrottleUntil(null);
       resetAddContactState();
-      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+
+      const greeting = pinState?.metadata?.displayName || pinState?.metadata?.username || undefined;
+      const nextRoutes = pinState?.hasSecureSession
+        ? [{ name: 'PinUnlock' as const, params: { intent: 'unlock' as const, displayName: greeting } }]
+        : [{ name: 'Login' as const }];
+
+      navigation.reset({ index: 0, routes: nextRoutes });
       return;
     }
 

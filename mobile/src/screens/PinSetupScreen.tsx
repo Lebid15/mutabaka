@@ -1,7 +1,7 @@
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, Vibration, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, Vibration, View } from 'react-native';
 import { type AuthTokens } from '../lib/authStorage';
 import { setPinForSession, clearAll } from '../lib/pinSession';
 import type { RootStackParamList } from '../navigation';
@@ -83,7 +83,21 @@ export default function PinSetupScreen() {
         displayName: displayName ?? null,
         username: username ?? null,
       });
+
+      if (navigation.canGoBack()) {
+        Alert.alert('تم', 'تم إعداد رمز PIN بنجاح.', [
+          {
+            text: 'حسناً',
+            onPress: () => {
+              navigation.goBack();
+            },
+          },
+        ]);
+        return;
+      }
+
       navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+      return;
     } catch (err) {
       console.warn('[Mutabaka] Failed to configure PIN session', err);
       setError('تعذر إعداد رمز PIN. حاول مرة أخرى.');

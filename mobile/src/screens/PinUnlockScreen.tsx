@@ -8,7 +8,6 @@ import {
   unlockWithPin,
   updateSessionAfterUnlock,
   wipeIfEpochChanged,
-  wipeIfServerDisabled,
   PinSessionError,
   inspectState,
 } from '../lib/pinSession';
@@ -109,9 +108,8 @@ export default function PinUnlockScreen() {
     try {
       const { tokens, metadata } = await unlockWithPin(sanitized);
       const status = await fetchPinStatus();
-      await wipeIfServerDisabled(status);
       const epochChanged = await wipeIfEpochChanged(status);
-      if (!status.pin_enabled || epochChanged) {
+      if (epochChanged) {
         setPin('');
         navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
         return;
@@ -186,11 +184,6 @@ export default function PinUnlockScreen() {
     }
   }, [attemptUnlock, loading, pin]);
 
-  const handleForgotPin = useCallback(async () => {
-    await clearAll();
-    navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
-  }, [navigation]);
-
   const handleSwitchUser = useCallback(async () => {
     await clearAll();
     navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
@@ -200,6 +193,7 @@ export default function PinUnlockScreen() {
   const containerStyle = useMemo(() => [styles.container, { backgroundColor: isDark ? '#0b141a' : '#fff9f3' }], [isDark]);
   const cardStyle = useMemo(() => [styles.card, { backgroundColor: isDark ? '#132029' : '#ffffff' }], [isDark]);
   const labelStyle = useMemo(() => [styles.label, { color: isDark ? '#cbd5f5' : '#3c3127' }], [isDark]);
+  const verifyingTextStyle = useMemo(() => [styles.verifyingText, { color: isDark ? '#cbd5f5' : '#334155' }], [isDark]);
   const errorStyle = useMemo(() => [styles.errorText, { color: isDark ? '#f87171' : '#b91c1c' }], [isDark]);
 
   return (
@@ -216,6 +210,9 @@ export default function PinUnlockScreen() {
           isDark={isDark}
           autoFocus
         />
+        {loading && !error && lockRemainingMs <= 0 && (
+          <Text style={verifyingTextStyle}>جاري التحقق...</Text>
+        )}
         {lockRemainingMs > 0 && (
           <View style={styles.infoBox}>
             <Text style={[styles.infoText, { color: isDark ? '#facc15' : '#b45309' }]}>تم قفل إدخال الرقم مؤقتًا.</Text>
@@ -241,9 +238,6 @@ export default function PinUnlockScreen() {
           ]}
         >
           {loading ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.buttonText}>دخول</Text>}
-        </Pressable>
-        <Pressable onPress={handleForgotPin} style={styles.linkButton}>
-          <Text style={[styles.linkText, { color: isDark ? '#60a5fa' : '#2563eb' }]}>نسيت PIN؟ العودة لتسجيل الدخول</Text>
         </Pressable>
         <Pressable onPress={handleSwitchUser} style={styles.switchButton}>
           <Text style={[styles.switchText, { color: isDark ? '#a5b4fc' : '#1d4ed8' }]}>تبديل المستخدم</Text>
@@ -320,6 +314,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
     color: '#10b981',
+  },
+  verifyingText: {
+    fontSize: 13,
+    textAlign: 'center',
   },
   switchButton: {
     alignItems: 'center',
