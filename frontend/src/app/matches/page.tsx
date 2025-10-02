@@ -116,46 +116,170 @@ export default function MatchesPage() {
     }), { usd: 0, tryy: 0, syp: 0, eur: 0 });
   }, [displayRows]);
 
-  const exportToExcel = useCallback(() => {
+  const exportToExcel = useCallback(async () => {
     if (!displayRows.length) return;
-    const headers = ['الجهة', 'دولار', 'تركي', 'سوري', 'يورو'];
-    const totalsSection = [
-      ['ملخص', 'القيمة'],
-      ['دولار', totals.usd.toFixed(5)],
-      ['تركي', totals.tryy.toFixed(5)],
-      ['سوري', totals.syp.toFixed(5)],
-      ['يورو', totals.eur.toFixed(5)],
+
+    const excelModule = await import('exceljs');
+    const WorkbookCtor = (excelModule as any).Workbook || (excelModule as any).default?.Workbook;
+    if (!WorkbookCtor) {
+      throw new Error('ExcelJS Workbook not available');
+    }
+
+    const workbook = new WorkbookCtor();
+    workbook.creator = 'Mutabaka';
+    workbook.created = new Date();
+    const sheet = workbook.addWorksheet('مطابقاتي', {
+      views: [{ rightToLeft: true, state: 'frozen', ySplit: 6 }],
+      properties: { defaultRowHeight: 22 },
+    });
+
+    sheet.columns = [
+      { key: 'entity', width: 22 },
+      { key: 'usd', width: 16 },
+      { key: 'try', width: 16 },
+      { key: 'syp', width: 16 },
+      { key: 'eur', width: 16 },
     ];
-    const tableData = displayRows.map((row) => [
-      row.name,
-      row.usd.toFixed(5),
-      row.tryy.toFixed(5),
-      row.syp.toFixed(5),
-      row.eur.toFixed(5),
-    ]);
 
-    const lines = [
-      ...totalsSection,
-      [''],
-      headers,
-      ...tableData,
+    const blueFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF3B82F6' } } as const;
+    const blueFillAlt = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } } as const;
+    const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF59E0B' } } as const;
+    const entityFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFCE7D6' } } as const;
+    const zebraA = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } } as const;
+    const zebraB = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } } as const;
+
+    sheet.addRow([]); // فراغ علوي
+    sheet.mergeCells('A2:E2');
+    const titleCell = sheet.getCell('A2');
+    titleCell.value = 'مطابقاتي';
+    titleCell.font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    titleCell.fill = blueFill;
+    sheet.getRow(2).height = 30;
+
+    const summaryHeaders = [
+      { col: 'B', label: 'دولار' },
+      { col: 'C', label: 'تركي' },
+      { col: 'D', label: 'سوري' },
+      { col: 'E', label: 'يورو' },
+    ] as const;
+
+    const applyBorders = (cell: any) => {
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+      };
+    };
+
+    const labelCellFont = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } } as const;
+
+    const labelCurrencyCells = summaryHeaders.map((item) => sheet.getCell(`${item.col}3`));
+    sheet.getCell('A3').value = 'العملة';
+    sheet.getCell('A3').fill = blueFillAlt;
+    sheet.getCell('A3').font = labelCellFont;
+    sheet.getCell('A3').alignment = { horizontal: 'center', vertical: 'middle' };
+    applyBorders(sheet.getCell('A3'));
+
+    summaryHeaders.forEach((item, idx) => {
+      const cell = labelCurrencyCells[idx];
+      cell.value = item.label;
+      cell.font = { bold: true, color: { argb: 'FF1F2937' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.fill = headerFill;
+      applyBorders(cell);
+    });
+
+    sheet.getCell('A4').value = 'القيمة';
+    sheet.getCell('A4').fill = blueFillAlt;
+    sheet.getCell('A4').font = labelCellFont;
+    sheet.getCell('A4').alignment = { horizontal: 'center', vertical: 'middle' };
+    applyBorders(sheet.getCell('A4'));
+
+    const summaryValues = [
+      { col: 'B', value: totals.usd, symbol: '$' },
+      { col: 'C', value: totals.tryy, symbol: '₺' },
+      { col: 'D', value: totals.syp, symbol: 'SYP' },
+      { col: 'E', value: totals.eur, symbol: '€' },
     ];
 
-    const csv = '\ufeff' + lines
-      .map((line) => line
-        .map((cell) => {
-          const value = cell ?? '';
-          const str = typeof value === 'string' ? value : String(value);
-          return `"${str.replace(/"/g, '""')}"`;
-        })
-        .join(','))
-      .join('\r\n');
+    summaryValues.forEach((item) => {
+      const cell = sheet.getCell(`${item.col}4`);
+      const numeric = item.value ?? 0;
+      const formatted = `${fmt(numeric)} ${item.symbol}`;
+      cell.value = formatted;
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.font = {
+        bold: true,
+        color: {
+          argb: numeric < 0 ? 'FFE11D48' : numeric > 0 ? 'FF16A34A' : 'FF1F2937',
+        },
+      };
+      applyBorders(cell);
+    });
 
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const spacerRow = sheet.getRow(5);
+    spacerRow.height = 8;
+
+    sheet.getCell('A6').value = 'الجهة';
+    sheet.getCell('A6').fill = headerFill;
+    sheet.getCell('A6').font = { bold: true, color: { argb: 'FF1F2937' } };
+    sheet.getCell('A6').alignment = { horizontal: 'center', vertical: 'middle' };
+    applyBorders(sheet.getCell('A6'));
+
+    summaryHeaders.forEach((item, idx) => {
+      const cell = sheet.getCell(`${item.col}6`);
+      cell.value = item.label;
+      cell.font = { bold: true, color: { argb: 'FF1F2937' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.fill = headerFill;
+      applyBorders(cell);
+    });
+
+    displayRows.forEach((row, idx) => {
+      const excelRowNumber = 7 + idx;
+      const dataRow = sheet.getRow(excelRowNumber);
+      dataRow.height = 22;
+      const zebra = idx % 2 === 0 ? zebraA : zebraB;
+
+      const entityCell = dataRow.getCell('A');
+      entityCell.value = row.name;
+      entityCell.fill = entityFill;
+      entityCell.font = { bold: true, color: { argb: 'FF1F2937' } };
+      entityCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      applyBorders(entityCell);
+
+      const amounts = [
+        { col: 'B', value: row.usd, symbol: '$' },
+        { col: 'C', value: row.tryy, symbol: '₺' },
+        { col: 'D', value: row.syp, symbol: 'SYP' },
+        { col: 'E', value: row.eur, symbol: '€' },
+      ];
+
+      amounts.forEach((amount) => {
+        const cell = dataRow.getCell(amount.col);
+        const numeric = amount.value ?? 0;
+        cell.value = `${fmt(numeric)} ${amount.symbol}`;
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.font = {
+          color: {
+            argb: numeric < 0 ? 'FFE11D48' : numeric > 0 ? 'FF16A34A' : 'FF1F2937',
+          },
+        };
+        cell.fill = zebra;
+        applyBorders(cell);
+      });
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `matches-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `matches-${new Date().toISOString().slice(0, 10)}.xlsx`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
