@@ -1,0 +1,32 @@
+# Exclude development-only artifacts from the EAS build archive
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+
+# Expo prebuild outputs that can be regenerated
+ios/
+web-build/
+
+# Tooling caches and logs
+.expo/
+.expo-shared/
+expo-dev-client
+device-preview/
+*.log
+*.tmp
+
+# Node modules are installed in the build environment
+node_modules/
+
+# Git metadata
+.git/
+.gitmodules
+.gitignore
+
+# Misc editor files
+*.iml
+*.swp
+.DS_Store
+Thumbs.db

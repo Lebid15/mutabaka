@@ -35,7 +35,8 @@
             "kspVersion": "2.0.21-1.0.28"
           }
         }
-      ]
+      ],
+      "./app.plugin"
     ],
     "web": {
       "favicon": "./assets/favicon.png"
