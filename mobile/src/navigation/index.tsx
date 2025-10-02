@@ -2,18 +2,33 @@ import { NavigationContainer, DarkTheme as NavigationDarkTheme, DefaultTheme as 
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useMemo } from 'react';
 import ChatScreen from '../screens/ChatScreen';
+import BootstrapScreen from '../screens/BootstrapScreen';
 import HomeScreen from '../screens/HomeScreen';
 import LoginScreen from '../screens/LoginScreen';
 import MatchesScreen from '../screens/MatchesScreen';
+import PinSetupScreen from '../screens/PinSetupScreen';
+import PinUnlockScreen from '../screens/PinUnlockScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import RefreshContactsScreen from '../screens/RefreshContactsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import SubscriptionsScreen from '../screens/SubscriptionsScreen';
 import TeamScreen from '../screens/TeamScreen';
 import { useThemeMode } from '../theme';
+import type { AuthTokens } from '../lib/authStorage';
+import type { PinStatusPayload } from '../lib/pinSession';
 
 export type RootStackParamList = {
+  Bootstrap: undefined;
   Login: undefined;
+  PinUnlock: { intent?: 'unlock' | 'change'; displayName?: string | null } | undefined;
+  PinSetup: {
+    userId: number;
+    tokens: AuthTokens;
+    pinStatus: PinStatusPayload;
+    displayName?: string | null;
+    username?: string | null;
+    mode?: 'initial' | 'change';
+  };
   Home: undefined;
   Chat: { conversationId: string };
   Profile: undefined;
@@ -45,8 +60,11 @@ export default function RootNavigator() {
 
   return (
     <NavigationContainer theme={theme}>
-      <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Login">
+      <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Bootstrap">
+        <Stack.Screen name="Bootstrap" component={BootstrapScreen} />
         <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="PinUnlock" component={PinUnlockScreen} />
+        <Stack.Screen name="PinSetup" component={PinSetupScreen} />
         <Stack.Screen name="Home" component={HomeScreen} />
         <Stack.Screen name="Chat" component={ChatScreen} />
         <Stack.Screen name="Profile" component={ProfileScreen} />

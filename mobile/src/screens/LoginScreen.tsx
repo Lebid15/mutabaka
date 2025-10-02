@@ -1,4 +1,4 @@
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import FeatherIcon from '@expo/vector-icons/Feather';
 import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
@@ -29,6 +29,10 @@ import type { RootStackParamList } from '../navigation';
 import { useThemeMode } from '../theme';
 import { cn } from '../utils/cn';
 import { loginAsTeamMember, loginWithIdentifier } from '../services/auth';
+import { fetchPinStatus } from '../services/pin';
+import { fetchCurrentUser } from '../services/user';
+import type { AuthTokens } from '../lib/authStorage';
+import { clearAll, inspectState } from '../lib/pinSession';
 import {
   getBranding,
   getContactLinks,
@@ -206,6 +210,8 @@ export default function LoginScreen() {
   const [policyLoading, setPolicyLoading] = useState(false);
   const [policyError, setPolicyError] = useState<string | null>(null);
   const [contactLinks, setContactLinks] = useState<ContactLinkView[]>([]);
+  const [pinAvailable, setPinAvailable] = useState(false);
+  const [pinDisplayName, setPinDisplayName] = useState<string | null>(null);
 
   const isDark = mode === 'dark';
 
@@ -237,12 +243,13 @@ export default function LoginScreen() {
     try {
       setErrorMessage(null);
       setLoading(true);
+      let tokens: AuthTokens;
       if (useTeamLogin) {
         if (!ownerUsername.trim() || !teamUsername.trim() || !password.trim()) {
           setErrorMessage('الرجاء إدخال جميع الحقول المطلوبة');
           return;
         }
-        await loginAsTeamMember({
+        tokens = await loginAsTeamMember({
           ownerUsername: ownerUsername.trim(),
           teamUsername: teamUsername.trim(),
           password: password,
@@ -252,13 +259,42 @@ export default function LoginScreen() {
           setErrorMessage('البريد الإلكتروني أو اسم المستخدم وكلمة المرور مطلوبة');
           return;
         }
-        await loginWithIdentifier({
+        tokens = await loginWithIdentifier({
           identifier: identifier.trim(),
           password: password,
         });
       }
-      navigation.replace('Home');
+
+      const [meInfo, pinStatus] = await Promise.all([
+        fetchCurrentUser(),
+        fetchPinStatus(),
+      ]);
+
+      if (!pinStatus.pin_enabled) {
+        await clearAll({ keepTokens: true });
+        navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+        return;
+      }
+
+      await clearAll({ keepTokens: true });
+      navigation.reset({
+        index: 0,
+        routes: [
+          {
+            name: 'PinSetup',
+            params: {
+              userId: meInfo.id,
+              tokens,
+              pinStatus,
+              displayName: meInfo.display_name ?? meInfo.username,
+              username: meInfo.username,
+              mode: 'initial',
+            },
+          },
+        ],
+      });
     } catch (error) {
+      console.warn('[Mutabaka] login failed', error);
       if (error instanceof Error) {
         setErrorMessage(error.message || 'تعذر تسجيل الدخول، حاول مرة أخرى');
       } else {
@@ -273,6 +309,11 @@ export default function LoginScreen() {
   const policyLinkClass = cn('font-semibold', isDark ? 'text-[#34d399]' : 'text-[#2f9d73]');
   const displayedContactLinks = useMemo(() => contactLinks.slice(0, 10), [contactLinks]);
   const hasContactLinks = displayedContactLinks.length > 0;
+  const pinButtonClass = cn(
+    'h-[48px] rounded-[18px] border items-center justify-center flex-row',
+    isDark ? 'border-[#34d399] bg-transparent' : 'border-[#2f9d73] bg-transparent',
+  );
+  const pinButtonTextClass = cn('text-sm font-semibold', isDark ? 'text-[#34d399]' : 'text-[#2f9d73]');
 
   const iconColor = isDark ? '#9ca3af' : '#f5a34b';
   const placeholderColor = isDark ? '#94a3b8' : '#9ca3af';
@@ -362,6 +403,50 @@ export default function LoginScreen() {
       })
       .filter((entry): entry is ContactLinkView => Boolean(entry));
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          const state = await inspectState();
+          if (cancelled) {
+            return;
+          }
+          setPinAvailable(state.hasSecureSession);
+          const name = state.metadata?.displayName || state.metadata?.username || null;
+          setPinDisplayName(name);
+        } catch (error) {
+          if (!cancelled) {
+            console.warn('[Mutabaka] Failed to check PIN availability', error);
+            setPinAvailable(false);
+            setPinDisplayName(null);
+          }
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
+
+  const handlePinLogin = useCallback(() => {
+    if (!pinAvailable) {
+      return;
+    }
+    navigation.reset({
+      index: 0,
+      routes: [
+        {
+          name: 'PinUnlock',
+          params: {
+            intent: 'unlock',
+            displayName: pinDisplayName,
+          },
+        },
+      ],
+    });
+  }, [navigation, pinAvailable, pinDisplayName]);
 
   const normalizePolicyContent = useCallback((raw: string): PolicyContentSegment[] => {
     if (!raw) {
@@ -530,6 +615,17 @@ export default function LoginScreen() {
                           {loading ? 'جارٍ التحقق…' : 'تسجيل الدخول'}
                         </Text>
                       </Pressable>
+                      {pinAvailable ? (
+                        <Pressable
+                          onPress={handlePinLogin}
+                          className={pinButtonClass}
+                          accessibilityRole="button"
+                        >
+                          <Text className={pinButtonTextClass}>
+                            الدخول باستخدام PIN{pinDisplayName ? ` (${pinDisplayName})` : ''}
+                          </Text>
+                        </Pressable>
+                      ) : null}
                       {errorMessage ? (
                         <Text className={cn('text-xs text-center font-medium', isDark ? 'text-[#fca5a5]' : 'text-[#b91c1c]')}>
                           {errorMessage}

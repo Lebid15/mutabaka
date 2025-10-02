@@ -20,12 +20,425 @@
 {% block extrahead %}
   {{ block.super }}
   <script src="{% static 'admin/tabs-fix.js' %}" defer></script>
+  <style>
+    .pin-card {
+      border: 1px solid #d4d4d8;
+      border-radius: 10px;
+      padding: 16px;
+      background: #f8fafc;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .pin-card__header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .pin-status-badge {
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      background: #f1f5f9;
+      color: #111827;
+    }
+    .pin-status-badge[data-state="enabled"] {
+      background: #dcfce7;
+      color: #166534;
+    }
+    .pin-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+    }
+    .pin-summary__item {
+      background: #fff;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      padding: 12px;
+    }
+    .pin-summary__label {
+      font-size: 0.85rem;
+      color: #475569;
+      margin-bottom: 4px;
+    }
+    .pin-summary__value {
+      font-weight: 600;
+      color: #111827;
+      direction: ltr;
+    }
+    .pin-card__actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .pin-audit {
+      margin-top: 12px;
+    }
+    .pin-audit__title {
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .pin-audit__list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: grid;
+      gap: 6px;
+    }
+    .pin-audit__item {
+      background: #fff;
+      border-radius: 6px;
+      border: 1px solid #e2e8f0;
+      padding: 10px 12px;
+      font-size: 0.9rem;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .pin-audit__meta {
+      font-size: 0.8rem;
+      color: #475569;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .pin-feedback {
+      font-size: 0.9rem;
+      margin-top: 4px;
+    }
+    .pin-feedback[data-tone="error"] {
+      color: #b91c1c;
+    }
+    .pin-feedback[data-tone="success"] {
+      color: #15803d;
+    }
+    .pin-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 1200;
+    }
+    .pin-modal[hidden] {
+      display: none;
+    }
+    .pin-modal__dialog {
+      background: #fff;
+      border-radius: 12px;
+      max-width: 420px;
+      width: 100%;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.15);
+    }
+    .pin-modal__actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .pin-modal textarea {
+      width: 100%;
+      min-height: 90px;
+      resize: vertical;
+      border-radius: 8px;
+      border: 1px solid #cbd5f5;
+      padding: 8px;
+      font-family: inherit;
+      font-size: 0.95rem;
+    }
+    body.pin-modal-open {
+      overflow: hidden;
+    }
+  </style>
+  <script>
+    window.addEventListener('DOMContentLoaded', function () {
+      const card = document.querySelector('[data-pin-card]');
+      if (!card) {
+        return;
+      }
+
+      const modal = document.getElementById('pin-reset-modal');
+      const reasonInput = document.getElementById('pin-reset-reason');
+      const openBtn = document.getElementById('pin-reset-open');
+      const cancelBtn = modal ? modal.querySelector('[data-action="cancel"]') : null;
+      const confirmBtn = modal ? modal.querySelector('[data-action="confirm"]') : null;
+      const feedback = card.querySelector('[data-pin-feedback]');
+      const statusBadge = card.querySelector('[data-pin-status]');
+      const enabledValue = card.querySelector('[data-pin-enabled-text]');
+      const epochValue = card.querySelector('[data-pin-epoch]');
+      const initializedValue = card.querySelector('[data-pin-initialized]');
+  const devicesValue = card.querySelector('[data-pin-devices]');
+
+      const resetUrl = card.dataset.pinResetUrl;
+      const userId = card.dataset.userId;
+      const statuses = {
+        enabled: '{{ "مفعل" }}',
+        disabled: '{{ "معطل" }}'
+      };
+      const adminName = '{{ request.user.get_username|default:"-"|escapejs }}';
+      const auditList = document.querySelector('[data-pin-audit-list]');
+
+      function getCsrfToken() {
+        const formToken = document.querySelector('input[name="csrfmiddlewaretoken"]');
+        if (formToken) {
+          return formToken.value;
+        }
+        const cookie = document.cookie.split(';').map(function (segment) {
+          return segment.trim();
+        }).find(function (segment) {
+          return segment.startsWith('csrftoken=');
+        });
+        return cookie ? decodeURIComponent(cookie.split('=')[1]) : '';
+      }
+
+      function toggleModal(show) {
+        if (!modal) {
+          return;
+        }
+        if (show) {
+          modal.removeAttribute('hidden');
+          document.body.classList.add('pin-modal-open');
+          setTimeout(function () {
+            if (reasonInput) {
+              reasonInput.focus();
+            }
+          }, 30);
+        } else {
+          modal.setAttribute('hidden', 'hidden');
+          document.body.classList.remove('pin-modal-open');
+          if (reasonInput) {
+            reasonInput.value = '';
+          }
+        }
+      }
+
+      function showFeedback(message, tone) {
+        if (!feedback) {
+          return;
+        }
+        feedback.textContent = message || '';
+        if (tone) {
+          feedback.dataset.tone = tone;
+        } else {
+          feedback.removeAttribute('data-tone');
+        }
+      }
+
+      function updateStatus(enabled, epoch) {
+        const isEnabled = !!enabled;
+        if (statusBadge) {
+          statusBadge.dataset.state = isEnabled ? 'enabled' : 'disabled';
+          statusBadge.textContent = isEnabled ? statuses.enabled : statuses.disabled;
+        }
+        if (enabledValue) {
+          enabledValue.textContent = isEnabled ? statuses.enabled : statuses.disabled;
+        }
+        if (epochValue && typeof epoch !== 'undefined') {
+          epochValue.textContent = epoch;
+        }
+        if (initializedValue && !isEnabled) {
+          initializedValue.textContent = '—';
+        }
+        card.dataset.pinEnabled = isEnabled ? 'true' : 'false';
+      }
+
+      function handleError(detail) {
+        const message = detail || '{{ "تعذر تنفيذ العملية، حاول مجددًا." }}';
+        showFeedback(message, 'error');
+      }
+
+      if (openBtn) {
+        openBtn.addEventListener('click', function () {
+          showFeedback('', null);
+          toggleModal(true);
+        });
+      }
+
+      if (cancelBtn) {
+        cancelBtn.addEventListener('click', function () {
+          toggleModal(false);
+        });
+      }
+
+      if (modal) {
+        modal.addEventListener('click', function (event) {
+          if (event.target === modal) {
+            toggleModal(false);
+          }
+        });
+      }
+
+      if (confirmBtn) {
+        const confirmLabel = confirmBtn.textContent;
+        confirmBtn.addEventListener('click', function () {
+          if (!resetUrl || !userId) {
+            handleError('لم يتم العثور على رابط الخدمة.');
+            return;
+          }
+
+          showFeedback('', null);
+          confirmBtn.disabled = true;
+          confirmBtn.textContent = '{{ "جارٍ إعادة التعيين…" }}';
+
+          const reasonValue = reasonInput && reasonInput.value.trim() ? reasonInput.value.trim() : '';
+          const payload = {user_id: userId};
+          if (reasonValue) {
+            payload.reason = reasonValue;
+          }
+
+          fetch(resetUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': getCsrfToken(),
+              'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify(payload)
+          }).then(function (response) {
+            return response.json().then(function (data) {
+              return {ok: response.ok, status: response.status, data: data};
+            }).catch(function () {
+              return {ok: response.ok, status: response.status, data: {}};
+            });
+          }).then(function (result) {
+            if (!result.ok) {
+              throw result;
+            }
+            updateStatus(result.data.pin_enabled, result.data.pin_epoch);
+            toggleModal(false);
+            showFeedback('{{ "تمت إعادة تعيين PIN وإبطال الأجهزة الموثوقة." }}', 'success');
+            if (devicesValue) {
+              devicesValue.textContent = '0';
+            }
+            if (auditList) {
+              const now = new Date();
+              const reason = reasonValue || '{{ "بدون سبب" }}';
+              const item = document.createElement('li');
+              item.className = 'pin-audit__item';
+              const title = document.createElement('div');
+              title.textContent = '{{ "إعادة تعيين PIN" }}';
+              const meta = document.createElement('div');
+              meta.className = 'pin-audit__meta';
+
+              const ts = document.createElement('span');
+              ts.textContent = now.toLocaleString();
+              const actor = document.createElement('span');
+              actor.textContent = '{{ "بواسطة" }}: ' + adminName;
+              const reasonSpan = document.createElement('span');
+              reasonSpan.textContent = '{{ "سبب" }}: ' + reason;
+              const epochSpan = document.createElement('span');
+              epochSpan.textContent = '{{ "رقم النسخة" }}: ' + (result.data && typeof result.data.pin_epoch !== 'undefined' ? result.data.pin_epoch : '—');
+
+              meta.appendChild(ts);
+              meta.appendChild(actor);
+              meta.appendChild(reasonSpan);
+              meta.appendChild(epochSpan);
+
+              item.appendChild(title);
+              item.appendChild(meta);
+              auditList.prepend(item);
+            }
+          }).catch(function (error) {
+            const detail = error && error.data && error.data.detail ? error.data.detail : null;
+            handleError(detail);
+          }).finally(function () {
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = confirmLabel;
+          });
+        });
+      }
+    });
+  </script>
 {% endblock %}
 
 {% block content %}
   {% if change and original %}
     <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;">
   <a class="button" href="../password/" style="background:#2563eb;color:#fff;border-radius:6px;">🔑 {% trans "Change password" %}</a>
+    </div>
+    <div class="pin-card" data-pin-card data-pin-enabled="{{ original.pin_enabled|yesno:'true,false' }}" data-pin-reset-url="{{ pin_reset_url }}" data-user-id="{{ original.pk }}">
+      <div class="pin-card__header">
+        <h2 style="margin:0;">إدارة PIN</h2>
+        <span class="pin-status-badge" data-pin-status data-state="{{ original.pin_enabled|yesno:'enabled,disabled' }}">
+          {{ original.pin_enabled|yesno:'مفعل,معطل' }}
+        </span>
+      </div>
+      <p style="margin:0;color:#475569;">من هنا يمكنك إبطال PIN الحالي للمستخدم وتعطيل دخول الأجهزة الموثوقة حتى يعيد إنشاء PIN جديد من التطبيق.</p>
+      <div class="pin-summary">
+        <div class="pin-summary__item">
+          <div class="pin-summary__label">الحالة الحالية</div>
+          <div class="pin-summary__value" data-pin-enabled-text>{{ original.pin_enabled|yesno:'مفعل,معطل' }}</div>
+        </div>
+        <div class="pin-summary__item">
+          <div class="pin-summary__label">النسخة (PIN Epoch)</div>
+          <div class="pin-summary__value" data-pin-epoch>{{ original.pin_epoch }}</div>
+        </div>
+        <div class="pin-summary__item">
+          <div class="pin-summary__label">آخر تهيئة</div>
+          <div class="pin-summary__value" data-pin-initialized>{% if original.pin_initialized_at %}{{ original.pin_initialized_at|date:"Y-m-d H:i" }}{% else %}—{% endif %}</div>
+        </div>
+        <div class="pin-summary__item">
+          <div class="pin-summary__label">الأجهزة الموثوقة</div>
+          <div class="pin-summary__value" data-pin-devices>{{ original.trusted_devices.count }}</div>
+        </div>
+      </div>
+      <div class="pin-card__actions">
+        <button type="button" class="button" id="pin-reset-open" style="background:#dc2626;border-color:#dc2626;color:#fff;">🔁 إعادة تعيين PIN</button>
+      </div>
+      <div class="pin-feedback" data-pin-feedback></div>
+      <div class="pin-audit">
+        <div class="pin-audit__title">سجل عمليات أمان PIN</div>
+        {% if pin_audit_entries %}
+          <ul class="pin-audit__list" data-pin-audit-list>
+            {% for entry in pin_audit_entries %}
+              <li class="pin-audit__item">
+                <div>إعادة تعيين PIN</div>
+                <div class="pin-audit__meta">
+                  <span>{{ entry.created_at|date:"Y-m-d H:i" }}</span>
+                  <span>بواسطة:
+                    {% if entry.actor %}
+                      {{ entry.actor.get_username|default:entry.actor.pk }}
+                    {% else %}
+                      —
+                    {% endif %}
+                  </span>
+                  {% if entry.metadata.reason %}<span>سبب: {{ entry.metadata.reason }}</span>{% endif %}
+                  {% with devices=entry.metadata.devices_revoked %}
+                    {% if devices != '' %}<span>الأجهزة المبطلة: {{ devices }}</span>{% endif %}
+                  {% endwith %}
+                  <span>رقم النسخة: {{ entry.metadata.new_epoch|default:entry.metadata.previous_epoch|default:original.pin_epoch }}</span>
+                </div>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p style="margin:0;color:#64748b;">لا توجد عمليات مسجلة بعد.</p>
+        {% endif %}
+      </div>
+    </div>
+    <div class="pin-modal" id="pin-reset-modal" hidden role="dialog" aria-modal="true" aria-labelledby="pin-reset-title">
+      <div class="pin-modal__dialog">
+        <h3 id="pin-reset-title" style="margin:0;">تأكيد إعادة تعيين PIN</h3>
+        <p style="margin:0;color:#475569;">سيتم حذف PIN الحالي وتعطيل الأجهزة الموثوقة المرتبطة بالمستخدم. يمكن إضافة سبب داخلي اختياري يظهر في السجل.</p>
+        <label for="pin-reset-reason" style="font-size:0.85rem;color:#475569;">سبب داخلي (اختياري)</label>
+        <textarea id="pin-reset-reason" placeholder="مثال: الجهاز مفقود"></textarea>
+        <div class="pin-modal__actions">
+          <button type="button" class="button" data-action="cancel">إلغاء</button>
+          <button type="button" class="button default" data-action="confirm" style="background:#dc2626;border-color:#dc2626;color:#fff;">تأكيد إعادة التعيين</button>
+        </div>
+      </div>
     </div>
   {% endif %}
   {{ block.super }}

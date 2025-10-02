@@ -30,6 +30,7 @@ import {
   setupTotp,
   type TotpStatus,
 } from '../services/security';
+import { clearAll, inspectState } from '../lib/pinSession';
 
 const QR_SIZE = 180;
 const SOUND_TEST_TIMEOUT_MS = 2500;
@@ -55,6 +56,9 @@ export default function SettingsScreen() {
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
   const pushSupported = Platform.OS === 'ios' || Platform.OS === 'android';
+
+  const [pinState, setPinState] = useState<{ enabled: boolean; displayName?: string | null; username?: string | null } | null>(null);
+  const [pinBusy, setPinBusy] = useState(false);
 
   const soundRef = useRef<Audio.Sound | null>(null);
 
@@ -102,6 +106,20 @@ export default function SettingsScreen() {
     }
   }, []);
 
+  const refreshPinState = useCallback(async () => {
+    try {
+      const state = await inspectState();
+      setPinState({
+        enabled: state.hasSecureSession,
+        displayName: state.metadata?.displayName ?? null,
+        username: state.metadata?.username ?? null,
+      });
+    } catch (error) {
+      console.warn('[Mutabaka] Failed to inspect PIN state', error);
+      setPinState({ enabled: false });
+    }
+  }, []);
+
   const loadSoundPreferences = useCallback(async () => {
     try {
       setLoadingSound(true);
@@ -125,13 +143,14 @@ export default function SettingsScreen() {
   useFocusEffect(
     useCallback(() => {
       loadTotp();
+      refreshPinState();
       return () => {
         if (soundRef.current) {
           soundRef.current.unloadAsync().catch(() => undefined);
           soundRef.current = null;
         }
       };
-    }, [loadTotp]),
+    }, [loadTotp, refreshPinState]),
   );
 
   const handleSetupTotp = useCallback(async () => {
@@ -149,6 +168,49 @@ export default function SettingsScreen() {
       setTotpBusy(false);
     }
   }, []);
+
+  const handleChangePin = useCallback(() => {
+    if (!pinState?.enabled) {
+      Alert.alert('غير متاح', 'قم بتسجيل الدخول وتفعيل PIN أولًا.');
+      return;
+    }
+    navigation.navigate('PinUnlock', {
+      intent: 'change',
+      displayName: pinState.displayName ?? pinState.username ?? undefined,
+    });
+  }, [navigation, pinState]);
+
+  const handleDisablePin = useCallback(() => {
+    if (!pinState?.enabled || pinBusy) {
+      return;
+    }
+    Alert.alert(
+      'إلغاء رمز PIN',
+      'سيتم مسح الجلسة المشفرة من هذا الجهاز وإعادتك إلى شاشة تسجيل الدخول.',
+      [
+        { text: 'تراجع', style: 'cancel' },
+        {
+          text: 'إلغاء الرمز',
+          style: 'destructive',
+          onPress: () => {
+            setPinBusy(true);
+            (async () => {
+              try {
+                await clearAll();
+                navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+              } catch (error) {
+                console.warn('[Mutabaka] Failed to clear PIN session', error);
+                Alert.alert('تعذر الإلغاء', 'حدث خطأ أثناء حذف الجلسة.');
+              } finally {
+                setPinBusy(false);
+                refreshPinState();
+              }
+            })();
+          },
+        },
+      ],
+    );
+  }, [navigation, pinBusy, pinState, refreshPinState]);
 
   const handleEnableTotp = useCallback(async () => {
     const code = otpInput.trim();
@@ -297,6 +359,45 @@ export default function SettingsScreen() {
             <View style={[styles.panel, { backgroundColor: palette.panelBg, borderColor: palette.panelBorder }]}
             >
               <View style={styles.cardsContainer}>
+                <View style={[styles.card, { backgroundColor: palette.cardBg, borderColor: palette.cardBorder }]}
+                >
+                  <View style={[styles.cardHeader, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}
+                  >
+                    <View style={styles.cardHeaderText}>
+                      <Text style={[styles.cardTitle, { color: palette.heading }]}>الوصول السريع برمز PIN</Text>
+                      <Text style={[styles.cardSubtitle, { color: palette.subText }]}>إدارة رمز PIN المحلي لهذا الجهاز لتسجيل الدخول السريع.</Text>
+                      {renderBadge(pinState?.enabled ? 'مفعّل' : 'غير مفعّل', Boolean(pinState?.enabled))}
+                    </View>
+                    <View style={[styles.inlineRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}
+                    >
+                      <Pressable
+                        style={[styles.primaryButton, { backgroundColor: palette.primaryButtonBg, opacity: pinBusy ? 0.6 : 1 }]}
+                        onPress={handleChangePin}
+                        disabled={!pinState?.enabled || pinBusy}
+                        accessibilityRole="button"
+                      >
+                        <Text style={[styles.buttonText, { color: palette.primaryButtonText }]}>تغيير PIN</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.ghostButton, { backgroundColor: palette.ghostButtonBg, borderColor: palette.pillBorder, opacity: pinBusy ? 0.6 : 1 }]}
+                        onPress={handleDisablePin}
+                        disabled={!pinState?.enabled || pinBusy}
+                        accessibilityRole="button"
+                      >
+                        <Text style={[styles.buttonText, { color: palette.ghostButtonText }]}>إلغاء على هذا الجهاز</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                  {pinState?.enabled ? (
+                    <View style={[styles.pinMetaRow, { borderColor: palette.divider, flexDirection: isRTL ? 'row-reverse' : 'row' }]}
+                    >
+                      <Text style={[styles.pinMetaText, { color: palette.subText }]}>مفعّل لحساب {pinState.displayName || pinState.username || 'الحالي'}.</Text>
+                    </View>
+                  ) : (
+                    <Text style={[styles.cardSubtitle, { color: palette.subText }]}>قم بتسجيل الدخول وتفعيل PIN من شاشة الدخول لحماية الجلسة.</Text>
+                  )}
+                </View>
+
                 <View style={[styles.card, { backgroundColor: palette.cardBg, borderColor: palette.cardBorder }]}
                 >
                   <View style={[styles.cardHeader, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}
@@ -728,5 +829,13 @@ const styles = StyleSheet.create({
     gap: 8,
     minWidth: 160,
     alignItems: 'stretch',
+  },
+  pinMetaRow: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 10,
+  },
+  pinMetaText: {
+    fontSize: 12,
+    textAlign: 'right',
   },
 });

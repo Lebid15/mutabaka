@@ -2,7 +2,8 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.utils.translation import gettext_lazy as _
 from django.db import models
-from .models import CustomUser
+from django.urls import reverse
+from .models import CustomUser, UserSecurityAudit
 from .forms import CustomUserChangeForm, CustomUserCreationForm
 
 @admin.register(CustomUser)
@@ -112,6 +113,24 @@ class CustomUserAdmin(UserAdmin):
             # Silently ignore broadcasting errors; admin save should not fail due to Pusher issues
             pass
 
+    def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
+        extra_context = extra_context or {}
+        if object_id:
+            try:
+                audit_entries = (
+                    UserSecurityAudit.objects
+                    .filter(subject_id=object_id)
+                    .select_related('actor')[:10]
+                )
+            except Exception:
+                audit_entries = UserSecurityAudit.objects.none()
+            extra_context['pin_audit_entries'] = audit_entries
+            try:
+                extra_context['pin_reset_url'] = reverse('pin_reset')
+            except Exception:
+                extra_context['pin_reset_url'] = ''
+        return super().changeform_view(request, object_id, form_url, extra_context)
+
     @admin.action(description=_("Reset TOTP (2FA) for selected users"))
     def reset_totp(self, request, queryset):
         updated = 0
@@ -128,3 +147,19 @@ class CustomUserAdmin(UserAdmin):
             messages.success(request, _("تم تصفير التحقق الثنائي لعدد %d مستخدم") % updated)
         except Exception:
             pass
+
+
+@admin.register(UserSecurityAudit)
+class UserSecurityAuditAdmin(admin.ModelAdmin):
+    list_display = ("id", "action", "subject", "actor", "created_at")
+    list_filter = ("action", "created_at")
+    search_fields = ("subject__username", "actor__username")
+    autocomplete_fields = ("subject", "actor")
+    readonly_fields = ("action", "subject", "actor", "metadata", "created_at")
+    ordering = ("-created_at",)
+
+    def has_add_permission(self, request):  # pragma: no cover - audit entries are system generated
+        return False
+
+    def has_change_permission(self, request, obj=None):  # pragma: no cover - audit entries are read-only
+        return False

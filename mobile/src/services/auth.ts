@@ -1,5 +1,6 @@
 import { request, HttpError } from '../lib/httpClient';
 import { storeAuthTokens, clearAuthTokens, type AuthTokens } from '../lib/authStorage';
+import { clearAll as clearPinSession } from '../lib/pinSession';
 
 type LoginPayload = {
   identifier: string;
@@ -84,5 +85,5 @@ export async function loginAsTeamMember(payload: TeamLoginPayload): Promise<Auth
 }
 
 export async function logout(): Promise<void> {
-  await clearAuthTokens();
+  await Promise.all([clearAuthTokens(), clearPinSession()]);
 }

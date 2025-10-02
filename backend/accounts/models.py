@@ -25,6 +25,8 @@ class CustomUser(AbstractUser):
     pin_initialized_at = models.DateTimeField(null=True, blank=True)
     pin_failed_attempts = models.IntegerField(default=0)
     pin_locked_until = models.DateTimeField(null=True, blank=True)
+    pin_enabled = models.BooleanField(default=False, help_text="Whether local device PIN login is currently allowed")
+    pin_epoch = models.PositiveIntegerField(default=0, help_text="Bumps whenever admin resets to invalidate local caches")
 
     def save(self, *args, **kwargs):
         # basic normalization for e164 (simple concatenation, can be replaced by phonenumbers lib)
@@ -72,3 +74,28 @@ class TrustedDevice(models.Model):
     def __str__(self):  # pragma: no cover - debug convenience
         status = "approved" if self.approved_at else "pending"
         return f"{self.user_id}:{self.fingerprint[:6]} ({status})"
+
+
+class UserSecurityAudit(models.Model):
+    ACTION_PIN_RESET = 'pin_reset'
+    ACTION_CHOICES = (
+        (ACTION_PIN_RESET, 'PIN Reset'),
+    )
+
+    subject = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='security_audit_entries')
+    actor = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, blank=True, related_name='security_actions_performed')
+    action = models.CharField(max_length=64, choices=ACTION_CHOICES)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['subject', 'created_at']),
+            models.Index(fields=['action', 'created_at']),
+        ]
+
+    def __str__(self):  # pragma: no cover - debug convenience
+        subject = getattr(self.subject, 'username', self.subject_id)
+        actor = getattr(self.actor, 'username', self.actor_id)
+        return f"{self.get_action_display()} for {subject} by {actor} at {self.created_at:%Y-%m-%d %H:%M:%S}"

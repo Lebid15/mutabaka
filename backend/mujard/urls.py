@@ -33,6 +33,7 @@ from accounts.totp_views import TOTPStatusView, TOTPSetupView, TOTPEnableView, T
 from accounts.pin_views import (
     GeneratePinOnFirstMobileLogin, VerifyPinView,
     DevicesRegisterView, DevicesApproveView, DevicesDeleteView, DevicesListView,
+    PinStatusView, AdminResetUserPinView,
 )
 from django.utils import timezone
 
@@ -134,6 +135,8 @@ urlpatterns = [
     # PIN & devices endpoints (mobile channel)
     path('api/auth/generate-pin', GeneratePinOnFirstMobileLogin.as_view(), name='generate_pin'),
     path('api/auth/verify-pin', VerifyPinView.as_view(), name='verify_pin'),
+    path('api/auth/pin-status', PinStatusView.as_view(), name='pin_status'),
+    path('api/auth/pin-reset', AdminResetUserPinView.as_view(), name='pin_reset'),
     path('api/devices/register', DevicesRegisterView.as_view(), name='devices_register'),
     path('api/devices/approve', DevicesApproveView.as_view(), name='devices_approve'),
     path('api/devices/<int:id>', DevicesDeleteView.as_view(), name='devices_delete'),

@@ -10,7 +10,7 @@ import { conversations as mockConversations } from '../data/mock';
 import type { RootStackParamList } from '../navigation';
 import { useThemeMode } from '../theme';
 import { environment } from '../config/environment';
-import { clearAuthTokens, getAccessToken } from '../lib/authStorage';
+import { getAccessToken } from '../lib/authStorage';
 import { HttpError } from '../lib/httpClient';
 import { emitConversationPreviewUpdate, subscribeToConversationPreviewUpdates } from '../lib/conversationEvents';
 import { createWebSocket } from '../lib/wsClient';
@@ -23,6 +23,7 @@ import {
   unmuteConversation,
   type ConversationDto,
 } from '../services/conversations';
+import { logout as logoutService } from '../services/auth';
 import { fetchSubscriptionOverview, type SubscriptionOverviewResponse } from '../services/subscriptions';
 import { fetchCurrentUser, searchUsers, type CurrentUser, type PublicUser } from '../services/user';
 
@@ -843,15 +844,15 @@ export default function HomeScreen() {
     }
     if (action === 'logout') {
       try {
-        await clearAuthTokens();
+        await logoutService();
       } catch (error) {
         console.warn('[Mutabaka] Failed to clear tokens during logout', error);
       }
-    setRemoteConversations([]);
-  locallyClearedUnreadRef.current.clear();
+      setRemoteConversations([]);
+      locallyClearedUnreadRef.current.clear();
       setCurrentUser(null);
       setRemoteLoadAttempted(false);
-    setThrottleUntil(null);
+      setThrottleUntil(null);
       resetAddContactState();
       navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
       return;
