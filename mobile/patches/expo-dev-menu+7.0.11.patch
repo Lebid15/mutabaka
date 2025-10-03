@@ -1,0 +1,20 @@
+diff --git a/node_modules/expo-dev-menu/android/build.gradle b/node_modules/expo-dev-menu/android/build.gradle
+index a51358e..fd647a4 100644
+--- a/node_modules/expo-dev-menu/android/build.gradle
++++ b/node_modules/expo-dev-menu/android/build.gradle
+@@ -3,13 +3,13 @@ buildscript {
+     mavenCentral()
+   }
+   dependencies {
+-    classpath("org.jetbrains.kotlin.plugin.compose:org.jetbrains.kotlin.plugin.compose.gradle.plugin:${kotlinVersion}")
++    // classpath("org.jetbrains.kotlin.plugin.compose:org.jetbrains.kotlin.plugin.compose.gradle.plugin:${kotlinVersion}")
+   }
+ }
+ 
+ apply plugin: 'com.android.library'
+ apply plugin: 'expo-module-gradle-plugin'
+-apply plugin: 'org.jetbrains.kotlin.plugin.compose'
++// apply plugin: 'org.jetbrains.kotlin.plugin.compose'
+ 
+ group = 'host.exp.exponent'
+ version = '7.0.11'

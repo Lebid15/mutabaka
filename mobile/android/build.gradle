@@ -3,19 +3,37 @@
 
 buildscript {
   ext {
-    kotlinVersionString = '2.0.21'
+    kotlinVersionString = '1.9.24'
+    kotlinVersionProvider = { kotlinVersionString }
     kotlinVersion = kotlinVersionString
-    kspVersion = '2.0.21-1.0.28'
+    kotlinVersionNumber = kotlinVersionString
+    set('org.jetbrains.kotlin.version', kotlinVersionString)
+    set('android.kotlinVersion', kotlinVersionString)
+    kspVersion = '1.9.24-1.0.20'
   }
   repositories {
     google()
     mavenCentral()
   }
   dependencies {
-    classpath('com.android.tools.build:gradle')
+    classpath('com.android.tools.build:gradle:8.2.2')
     classpath('com.facebook.react:react-native-gradle-plugin')
     classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlinVersionString}")
   }
+}
+
+ext {
+  set('kotlinVersion', '1.9.24')
+  set('kotlinVersionProvider', { '1.9.24' })
+  set('org.jetbrains.kotlin.version', '1.9.24')
+  set('android.kotlinVersion', '1.9.24')
+  set('kspVersion', '1.9.24-1.0.20')
+  set('buildToolsVersion', '34.0.0')
+  set('minSdkVersion', 23)
+  set('compileSdkVersion', 34)
+  set('targetSdkVersion', 34)
+  set('ndkVersion', '26.1.10909125')
+  set('expoProvidesDefaultConfig', false)
 }
 
 allprojects {
@@ -23,8 +41,36 @@ allprojects {
     google()
     mavenCentral()
     maven { url 'https://www.jitpack.io' }
+    maven { url 'https://maven.pkg.jetbrains.space/kotlin/p/kotlin/bootstrap' }
   }
 }
 
 apply plugin: "expo-root-project"
 apply plugin: "com.facebook.react.rootproject"
+
+subprojects { subproject ->
+  subproject.beforeEvaluate {
+    subproject.plugins.withId("com.android.library") {
+      subproject.android {
+        compileSdkVersion rootProject.ext.compileSdkVersion
+        
+        defaultConfig {
+          minSdkVersion rootProject.ext.minSdkVersion
+          targetSdkVersion rootProject.ext.targetSdkVersion
+        }
+      }
+    }
+    
+    subproject.plugins.withId("com.android.application") {
+      subproject.android {
+        compileSdkVersion rootProject.ext.compileSdkVersion
+        
+        defaultConfig {
+          minSdkVersion rootProject.ext.minSdkVersion
+          targetSdkVersion rootProject.ext.targetSdkVersion
+        }
+      }
+    }
+  }
+}
+
