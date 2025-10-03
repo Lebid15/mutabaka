@@ -1,42 +1,15 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
-// Top-level build file where you can add configuration options common to all sub-projects/modules.
 
 buildscript {
-  ext {
-    kotlinVersionString = '1.9.24'
-    kotlinVersionProvider = { kotlinVersionString }
-    kotlinVersion = { kotlinVersionString }
-    getKotlinVersion = { kotlinVersionString }
-    kotlinVersionNumber = kotlinVersionString
-    set('org.jetbrains.kotlin.version', kotlinVersionString)
-    set('android.kotlinVersion', kotlinVersionString)
-    kspVersion = '1.9.24-1.0.20'
-  }
   repositories {
     google()
     mavenCentral()
   }
   dependencies {
-    classpath('com.android.tools.build:gradle:8.2.2')
+    classpath('com.android.tools.build:gradle')
     classpath('com.facebook.react:react-native-gradle-plugin')
-    classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlinVersionString}")
+    classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
   }
-}
-
-ext {
-  kotlinVersionString = '1.9.24'
-  kotlinVersion = '1.9.24'
-  getKotlinVersion = { '1.9.24' }
-  kotlinVersionProvider = { '1.9.24' }
-  set('org.jetbrains.kotlin.version', '1.9.24')
-  set('android.kotlinVersion', '1.9.24')
-  set('kspVersion', '1.9.24-1.0.20')
-  set('buildToolsVersion', '34.0.0')
-  set('minSdkVersion', 23)
-  set('compileSdkVersion', 34)
-  set('targetSdkVersion', 34)
-  set('ndkVersion', '26.1.10909125')
-  set('expoProvidesDefaultConfig', false)
 }
 
 allprojects {
@@ -44,36 +17,18 @@ allprojects {
     google()
     mavenCentral()
     maven { url 'https://www.jitpack.io' }
-    maven { url 'https://maven.pkg.jetbrains.space/kotlin/p/kotlin/bootstrap' }
   }
 }
 
 apply plugin: "expo-root-project"
 apply plugin: "com.facebook.react.rootproject"
 
-subprojects { subproject ->
-  subproject.beforeEvaluate {
-    subproject.plugins.withId("com.android.library") {
-      subproject.android {
-        compileSdkVersion rootProject.ext.compileSdkVersion
-        
-        defaultConfig {
-          minSdkVersion rootProject.ext.minSdkVersion
-          targetSdkVersion rootProject.ext.targetSdkVersion
-        }
-      }
-    }
-    
-    subproject.plugins.withId("com.android.application") {
-      subproject.android {
-        compileSdkVersion rootProject.ext.compileSdkVersion
-        
-        defaultConfig {
-          minSdkVersion rootProject.ext.minSdkVersion
-          targetSdkVersion rootProject.ext.targetSdkVersion
-        }
-      }
-    }
-  }
+ext {
+    buildToolsVersion = "35.0.0"
+    minSdkVersion = 24
+    compileSdkVersion = 35
+    targetSdkVersion = 35
+    ndkVersion = "26.1.10909125"
+    kotlinVersion = "1.9.24"
+    kotlin_version = "1.9.24"
 }
-
