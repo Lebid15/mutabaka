@@ -1,10 +1,8 @@
 import { Platform } from 'react-native';
+import * as Device from 'expo-device';
+import * as Application from 'expo-application';
 import { request, HttpError } from '../lib/httpClient';
 import { getStoredDeviceId, setStoredDeviceId } from '../lib/deviceIdentity';
-
-// تعطيل expo-constants مؤقتاً لتجنب Crash في Development Build
-// سيتم استخدام قيم افتراضية بدلاً منه
-const Constants: any = null;
 
 export type DeviceStatus = 'primary' | 'active' | 'pending' | 'revoked' | string;
 
@@ -36,10 +34,19 @@ export interface LinkDeviceOptions {
 }
 
 function resolveDefaultLabel(): string {
-  const name = Constants?.deviceName?.trim();
-  if (name && name.length) {
-    return name.slice(0, 120);
+  // Try to get actual device model name
+  const deviceName = Device.deviceName?.trim();
+  const modelName = Device.modelName?.trim();
+  
+  // Prefer deviceName (e.g., "Samsung Galaxy S21"), fallback to modelName (e.g., "SM-G991B")
+  if (deviceName && deviceName.length > 0) {
+    return deviceName.slice(0, 120);
   }
+  if (modelName && modelName.length > 0) {
+    return modelName.slice(0, 120);
+  }
+  
+  // Fallback to platform-specific defaults
   switch (Platform.OS) {
     case 'ios':
       return 'جهاز iOS';
@@ -63,10 +70,10 @@ function resolveAppVersion(override?: string): string {
   if (override && override.length) {
     return override;
   }
-  const expoVersion = Constants?.expoConfig?.version;
-  const nativeVersion = Constants?.nativeAppVersion;
-  const nativeBuild = Constants?.nativeBuildVersion;
-  return expoVersion || nativeVersion || nativeBuild || 'dev';
+  // Use expo-application to get version info
+  const nativeVersion = Application.nativeApplicationVersion;
+  const nativeBuild = Application.nativeBuildVersion;
+  return nativeVersion || nativeBuild || 'dev';
 }
 
 function generateQaDeviceId(): string {

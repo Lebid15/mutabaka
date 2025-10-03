@@ -189,9 +189,9 @@ class UserSecurityAuditAdmin(admin.ModelAdmin):
 
 @admin.register(UserDevice)
 class UserDeviceAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "label", "platform", "status", "created_at", "last_seen_at")
+    list_display = ("id_short", "user", "device_info", "status", "created_at", "last_seen_at")
     list_filter = ("status", "platform", "created_at")
-    search_fields = ("user__username", "label", "id")
+    search_fields = ("user__username", "label", "id", "app_version")
     readonly_fields = ("id", "created_at", "last_seen_at", "pending_expires_at", "pending_token")
     autocomplete_fields = ("user",)
     ordering = ("-created_at",)
@@ -204,6 +204,23 @@ class UserDeviceAdmin(admin.ModelAdmin):
             "fields": ("created_at", "last_seen_at", "pending_token", "pending_expires_at")
         }),
     )
+    
+    def id_short(self, obj):
+        """Show first 8 chars of device ID"""
+        return obj.id[:8] if obj.id else "-"
+    id_short.short_description = "Device ID"
+    
+    def device_info(self, obj):
+        """Combine label and platform for better display"""
+        parts = []
+        if obj.label:
+            parts.append(obj.label)
+        if obj.platform:
+            parts.append(f"({obj.platform})")
+        if obj.app_version:
+            parts.append(f"v{obj.app_version}")
+        return " ".join(parts) if parts else "-"
+    device_info.short_description = "Device"
     
     def has_add_permission(self, request):
         # Devices are created by the system, not manually
