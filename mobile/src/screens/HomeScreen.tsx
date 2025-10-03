@@ -432,8 +432,10 @@ export default function HomeScreen() {
     setIsMenuOpen(false);
   }, []);
 
-  const menuItems = useMemo<MenuItem[]>(() => (
-    [
+  const menuItems = useMemo<MenuItem[]>(() => {
+    const isTeamMember = currentUser?.is_team_member === true;
+    
+    const allItems: MenuItem[]= [
       { key: 'profile', label: 'بروفايلي', icon: 'user', navigateTo: 'Profile' },
       { key: 'matches', label: 'مطابقاتي', icon: 'heart', navigateTo: 'Matches' },
     { key: 'settings', label: 'الإعدادات', icon: 'settings', navigateTo: 'Settings' },
@@ -441,8 +443,17 @@ export default function HomeScreen() {
     { key: 'team', label: 'فريق العمل', icon: 'users', navigateTo: 'Team' },
     { key: 'refresh', label: 'تحديث جهات الاتصال', icon: 'refresh-ccw', navigateTo: 'RefreshContacts' },
       { key: 'logout', label: 'تسجيل الخروج', icon: 'log-out' },
-    ]
-  ), []);
+    ];
+    
+    // Hide certain menu items for team members
+    if (isTeamMember) {
+      return allItems.filter(item => 
+        !['profile', 'matches', 'subscriptions', 'team'].includes(item.key)
+      );
+    }
+    
+    return allItems;
+  }, [currentUser]);
 
 
   const loadConversations = useCallback(async () => {
@@ -1358,14 +1369,16 @@ export default function HomeScreen() {
       <View style={styles.headerRow}>
         <View style={styles.headerTitleGroup}>
           <Text style={[styles.headerTitle, { color: titleColor }]}>الدردشات</Text>
-          <Pressable
-            accessibilityRole="button"
-            style={[styles.iconButton, styles.headerButton, { backgroundColor: buttonBg, borderColor: buttonBorder }]}
-            onPress={handleOpenAddContact}
-            accessibilityLabel="إضافة جهة اتصال جديدة"
-          >
-            <FeatherIcon name="plus" size={20} color={actionTint} />
-          </Pressable>
+          {!currentUser?.is_team_member ? (
+            <Pressable
+              accessibilityRole="button"
+              style={[styles.iconButton, styles.headerButton, { backgroundColor: buttonBg, borderColor: buttonBorder }]}
+              onPress={handleOpenAddContact}
+              accessibilityLabel="إضافة جهة اتصال جديدة"
+            >
+              <FeatherIcon name="plus" size={20} color={actionTint} />
+            </Pressable>
+          ) : null}
         </View>
         <Pressable
           accessibilityRole="button"

@@ -174,6 +174,7 @@ export default function SettingsScreen() {
   const [replaceState, setReplaceState] = useState<{ pending: LinkedDevice } | null>(null);
   const [replaceTargetId, setReplaceTargetId] = useState<string | null>(null);
   const [replaceSaving, setReplaceSaving] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{ is_team_member?: boolean } | null>(null);
   const devicesPollRef = useRef<NodeJS.Timeout | null>(null);
   const isMountedRef = useRef(true);
 
@@ -368,6 +369,13 @@ export default function SettingsScreen() {
       refreshPinState();
       loadDevices('initial').catch((error) => {
         console.warn('[Mutabaka] Failed to load devices', error);
+      });
+      fetchCurrentUser().then((user) => {
+        if (isMountedRef.current) {
+          setCurrentUser(user);
+        }
+      }).catch((error) => {
+        console.warn('[Mutabaka] Failed to load current user', error);
       });
       if (devicesPollRef.current) {
         clearInterval(devicesPollRef.current);
@@ -881,7 +889,7 @@ export default function SettingsScreen() {
                   )}
                 </View>
 
-                {qaEnabled ? (
+                {qaEnabled && !currentUser?.is_team_member ? (
                   <View style={[styles.card, { backgroundColor: palette.cardBg, borderColor: palette.cardBorder }]}
                   >
                     <View style={[styles.cardSimpleRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}
@@ -902,13 +910,14 @@ export default function SettingsScreen() {
                   </View>
                 ) : null}
 
-                <View style={[styles.card, { backgroundColor: palette.cardBg, borderColor: palette.cardBorder }]}
-                >
-                  <View style={[styles.cardHeader, { flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'flex-start' }]}
+                {!currentUser?.is_team_member ? (
+                  <View style={[styles.card, { backgroundColor: palette.cardBg, borderColor: palette.cardBorder }]}
                   >
-                    <View style={[styles.cardHeaderText, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}
+                    <View style={[styles.cardHeader, { flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'flex-start' }]}
                     >
-                      <Text style={[styles.cardTitle, textDirectionStyle, { color: palette.heading }]}>الأجهزة المرتبطة</Text>
+                      <View style={[styles.cardHeaderText, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}
+                      >
+                        <Text style={[styles.cardTitle, textDirectionStyle, { color: palette.heading }]}>الأجهزة المرتبطة</Text>
                       <Text style={[styles.cardSubtitle, textDirectionStyle, { color: palette.subText }]}>تحكم بالأجهزة التي يمكنها الوصول إلى حسابك، ووافق على الأجهزة الجديدة أو أزل الأجهزة القديمة.</Text>
                       <Text style={[styles.deviceUsageText, textDirectionStyle, { color: palette.subText }]}>الاستخدام: {deviceUsageText}</Text>
                     </View>
@@ -1090,6 +1099,7 @@ export default function SettingsScreen() {
                     </View>
                   )}
                 </View>
+                ) : null}
 
                 <View style={[styles.card, { backgroundColor: palette.cardBg, borderColor: palette.cardBorder }]}
                 >

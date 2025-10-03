@@ -12,6 +12,8 @@ export interface CurrentUser {
   initials: string;
   logo_url: string | null;
   subscription_remaining_days: number;
+  created_by_id?: number | null;
+  is_team_member?: boolean;
 }
 
 export interface PublicUser {

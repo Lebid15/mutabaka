@@ -3917,7 +3917,7 @@ export default function ChatScreen() {
                 </View>
               ) : null}
 
-              {pendingDeleteRequest ? (
+              {pendingDeleteRequest && !currentUser?.is_team_member ? (
                 <View
                   style={[styles.deleteBanner, { backgroundColor: deleteBannerBackground, borderColor: deleteBannerBorder }]}
                 >
