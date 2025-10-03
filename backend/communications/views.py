@@ -1,4 +1,4 @@
-from rest_framework import viewsets, mixins, status
+from rest_framework import viewsets, mixins, status, permissions
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from django.conf import settings
@@ -294,6 +294,7 @@ class ContactRelationViewSet(viewsets.ModelViewSet):
 class TeamMemberViewSet(viewsets.ModelViewSet):
     """CRUD for the current user's team."""
     serializer_class = TeamMemberSerializer
+    permission_classes = [permissions.IsAuthenticated]  # Allow web access without device check
 
     def get_queryset(self):
         return TeamMember.objects.select_related('owner').filter(owner=self.request.user).order_by('-id')
