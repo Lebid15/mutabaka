@@ -3,7 +3,7 @@ from django.contrib.auth.admin import UserAdmin
 from django.utils.translation import gettext_lazy as _
 from django.db import models
 from django.urls import reverse
-from .models import CustomUser, UserSecurityAudit
+from .models import CustomUser, UserSecurityAudit, UserDevice
 from .forms import CustomUserChangeForm, CustomUserCreationForm
 
 @admin.register(CustomUser)
@@ -30,7 +30,7 @@ class CustomUserAdmin(UserAdmin):
         (_("Important dates"), {"classes": ("collapse",), "fields": ("last_login", "date_joined", "last_password_change")}),
     )
     readonly_fields = ("last_password_change",)
-    actions = ["reset_totp"]
+    actions = ["reset_totp", "reset_devices"]
     # Control section order for Jazzmin tabs to avoid any re-ordering quirks
     jazzmin_section_order = ("General", "Personal info", "Permissions", "Important dates")
 
@@ -148,6 +148,28 @@ class CustomUserAdmin(UserAdmin):
         except Exception:
             pass
 
+    @admin.action(description=_("Reset Devices (تصفير الأجهزة) for selected users"))
+    def reset_devices(self, request, queryset):
+        """Delete all devices for selected users, forcing them to re-register on next login."""
+        total_deleted = 0
+        users_affected = 0
+        for user in queryset:
+            try:
+                deleted_count = UserDevice.objects.filter(user=user).delete()
+                if deleted_count[0] > 0:
+                    total_deleted += deleted_count[0]
+                    users_affected += 1
+            except Exception:
+                pass
+        try:
+            from django.contrib import messages
+            messages.success(
+                request, 
+                _("تم حذف %d جهاز لعدد %d مستخدم. سيحتاجون إعادة تسجيل الدخول.") % (total_deleted, users_affected)
+            )
+        except Exception:
+            pass
+
 
 @admin.register(UserSecurityAudit)
 class UserSecurityAuditAdmin(admin.ModelAdmin):
@@ -162,4 +184,27 @@ class UserSecurityAuditAdmin(admin.ModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None):  # pragma: no cover - audit entries are read-only
+        return False
+
+
+@admin.register(UserDevice)
+class UserDeviceAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "device_name", "status", "created_at", "last_seen_at")
+    list_filter = ("status", "created_at")
+    search_fields = ("user__username", "device_name", "device_fingerprint")
+    readonly_fields = ("id", "device_fingerprint", "created_at", "last_seen_at", "pending_expires_at")
+    autocomplete_fields = ("user",)
+    ordering = ("-created_at",)
+    
+    fieldsets = (
+        (_("Device Info"), {
+            "fields": ("user", "device_name", "device_fingerprint", "status")
+        }),
+        (_("Timestamps"), {
+            "fields": ("created_at", "last_seen_at", "pending_expires_at")
+        }),
+    )
+    
+    def has_add_permission(self, request):
+        # Devices are created by the system, not manually
         return False
