@@ -16,6 +16,8 @@ Notifications.setNotificationHandler({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
@@ -122,6 +124,7 @@ function useNotificationBadgeBridge() {
 }
 
 I18nManager.allowRTL(true);
+I18nManager.forceRTL(true);
 I18nManager.swapLeftAndRightInRTL(true);
 
 function AppContainer() {
