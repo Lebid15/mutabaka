@@ -534,75 +534,85 @@ export default function MatchesScreen() {
 
                 <View style={[styles.tableWrapper, { borderColor: palette.rowBorder }]}
                 >
-                  <View style={[styles.tableHeader, { backgroundColor: palette.tableHeaderBg, borderColor: palette.rowBorder }]}
-                  >
-                    <View style={[styles.tableHeaderCell, styles.firstColumn]}>
-                      <Text style={[styles.tableHeaderText, { color: palette.tableHeaderText }]}>الجهة</Text>
-                    </View>
-                    <View style={styles.tableHeaderCell}>
-                      <Text style={[styles.tableHeaderText, { color: palette.tableHeaderText }]}>دولار</Text>
-                    </View>
-                    <View style={styles.tableHeaderCell}>
-                      <Text style={[styles.tableHeaderText, { color: palette.tableHeaderText }]}>تركي</Text>
-                    </View>
-                    <View style={styles.tableHeaderCell}>
-                      <Text style={[styles.tableHeaderText, { color: palette.tableHeaderText }]}>سوري</Text>
-                    </View>
-                    <View style={styles.tableHeaderCell}>
-                      <Text style={[styles.tableHeaderText, { color: palette.tableHeaderText }]}>يورو</Text>
-                    </View>
-                  </View>
-
-                  {rows.map((row) => (
-                    <View
-                      key={row.id}
-                      style={[styles.tableRow, { borderColor: palette.rowBorder }]}
-                    >
-                      <View style={[styles.tableCell, styles.firstColumn]}
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} bounces={false}>
+                    <View style={styles.tableContainer}>
+                      <View style={[styles.tableHeader, { backgroundColor: palette.tableHeaderBg, borderColor: palette.rowBorder }]}
                       >
-                        {row.avatar ? (
-                          <Image source={{ uri: row.avatar }} style={[styles.avatar, { borderColor: palette.avatarBorder }]} />
-                        ) : (
-                          <View style={[styles.avatarFallback, { borderColor: palette.avatarBorder }]}
+                        <View style={[styles.tableHeaderCell, styles.firstColumn]}>
+                          <Text style={[styles.tableHeaderText, { color: palette.tableHeaderText }]}>الجهة</Text>
+                        </View>
+                        <View style={styles.tableHeaderCell}>
+                          <Text style={[styles.tableHeaderText, { color: palette.tableHeaderText }]}>دولار</Text>
+                        </View>
+                        <View style={styles.tableHeaderCell}>
+                          <Text style={[styles.tableHeaderText, { color: palette.tableHeaderText }]}>تركي</Text>
+                        </View>
+                        <View style={styles.tableHeaderCell}>
+                          <Text style={[styles.tableHeaderText, { color: palette.tableHeaderText }]}>سوري</Text>
+                        </View>
+                        <View style={styles.tableHeaderCell}>
+                          <Text style={[styles.tableHeaderText, { color: palette.tableHeaderText }]}>يورو</Text>
+                        </View>
+                      </View>
+
+                      <ScrollView 
+                        style={styles.tableBodyScroll}
+                        showsVerticalScrollIndicator={true}
+                        nestedScrollEnabled={true}
+                      >
+                        {rows.map((row) => (
+                          <View
+                            key={row.id}
+                            style={[styles.tableRow, { borderColor: palette.rowBorder }]}
                           >
-                            <Text style={[styles.avatarFallbackText, { color: palette.textPrimary }]}>{row.name.slice(0, 2).toUpperCase()}</Text>
+                            <View style={[styles.tableCell, styles.firstColumn]}
+                            >
+                              {row.avatar ? (
+                                <Image source={{ uri: row.avatar }} style={[styles.avatar, { borderColor: palette.avatarBorder }]} />
+                              ) : (
+                                <View style={[styles.avatarFallback, { borderColor: palette.avatarBorder }]}
+                                >
+                                  <Text style={[styles.avatarFallbackText, { color: palette.textPrimary }]}>{row.name.slice(0, 2).toUpperCase()}</Text>
+                                </View>
+                              )}
+                              <Text style={[styles.rowName, { color: palette.textPrimary }]} numberOfLines={1}>{row.name}</Text>
+                            </View>
+                            <View style={styles.tableCell}
+                            >
+                              <Text style={[styles.amountText, styles.ltr, { color: row.usd >= 0 ? palette.success : palette.danger }]}>
+                                {formatAmount(row.usd)} $
+                              </Text>
+                            </View>
+                            <View style={styles.tableCell}
+                            >
+                              <Text style={[styles.amountText, styles.ltr, { color: row.tryy >= 0 ? palette.success : palette.danger }]}>
+                                {formatAmount(row.tryy)} ₺
+                              </Text>
+                            </View>
+                            <View style={styles.tableCell}
+                            >
+                              <Text style={[styles.amountText, styles.ltr, { color: row.syp >= 0 ? palette.success : palette.danger }]}>
+                                {formatAmount(row.syp)} SYP
+                              </Text>
+                            </View>
+                            <View style={styles.tableCell}
+                            >
+                              <Text style={[styles.amountText, styles.ltr, { color: row.eur >= 0 ? palette.success : palette.danger }]}>
+                                {formatAmount(row.eur)} €
+                              </Text>
+                            </View>
                           </View>
-                        )}
-                        <Text style={[styles.rowName, { color: palette.textPrimary }]} numberOfLines={1}>{row.name}</Text>
-                      </View>
-                      <View style={styles.tableCell}
-                      >
-                        <Text style={[styles.amountText, styles.ltr, { color: row.usd >= 0 ? palette.success : palette.danger }]}>
-                          {formatAmount(row.usd)} $
-                        </Text>
-                      </View>
-                      <View style={styles.tableCell}
-                      >
-                        <Text style={[styles.amountText, styles.ltr, { color: row.tryy >= 0 ? palette.success : palette.danger }]}>
-                          {formatAmount(row.tryy)} ₺
-                        </Text>
-                      </View>
-                      <View style={styles.tableCell}
-                      >
-                        <Text style={[styles.amountText, styles.ltr, { color: row.syp >= 0 ? palette.success : palette.danger }]}>
-                          {formatAmount(row.syp)} SYP
-                        </Text>
-                      </View>
-                      <View style={styles.tableCell}
-                      >
-                        <Text style={[styles.amountText, styles.ltr, { color: row.eur >= 0 ? palette.success : palette.danger }]}>
-                          {formatAmount(row.eur)} €
-                        </Text>
-                      </View>
-                    </View>
-                  ))}
+                        ))}
 
-                  {rows.length === 0 ? (
-                    <View style={[styles.emptyState, { borderColor: palette.rowBorder }]}
-                    >
-                      <Text style={[styles.emptyText, { color: palette.mutedText }]}>لا توجد بيانات مطابقة بعد</Text>
+                        {rows.length === 0 ? (
+                          <View style={[styles.emptyState, { borderColor: palette.rowBorder }]}
+                          >
+                            <Text style={[styles.emptyText, { color: palette.mutedText }]}>لا توجد بيانات مطابقة بعد</Text>
+                          </View>
+                        ) : null}
+                      </ScrollView>
                     </View>
-                  ) : null}
+                  </ScrollView>
                 </View>
               </View>
             ) : null}
@@ -741,6 +751,12 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     overflow: 'hidden',
+  },
+  tableContainer: {
+    minWidth: '100%',
+  },
+  tableBodyScroll: {
+    maxHeight: 300,
   },
   tableHeader: {
     flexDirection: 'row',
