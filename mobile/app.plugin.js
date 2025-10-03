@@ -8,6 +8,11 @@ const KOTLIN_VERSION = '2.0.20'; // استخدام نسخة مستقرة
 function withFirebasePlugin(config) {
   // إضافة Google Services classpath للـ project-level build.gradle
   config = withProjectBuildGradle(config, (config) => {
+    if (!config.modResults || !config.modResults.contents) {
+      console.warn('[Plugin] No project build.gradle found, skipping Google Services setup');
+      return config;
+    }
+    
     const buildGradle = config.modResults.contents;
     
     // إضافة Google Services plugin
@@ -24,6 +29,11 @@ function withFirebasePlugin(config) {
 
   // إضافة Google Services plugin للـ app-level build.gradle
   config = withAppBuildGradle(config, (config) => {
+    if (!config.modResults || !config.modResults.contents) {
+      console.warn('[Plugin] No app build.gradle found, skipping Google Services apply');
+      return config;
+    }
+    
     const buildGradle = config.modResults.contents;
     
     // إضافة apply plugin في نهاية الملف
@@ -38,26 +48,31 @@ function withFirebasePlugin(config) {
 }
 
 module.exports = function withMutabakaGradleProps(config) {
-  // إضافة Firebase Plugin
-  config = withFirebasePlugin(config);
-  
-  // إضافة Gradle Properties
-  return withGradleProperties(config, (config) => {
-    const props = config.modResults ?? [];
-    const ensureProperty = (key, value) => {
-      const existing = props.find((item) => item.type === 'property' && item.key === key);
-      if (existing) {
-        existing.value = value;
-      } else {
-        props.push({ type: 'property', key, value });
-      }
-    };
+  try {
+    // إضافة Firebase Plugin
+    config = withFirebasePlugin(config);
+    
+    // إضافة Gradle Properties
+    return withGradleProperties(config, (config) => {
+      const props = config.modResults ?? [];
+      const ensureProperty = (key, value) => {
+        const existing = props.find((item) => item.type === 'property' && item.key === key);
+        if (existing) {
+          existing.value = value;
+        } else {
+          props.push({ type: 'property', key, value });
+        }
+      };
 
-    ensureProperty('android.kotlinVersion', KOTLIN_VERSION);
-    ensureProperty('kotlinVersion', KOTLIN_VERSION);
-    ensureProperty('org.jetbrains.kotlin.version', KOTLIN_VERSION);
+      ensureProperty('android.kotlinVersion', KOTLIN_VERSION);
+      ensureProperty('kotlinVersion', KOTLIN_VERSION);
+      ensureProperty('org.jetbrains.kotlin.version', KOTLIN_VERSION);
 
-    config.modResults = props;
+      config.modResults = props;
+      return config;
+    });
+  } catch (error) {
+    console.error('[Plugin] Error in withMutabakaGradleProps:', error);
     return config;
-  });
+  }
 };
