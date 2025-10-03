@@ -2,6 +2,7 @@ import { request, HttpError } from '../lib/httpClient';
 import { clearAuthTokens } from '../lib/authStorage';
 import { clearAll as clearPinSession } from '../lib/pinSession';
 import { clearAppBadge } from '../lib/appBadge';
+import { clearCachedPushToken } from '../lib/pushNotifications';
 
 type LoginPayload = {
   identifier: string;
@@ -193,4 +194,6 @@ export async function logout(options?: { wipePinSession?: boolean }): Promise<vo
   } catch (error) {
     console.warn('[Mutabaka] Failed to clear app badge on logout', error);
   }
+  // مسح cached push token
+  clearCachedPushToken();
 }

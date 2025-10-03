@@ -33,6 +33,7 @@ import { linkCurrentDevice, isDeviceActive, HttpError } from '../services/device
 import { navigateAfterLogin } from '../utils/loginFlow';
 import type { AuthTokens } from '../lib/authStorage';
 import { inspectState } from '../lib/pinSession';
+import { getExpoPushToken } from '../lib/pushNotifications';
 import {
   getBranding,
   getContactLinks,
@@ -254,7 +255,27 @@ export default function LoginScreen() {
 
     let linkResult;
     try {
-      linkResult = await linkCurrentDevice({ accessToken: loginData.access });
+      // محاولة الحصول على Push Token (بدون blocking)
+      let pushToken: string | null = null;
+      try {
+        console.log('[Login] 🔔 Getting push token...');
+        pushToken = await getExpoPushToken();
+        if (pushToken) {
+          console.log('[Login] ✅ Push token obtained successfully:', pushToken);
+        } else {
+          console.warn('[Login] ⚠️ Push token is null');
+        }
+      } catch (tokenError) {
+        console.error('[Login] ❌ Failed to get push token:', tokenError);
+        // نستمر بدون push token - ليس خطأ حرج
+      }
+
+      console.log('[Login] 📱 Linking device with pushToken:', pushToken ? 'YES' : 'NO');
+      linkResult = await linkCurrentDevice({ 
+        accessToken: loginData.access,
+        pushToken,
+      });
+      console.log('[Login] ✅ Device linked successfully:', linkResult);
     } catch (error) {
       if (error instanceof AuthenticationError) {
         throw error;

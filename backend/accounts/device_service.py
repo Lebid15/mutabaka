@@ -44,10 +44,16 @@ def _normalize_label(label: Optional[str], platform: str) -> str:
 
 
 def _set_metadata(device: UserDevice, *, label: Optional[str], platform: Optional[str], app_version: Optional[str], push_token: Optional[str]) -> None:
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"_set_metadata called: device_id={device.id}, push_token_param='{push_token}'")
+    
     device.label = _normalize_label(label, platform or device.platform)
     device.platform = _normalize_platform(platform or device.platform)
     device.app_version = (app_version or '').strip()[:40]
     device.push_token = (push_token or '').strip()[:256]
+    
+    logger.info(f"_set_metadata result: device.push_token='{device.push_token}'")
 
 
 def _issue_pending(device: UserDevice) -> str:

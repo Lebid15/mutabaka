@@ -1,7 +1,10 @@
-import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { request, HttpError } from '../lib/httpClient';
 import { getStoredDeviceId, setStoredDeviceId } from '../lib/deviceIdentity';
+
+// تعطيل expo-constants مؤقتاً لتجنب Crash في Development Build
+// سيتم استخدام قيم افتراضية بدلاً منه
+const Constants: any = null;
 
 export type DeviceStatus = 'primary' | 'active' | 'pending' | 'revoked' | string;
 
@@ -33,7 +36,7 @@ export interface LinkDeviceOptions {
 }
 
 function resolveDefaultLabel(): string {
-  const name = Constants.deviceName?.trim();
+  const name = Constants?.deviceName?.trim();
   if (name && name.length) {
     return name.slice(0, 120);
   }
@@ -60,9 +63,9 @@ function resolveAppVersion(override?: string): string {
   if (override && override.length) {
     return override;
   }
-  const expoVersion = Constants.expoConfig?.version;
-  const nativeVersion = Constants.nativeAppVersion;
-  const nativeBuild = Constants.nativeBuildVersion;
+  const expoVersion = Constants?.expoConfig?.version;
+  const nativeVersion = Constants?.nativeAppVersion;
+  const nativeBuild = Constants?.nativeBuildVersion;
   return expoVersion || nativeVersion || nativeBuild || 'dev';
 }
 

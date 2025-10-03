@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Django
+*.log
+db.sqlite3
+db.sqlite3-journal
+media/attachments/*
+!media/attachments/.gitkeep
+
+# Environment
+.env
+.venv
+venv/
+ENV/
+
+# Firebase Service Account (NEVER commit this!)
+firebase-service-account.json
+*-firebase-adminsdk-*.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

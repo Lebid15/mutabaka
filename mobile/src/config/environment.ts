@@ -17,9 +17,9 @@ function normalizeUrl(value: string | undefined | null): string | undefined {
 
 const PRESET_CONFIGS: Record<EnvironmentName, EnvironmentConfig> = {
   development: {
-    apiBaseUrl: 'https://mutabaka.com/api',
-    websocketBaseUrl: 'wss://mutabaka.com/ws',
-    tenantHost: 'mutabaka.com',
+    apiBaseUrl: 'http://10.0.2.2:8000/api',  // Android Emulator localhost
+    websocketBaseUrl: 'ws://10.0.2.2:8000/ws',
+    tenantHost: 'localhost',
   },
   staging: {
     apiBaseUrl: 'https://staging.mutabaka.com/api',

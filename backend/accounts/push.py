@@ -10,6 +10,14 @@ from django.db import transaction
 
 from .models import UserDevice
 
+# Try to import Firebase Admin SDK (optional, falls back to Expo API)
+try:
+    from .fcm_push import send_fcm_multicast
+    FCM_AVAILABLE = True
+except ImportError:
+    FCM_AVAILABLE = False
+    send_fcm_multicast = None
+
 logger = logging.getLogger(__name__)
 
 EXPO_PUSH_URL = getattr(settings, "EXPO_PUSH_URL", "https://exp.host/--/api/v2/push/send")
@@ -90,7 +98,7 @@ def _handle_expo_response(batch: Sequence[PushMessage], response_json: Dict[str,
             extra={
                 "status": status,
                 "error": error_code,
-                "message": result.get("message"),
+                "error_message": result.get("message"),
                 "token": token,
             },
         )
@@ -104,6 +112,38 @@ def send_push_messages(messages: Sequence[PushMessage]) -> None:
     batch = [msg for msg in messages if msg.to]
     if not batch:
         return
+    
+    # Try Firebase Admin SDK first (recommended for FCM)
+    if FCM_AVAILABLE:
+        try:
+            tokens = [msg.to for msg in batch]
+            # Use first message as template (they should all have same title/body)
+            first_msg = batch[0]
+            
+            logger.info(f"🔥 Sending {len(tokens)} notifications via Firebase Admin SDK")
+            results = send_fcm_multicast(
+                tokens=tokens,
+                title=first_msg.title,
+                body=first_msg.body,
+                data=first_msg.data
+            )
+            
+            logger.info(f"✅ FCM results: {results['success']} sent, {results['failure']} failed")
+            
+            # Remove invalid tokens
+            if results.get('invalid_tokens'):
+                with transaction.atomic():
+                    UserDevice.objects.filter(
+                        push_token__in=results['invalid_tokens']
+                    ).update(push_token="")
+                logger.info(f"🗑️ Removed {len(results['invalid_tokens'])} invalid tokens")
+            
+            return
+        except Exception as e:
+            logger.warning(f"⚠️ Firebase Admin SDK failed, falling back to Expo API: {e}")
+    
+    # Fallback to Expo Push API (legacy method)
+    logger.info(f"📤 Sending {len(batch)} notifications via Expo Push API")
     headers = {"Content-Type": "application/json"}
     auth_token = getattr(settings, "EXPO_ACCESS_TOKEN", None)
     if auth_token:

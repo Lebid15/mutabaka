@@ -23,6 +23,12 @@ backend/.env
 frontend/.env.local
 !*.example
 
+# Firebase sensitive files (NEVER commit these!)
+backend/firebase-service-account.json
+backend/*-firebase-adminsdk-*.json
+mobile/google-services.json
+mobile/GoogleService-Info.plist
+
 # Node
 node_modules/
 .next/

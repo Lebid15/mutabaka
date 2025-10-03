@@ -395,3 +395,12 @@ CKEDITOR_CONFIGS = {
         "tabSpaces": 4,
     }
 }
+
+# ============================================================================
+# Expo Push Notifications Settings
+# ============================================================================
+# FCM Server Key is required for sending push notifications via Expo
+# Get it from Firebase Console → Project Settings → Cloud Messaging
+# Set via environment variable: EXPO_FCM_SERVER_KEY
+EXPO_ACCESS_TOKEN = os.getenv("EXPO_FCM_SERVER_KEY")
+EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"

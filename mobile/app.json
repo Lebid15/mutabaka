@@ -24,16 +24,24 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.mobile"
+      "package": "com.anonymous.mobile",
+      "googleServicesFile": "./google-services.json"
     },
     "plugins": [
       [
         "expo-build-properties",
         {
           "android": {
-            "kotlinVersion": "2.0.21",
-            "kspVersion": "2.0.21-1.0.28"
+            "kotlinVersion": "2.0.20",
+            "kspVersion": "2.0.20-1.0.25"
           }
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#F8537C"
         }
       ],
       "./app.plugin"

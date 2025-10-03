@@ -1281,35 +1281,39 @@ export default function SettingsScreen() {
                   </View>
                 </View>
 
-                <View style={[styles.card, { backgroundColor: palette.cardBg, borderColor: palette.cardBorder }]}
-                >
-                  <View style={[styles.cardSimpleRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}
+                {/* Web Push - مخفي في الموبايل لأنه مخصص للويب فقط */}
+                {/* Native Push Notifications يعمل تلقائياً في الخلفية */}
+                {Platform.OS === 'web' && (
+                  <View style={[styles.card, { backgroundColor: palette.cardBg, borderColor: palette.cardBorder }]}
                   >
-                    <View style={[styles.cardHeaderText, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}
+                    <View style={[styles.cardSimpleRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}
                     >
-                      <Text style={[styles.cardTitle, textDirectionStyle, { color: palette.heading }]}>إشعارات الرسائل (Web Push)</Text>
-                      <Text style={[styles.cardSubtitle, textDirectionStyle, { color: palette.subText }]}>الميزة مخصصة لإصدار الويب. سنضيف دعماً كاملاً لتطبيق الجوال لاحقاً.</Text>
-                    </View>
-                    {pushSupported ? (
-                      <Pressable
-                        style={[styles.primaryButton, { backgroundColor: pushEnabled ? palette.dangerButtonBg : palette.primaryButtonBg }]}
-                        onPress={pushEnabled ? handlePushDisable : handlePushEnable}
-                        accessibilityRole="button"
-                        disabled={pushBusy}
+                      <View style={[styles.cardHeaderText, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}
                       >
-                        {pushBusy ? (
-                          <ActivityIndicator size="small" color={palette.primaryButtonText} />
-                        ) : (
-                          <Text style={[styles.buttonText, { color: palette.primaryButtonText }]}>
-                            {pushEnabled ? 'إيقاف' : 'تفعيل'}
-                          </Text>
-                        )}
-                      </Pressable>
-                    ) : (
-                      <Text style={[styles.cardSubtitle, textDirectionStyle, { color: palette.subText }]}>الميزة غير متاحة حالياً على هذا الجهاز.</Text>
-                    )}
+                        <Text style={[styles.cardTitle, textDirectionStyle, { color: palette.heading }]}>إشعارات الرسائل (Web Push)</Text>
+                        <Text style={[styles.cardSubtitle, textDirectionStyle, { color: palette.subText }]}>الميزة مخصصة لإصدار الويب. سنضيف دعماً كاملاً لتطبيق الجوال لاحقاً.</Text>
+                      </View>
+                      {pushSupported ? (
+                        <Pressable
+                          style={[styles.primaryButton, { backgroundColor: pushEnabled ? palette.dangerButtonBg : palette.primaryButtonBg }]}
+                          onPress={pushEnabled ? handlePushDisable : handlePushEnable}
+                          accessibilityRole="button"
+                          disabled={pushBusy}
+                        >
+                          {pushBusy ? (
+                            <ActivityIndicator size="small" color={palette.primaryButtonText} />
+                          ) : (
+                            <Text style={[styles.buttonText, { color: palette.primaryButtonText }]}>
+                              {pushEnabled ? 'إيقاف' : 'تفعيل'}
+                            </Text>
+                          )}
+                        </Pressable>
+                      ) : (
+                        <Text style={[styles.cardSubtitle, textDirectionStyle, { color: palette.subText }]}>الميزة غير متاحة حالياً على هذا الجهاز.</Text>
+                      )}
+                    </View>
                   </View>
-                </View>
+                )}
               </View>
             </View>
           </ScrollView>

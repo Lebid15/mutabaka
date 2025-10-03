@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from rest_framework import status
@@ -18,6 +19,8 @@ from .device_service import (
     rename_device,
 )
 from .models import UserDevice
+
+logger = logging.getLogger(__name__)
 
 
 def _get_request_field(request, key: str) -> Optional[str]:
@@ -42,13 +45,18 @@ class DeviceLinkView(APIView):
 
     def post(self, request):
         device_id = request.headers.get('X-Device-Id') or request.META.get('HTTP_X_DEVICE_ID')
+        push_token_param = _get_request_field(request, 'push_token') or _get_request_field(request, 'pushToken')
+        
+        # Debug logging
+        logger.info(f"DeviceLinkView: device_id={device_id}, push_token={push_token_param}")
+        
         result = link_device(
             user=request.user,
             device_id=device_id,
             label=_get_request_field(request, 'label') or _get_request_field(request, 'name'),
             platform=_get_request_field(request, 'platform') or _get_request_field(request, 'client'),
             app_version=_get_request_field(request, 'app_version') or _get_request_field(request, 'version'),
-            push_token=_get_request_field(request, 'push_token') or _get_request_field(request, 'pushToken'),
+            push_token=push_token_param,
         )
         return Response({'device': _device_payload(result)})
 

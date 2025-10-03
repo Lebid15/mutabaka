@@ -10,6 +10,7 @@ import { performLogin, AuthenticationError, logout } from '../services/auth';
 import { linkCurrentDevice, isDeviceActive, HttpError } from '../services/devices';
 import { navigateAfterLogin } from '../utils/loginFlow';
 import type { AuthTokens } from '../lib/authStorage';
+import { getExpoPushToken } from '../lib/pushNotifications';
 
 type Route = RouteProp<RootStackParamList, 'DevicePending'>;
 type Navigation = NativeStackNavigationProp<RootStackParamList>;
@@ -82,7 +83,18 @@ export default function DevicePendingScreen() {
 
   const fetchStatus = useCallback(async (token: string): Promise<FetchResult> => {
     try {
-      const response = await linkCurrentDevice({ accessToken: token });
+      // محاولة الحصول على Push Token
+      let pushToken: string | null = null;
+      try {
+        pushToken = await getExpoPushToken();
+      } catch (tokenError) {
+        console.warn('[DevicePending] Failed to get push token:', tokenError);
+      }
+
+      const response = await linkCurrentDevice({ 
+        accessToken: token,
+        pushToken,
+      });
       const nextDevice = response.device;
       setDevice(nextDevice);
       setPendingToken(nextDevice?.pending_token ?? null);
