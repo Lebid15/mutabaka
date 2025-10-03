@@ -26,7 +26,7 @@ frontend/.env.local
 # Firebase sensitive files (NEVER commit these!)
 backend/firebase-service-account.json
 backend/*-firebase-adminsdk-*.json
-mobile/google-services.json
+# mobile/google-services.json  # Commented out - needed for CI/CD
 mobile/GoogleService-Info.plist
 
 # Node

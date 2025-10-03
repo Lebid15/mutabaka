@@ -48,15 +48,6 @@ jobs:
       - name: Install project dependencies
         run: npm ci
 
-      - name: Create google-services.json from secret
-        run: |
-          cat > google-services.json << 'EOF'
-          ${{ secrets.GOOGLE_SERVICES_JSON }}
-          EOF
-          echo "✅ google-services.json created"
-          ls -la google-services.json
-          cat google-services.json
-
       - name: Install EAS CLI
         run: npm install -g eas-cli
 
