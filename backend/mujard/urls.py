@@ -88,6 +88,9 @@ class MeView(APIView):
             value = request.data.get(key)
             if isinstance(value, str):
                 value = value.strip()
+            # Ensure first_name and last_name are never None (database constraint)
+            if key in ['first_name', 'last_name'] and not value:
+                value = ''
             if key == 'display_name' and value:
                 if len(value) > 150:
                     return Response({'detail': 'الاسم الظاهر يجب ألا يتجاوز 150 حرفاً'}, status=status.HTTP_400_BAD_REQUEST)
