@@ -1,0 +1,18 @@
+diff --git a/node_modules/@react-native-async-storage/async-storage/android/config.gradle b/node_modules/@react-native-async-storage/async-storage/android/config.gradle
+index 33147eb..e74e7af 100644
+--- a/node_modules/@react-native-async-storage/async-storage/android/config.gradle
++++ b/node_modules/@react-native-async-storage/async-storage/android/config.gradle
+@@ -31,11 +31,12 @@ project.ext.AsyncStorageLibs = [
+ 
+ 
+ def getKotlinVersion(String defaultVersion) {
+-    return rootProject.ext.has('kotlinVersion')
++    def kv = rootProject.ext.has('kotlinVersion')
+             ? rootProject.ext['kotlinVersion']
+             : rootProject.hasProperty('AsyncStorage_kotlinVersion')
+             ? rootProject.properties['AsyncStorage_kotlinVersion']
+             : defaultVersion
++    return (kv instanceof Closure) ? kv() : kv
+ }
+ 
+ def isNewArchitectureEnabled() {

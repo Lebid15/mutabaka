@@ -1,17 +1,28 @@
 diff --git a/node_modules/expo-dev-launcher/android/build.gradle b/node_modules/expo-dev-launcher/android/build.gradle
-index 6ffad28..964444b 100644
+index 6ffad28..d9f64ee 100644
 --- a/node_modules/expo-dev-launcher/android/build.gradle
 +++ b/node_modules/expo-dev-launcher/android/build.gradle
-@@ -3,7 +3,7 @@ buildscript {
+@@ -1,17 +1,25 @@
+ buildscript {
++  ext.getKotlinVersionFromRoot = {
++    if (rootProject.ext.has("kotlinVersion")) {
++      def kv = rootProject.ext.get("kotlinVersion")
++      return (kv instanceof Closure) ? kv() : kv
++    }
++    return "1.9.24"
++  }
++  
+   repositories {
      mavenCentral()
    }
    dependencies {
 -    classpath("org.jetbrains.kotlin.plugin.compose:org.jetbrains.kotlin.plugin.compose.gradle.plugin:${kotlinVersion}")
-+    // classpath("org.jetbrains.kotlin.plugin.compose:org.jetbrains.kotlin.plugin.compose.gradle.plugin:${kotlinVersion}")
-     classpath("org.jetbrains.kotlin.plugin.serialization:org.jetbrains.kotlin.plugin.serialization.gradle.plugin:${kotlinVersion}")
+-    classpath("org.jetbrains.kotlin.plugin.serialization:org.jetbrains.kotlin.plugin.serialization.gradle.plugin:${kotlinVersion}")
++    // classpath("org.jetbrains.kotlin.plugin.compose:org.jetbrains.kotlin.plugin.compose.gradle.plugin:${getKotlinVersionFromRoot()}")
++    classpath("org.jetbrains.kotlin.plugin.serialization:org.jetbrains.kotlin.plugin.serialization.gradle.plugin:${getKotlinVersionFromRoot()}")
      classpath("com.apollographql.apollo:apollo-gradle-plugin:4.3.1")
    }
-@@ -11,7 +11,7 @@ buildscript {
+ }
  
  apply plugin: 'com.android.library'
  apply plugin: 'expo-module-gradle-plugin'
@@ -26,11 +37,11 @@ index 0000000..ee0526c
 Binary files /dev/null and b/node_modules/expo-dev-launcher/expo-dev-launcher-gradle-plugin/.gradle/8.14.3/executionHistory/executionHistory.bin differ
 diff --git a/node_modules/expo-dev-launcher/expo-dev-launcher-gradle-plugin/.gradle/8.14.3/executionHistory/executionHistory.lock b/node_modules/expo-dev-launcher/expo-dev-launcher-gradle-plugin/.gradle/8.14.3/executionHistory/executionHistory.lock
 new file mode 100644
-index 0000000..dff146e
+index 0000000..413acf0
 Binary files /dev/null and b/node_modules/expo-dev-launcher/expo-dev-launcher-gradle-plugin/.gradle/8.14.3/executionHistory/executionHistory.lock differ
 diff --git a/node_modules/expo-dev-launcher/expo-dev-launcher-gradle-plugin/.gradle/buildOutputCleanup/buildOutputCleanup.lock b/node_modules/expo-dev-launcher/expo-dev-launcher-gradle-plugin/.gradle/buildOutputCleanup/buildOutputCleanup.lock
 new file mode 100644
-index 0000000..6331a79
+index 0000000..0c99647
 Binary files /dev/null and b/node_modules/expo-dev-launcher/expo-dev-launcher-gradle-plugin/.gradle/buildOutputCleanup/buildOutputCleanup.lock differ
 diff --git a/node_modules/expo-dev-launcher/expo-dev-launcher-gradle-plugin/.gradle/buildOutputCleanup/cache.properties b/node_modules/expo-dev-launcher/expo-dev-launcher-gradle-plugin/.gradle/buildOutputCleanup/cache.properties
 new file mode 100644

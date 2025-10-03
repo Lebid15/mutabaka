@@ -5,7 +5,8 @@ buildscript {
   ext {
     kotlinVersionString = '1.9.24'
     kotlinVersionProvider = { kotlinVersionString }
-    kotlinVersion = kotlinVersionString
+    kotlinVersion = { kotlinVersionString }
+    getKotlinVersion = { kotlinVersionString }
     kotlinVersionNumber = kotlinVersionString
     set('org.jetbrains.kotlin.version', kotlinVersionString)
     set('android.kotlinVersion', kotlinVersionString)
@@ -23,8 +24,10 @@ buildscript {
 }
 
 ext {
-  set('kotlinVersion', '1.9.24')
-  set('kotlinVersionProvider', { '1.9.24' })
+  kotlinVersionString = '1.9.24'
+  kotlinVersion = '1.9.24'
+  getKotlinVersion = { '1.9.24' }
+  kotlinVersionProvider = { '1.9.24' }
   set('org.jetbrains.kotlin.version', '1.9.24')
   set('android.kotlinVersion', '1.9.24')
   set('kspVersion', '1.9.24-1.0.20')
