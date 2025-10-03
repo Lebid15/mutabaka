@@ -424,11 +424,11 @@ function ChatBubbleBase({ text, caption, time, date, isMine, status, deliveredPa
         'max-w-[80%] rounded-3xl px-4 py-3 mb-3 shadow-sm',
         isMine
           ? isLight
-            ? 'self-end bg-bubbleSentLight'
-            : 'self-end bg-bubbleSentDark'
+            ? 'self-start bg-bubbleSentLight'
+            : 'self-start bg-bubbleSentDark'
           : isLight
-            ? 'self-start bg-bubbleReceivedLight'
-            : 'self-start bg-bubbleReceivedDark',
+            ? 'self-end bg-bubbleReceivedLight'
+            : 'self-end bg-bubbleReceivedDark',
       );
 
   const transactionBackground = (() => {
