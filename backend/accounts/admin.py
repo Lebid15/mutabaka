@@ -189,19 +189,19 @@ class UserSecurityAuditAdmin(admin.ModelAdmin):
 
 @admin.register(UserDevice)
 class UserDeviceAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "device_name", "status", "created_at", "last_seen_at")
-    list_filter = ("status", "created_at")
-    search_fields = ("user__username", "device_name", "device_fingerprint")
-    readonly_fields = ("id", "device_fingerprint", "created_at", "last_seen_at", "pending_expires_at")
+    list_display = ("id", "user", "label", "platform", "status", "created_at", "last_seen_at")
+    list_filter = ("status", "platform", "created_at")
+    search_fields = ("user__username", "label", "id")
+    readonly_fields = ("id", "created_at", "last_seen_at", "pending_expires_at", "pending_token")
     autocomplete_fields = ("user",)
     ordering = ("-created_at",)
     
     fieldsets = (
         (_("Device Info"), {
-            "fields": ("user", "device_name", "device_fingerprint", "status")
+            "fields": ("user", "label", "platform", "app_version", "status", "push_token")
         }),
         (_("Timestamps"), {
-            "fields": ("created_at", "last_seen_at", "pending_expires_at")
+            "fields": ("created_at", "last_seen_at", "pending_token", "pending_expires_at")
         }),
     )
     
