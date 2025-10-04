@@ -18,7 +18,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import * as RNHTMLtoPDF from 'react-native-html-to-pdf';
+import * as Print from 'expo-print';
 import BackgroundGradient from '../components/BackgroundGradient';
 import type { RootStackParamList } from '../navigation';
 import { useThemeMode } from '../theme';
@@ -585,24 +585,23 @@ export default function MatchesScreen() {
       `;
 
       console.log('[Mutabaka] Generating PDF from HTML');
-      const options = {
+      
+      const { uri } = await Print.printToFileAsync({
         html: htmlContent,
-        fileName: `matches-${new Date().toISOString().slice(0, 10)}`,
-        directory: 'Documents',
-      };
-
-      const file = await RNHTMLtoPDF.generatePDF(options);
-      console.log('[Mutabaka] PDF generated at:', file.filePath);
+        base64: false,
+      });
+      
+      console.log('[Mutabaka] PDF generated at:', uri);
 
       if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(file.filePath!, {
+        await Sharing.shareAsync(uri, {
           mimeType: 'application/pdf',
           dialogTitle: 'مشاركة ملف المطابقات',
           UTI: 'com.adobe.pdf',
         });
         console.log('[Mutabaka] PDF shared successfully');
       } else {
-        Alert.alert('تم الحفظ', `تم حفظ الملف في:\n${file.filePath}`);
+        Alert.alert('تم الحفظ', `تم حفظ الملف في:\n${uri}`);
       }
     } catch (exportError) {
       console.error('[Mutabaka] Failed to export matches', exportError);
