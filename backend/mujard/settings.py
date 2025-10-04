@@ -231,8 +231,8 @@ REST_FRAMEWORK = {
             'pin_verify': '20/minute',
             'devices_register': '10/minute',
             'devices_approve': '10/minute',
-            'login_qr': '30/minute',
-            'login_qr_status': '120/minute',
+            'login_qr': '100/minute',
+            'login_qr_status': '500/minute',
             'login_qr_approve': '30/minute',
         },
 }
