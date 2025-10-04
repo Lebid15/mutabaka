@@ -118,7 +118,6 @@ class LoginInstructionSerializer(serializers.ModelSerializer):
 
 class LoginPageSettingSerializer(serializers.ModelSerializer):
     login_logo_url = serializers.SerializerMethodField()
-    qr_overlay_logo_url = serializers.SerializerMethodField()
     footer_year = serializers.SerializerMethodField()
     instructions = serializers.SerializerMethodField()
 
@@ -139,7 +138,6 @@ class LoginPageSettingSerializer(serializers.ModelSerializer):
             "footer_brand_name",
             "footer_year_override",
             "login_logo_url",
-            "qr_overlay_logo_url",
             "footer_year",
             "instructions",
         ]
@@ -159,14 +157,6 @@ class LoginPageSettingSerializer(serializers.ModelSerializer):
         try:
             if obj.login_logo:
                 return self._build_absolute_uri(obj.login_logo.url)
-        except Exception:
-            return None
-        return None
-
-    def get_qr_overlay_logo_url(self, obj: LoginPageSetting) -> str | None:
-        try:
-            if obj.qr_overlay_logo:
-                return self._build_absolute_uri(obj.qr_overlay_logo.url)
         except Exception:
             return None
         return None

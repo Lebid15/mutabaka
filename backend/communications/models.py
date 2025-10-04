@@ -70,12 +70,6 @@ class LoginPageSetting(models.Model):
         blank=True,
         help_text="شعار مخصص لشاشة تسجيل الدخول (يُستخدم إن وجد بدل الشعار العام)",
     )
-    qr_overlay_logo = models.ImageField(
-        upload_to='branding/login/',
-        null=True,
-        blank=True,
-        help_text="شعار صغير يُعرض داخل رمز QR (اختياري)",
-    )
     hero_title = models.CharField(
         max_length=255,
         default="طريقة تسجيل الدخول إلى حسابك في موقع مطابقة ويب:",

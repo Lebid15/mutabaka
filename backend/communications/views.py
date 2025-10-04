@@ -1860,7 +1860,6 @@ class LoginPageView(APIView):
             'footer_brand_name': "Mutabaka",
             'footer_year_override': "",
             'login_logo_url': None,
-            'qr_overlay_logo_url': None,
             'footer_year': current_year,
             'instructions': [
                 {'id': None, 'title': "", 'description': "افتح تطبيق <strong>مطابقة</strong> على هاتفك النقّال", 'icon_hint': "app", 'display_order': 1},
