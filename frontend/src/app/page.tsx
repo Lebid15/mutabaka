@@ -783,6 +783,7 @@ export default function Home() {
   const [loginQrDataUrl, setLoginQrDataUrl] = useState<string>('');
   const [qrRefreshing, setQrRefreshing] = useState(false);
   const [qrExpiryAt, setQrExpiryAt] = useState<number | null>(null);
+  const [qrRequestId, setQrRequestId] = useState<string | null>(null);
   const [qrCountdown, setQrCountdown] = useState<number>(0);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [profile, setProfile] = useState<any|null>(null);
@@ -864,10 +865,22 @@ export default function Home() {
       
       // Store request_id for polling
       if (request_id) {
-        (window as any).__qr_request_id = request_id;
+        if (typeof window !== 'undefined') {
+          (window as any).__qr_request_id = request_id;
+        }
+        setQrRequestId(request_id);
+      } else {
+        if (typeof window !== 'undefined') {
+          delete (window as any).__qr_request_id;
+        }
+        setQrRequestId(null);
       }
     } catch (err: any) {
       setLoginError(err?.message || 'تعذّر إنشاء رمز QR. حاول التحديث مرة أخرى.');
+      setQrRequestId(null);
+      if (typeof window !== 'undefined') {
+        delete (window as any).__qr_request_id;
+      }
       const fallbackPayload = `mutabaka://link?token=${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
       try {
         const dataUrl = await QRCode.toDataURL(fallbackPayload, {
@@ -931,12 +944,14 @@ export default function Home() {
   useEffect(() => {
     if (isAuthed || !qrExpiryAt) return;
     
-    const requestId = (window as any).__qr_request_id;
-    if (!requestId) return;
-
     let active = true;
     const pollStatus = async () => {
       if (!active || isAuthed) return;
+      const requestId = (
+        qrRequestId ||
+        (typeof window !== 'undefined' ? (window as any).__qr_request_id : null)
+      );
+      if (!requestId) return;
       
       try {
         const result = await apiClient.checkLoginQrStatus(requestId);
@@ -956,13 +971,16 @@ export default function Home() {
     };
 
     // Poll every second
+    // Trigger immediately so we don't wait for the first interval tick
+    void pollStatus();
+
     const interval = setInterval(pollStatus, 1000);
     
     return () => {
       active = false;
       clearInterval(interval);
     };
-  }, [isAuthed, qrExpiryAt, apiClient, refreshLoginQr]);
+  }, [isAuthed, qrExpiryAt, apiClient, refreshLoginQr, qrRequestId]);
 
   // Helper function for QR login success
   const handleQrLoginSuccess = (access: string, refresh: string, user: any) => {
@@ -975,7 +993,10 @@ export default function Home() {
     setIsAuthed(true);
     setLoginQrDataUrl('');
     setQrExpiryAt(null);
-    delete (window as any).__qr_request_id;
+    setQrRequestId(null);
+    if (typeof window !== 'undefined') {
+      delete (window as any).__qr_request_id;
+    }
   };
 
   // Contacts & conversations
