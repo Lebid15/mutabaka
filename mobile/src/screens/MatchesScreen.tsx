@@ -155,6 +155,7 @@ export default function MatchesScreen() {
   const [rows, setRows] = useState<MatchRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [blocked, setBlocked] = useState(false);
   const [tokenChecked, setTokenChecked] = useState(false);
@@ -381,229 +382,68 @@ export default function MatchesScreen() {
       Alert.alert('لا توجد بيانات', 'لا توجد مطابقات لتصديرها');
       return;
     }
+    
+    if (exporting) {
+      return;
+    }
+    
+    setExporting(true);
     try {
-      console.log('[Mutabaka] Starting export with', rows.length, 'rows');
+      console.log('[Mutabaka] Starting simple export with', rows.length, 'rows');
       
-      // استخدام ExcelJS للتنسيق المتقدم
-      const ExcelJS = await import('exceljs');
-      const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet('مطابقاتي', {
-        views: [{ rightToLeft: true }]
+      // استخدام تصدير CSV بسيط بدون مكتبات معقدة
+      const lines: string[] = [];
+      
+      // العنوان
+      lines.push('مطابقاتي - ملخص الحسابات');
+      lines.push('');
+      
+      // ملخص الإجمالي
+      lines.push('ملخص الإجمالي');
+      lines.push('العملة,الإجمالي');
+      lines.push(`دولار,${totals.usd.toFixed(2)}`);
+      lines.push(`تركي,${totals.tryy.toFixed(2)}`);
+      lines.push(`سوري,${totals.syp.toFixed(2)}`);
+      lines.push(`يورو,${totals.eur.toFixed(2)}`);
+      lines.push('');
+      
+      // تفاصيل المطابقات
+      lines.push('تفاصيل المطابقات');
+      lines.push('الجهة,دولار,تركي,سوري,يورو');
+      
+      rows.forEach((row) => {
+        lines.push(`${row.name},${row.usd.toFixed(2)},${row.tryy.toFixed(2)},${row.syp.toFixed(2)},${row.eur.toFixed(2)}`);
       });
-
-      // العنوان الرئيسي
-      worksheet.mergeCells('A1:E1');
-      const titleCell = worksheet.getCell('A1');
-      titleCell.value = 'مطابقاتي - ملخص الحسابات';
-      titleCell.font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
-      titleCell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF1E3A8A' }
-      };
-      titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
-      worksheet.getRow(1).height = 30;
-
-      // سطر فارغ
-      worksheet.addRow([]);
-
-      // عنوان ملخص الإجمالي
-      worksheet.mergeCells('A3:E3');
-      const summaryTitleCell = worksheet.getCell('A3');
-      summaryTitleCell.value = 'ملخص الإجمالي';
-      summaryTitleCell.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
-      summaryTitleCell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF059669' }
-      };
-      summaryTitleCell.alignment = { vertical: 'middle', horizontal: 'center' };
-      worksheet.getRow(3).height = 25;
-
-      // رؤوس ملخص الإجمالي
-      const summaryHeaderRow = worksheet.addRow(['العملة', 'الإجمالي']);
-      summaryHeaderRow.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
-      summaryHeaderRow.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF10B981' }
-      };
-      summaryHeaderRow.alignment = { vertical: 'middle', horizontal: 'center' };
-      summaryHeaderRow.height = 25;
-      summaryHeaderRow.eachCell((cell) => {
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'FF000000' } },
-          bottom: { style: 'thin', color: { argb: 'FF000000' } },
-          left: { style: 'thin', color: { argb: 'FF000000' } },
-          right: { style: 'thin', color: { argb: 'FF000000' } }
-        };
-      });
-
-      // بيانات ملخص الإجمالي
-      const summaryData = [
-        ['دولار', totals.usd.toFixed(2)],
-        ['تركي', totals.tryy.toFixed(2)],
-        ['سوري', totals.syp.toFixed(2)],
-        ['يورو', totals.eur.toFixed(2)]
-      ];
-
-      summaryData.forEach((rowData, index) => {
-        const row = worksheet.addRow(rowData);
-        const isEven = index % 2 === 0;
-        row.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: isEven ? 'FFD1FAE5' : 'FFECFDF5' }
-        };
-        row.alignment = { vertical: 'middle', horizontal: 'center' };
-        row.height = 22;
-        
-        row.eachCell((cell, colNumber) => {
-          cell.border = {
-            top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-            bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-            left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-            right: { style: 'thin', color: { argb: 'FFE5E7EB' } }
-          };
-          
-          if (colNumber === 2) {
-            const numValue = parseFloat(String(cell.value));
-            cell.font = {
-              bold: true,
-              color: { argb: numValue >= 0 ? 'FF047857' : 'FFDC2626' }
-            };
-            cell.numFmt = '0.00';
-          }
-        });
-      });
-
-      // سطر فارغ
-      worksheet.addRow([]);
-
-      // عنوان تفاصيل المطابقات
-      const currentRow = (worksheet.lastRow?.number ?? 0) + 1;
-      worksheet.mergeCells(`A${currentRow}:E${currentRow}`);
-      const detailsTitleCell = worksheet.getCell(`A${currentRow}`);
-      detailsTitleCell.value = 'تفاصيل المطابقات';
-      detailsTitleCell.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
-      detailsTitleCell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF7C3AED' }
-      };
-      detailsTitleCell.alignment = { vertical: 'middle', horizontal: 'center' };
-      worksheet.getRow(currentRow).height = 25;
-
-      // رؤوس الجدول الرئيسي
-      const detailsHeaderRow = worksheet.addRow(['الجهة', 'دولار', 'تركي', 'سوري', 'يورو']);
-      detailsHeaderRow.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
-      detailsHeaderRow.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF1E3A8A' }
-      };
-      detailsHeaderRow.alignment = { vertical: 'middle', horizontal: 'center' };
-      detailsHeaderRow.height = 25;
-      detailsHeaderRow.eachCell((cell) => {
-        cell.border = {
-          top: { style: 'medium', color: { argb: 'FF000000' } },
-          bottom: { style: 'medium', color: { argb: 'FF000000' } },
-          left: { style: 'thin', color: { argb: 'FF000000' } },
-          right: { style: 'thin', color: { argb: 'FF000000' } }
-        };
-      });
-
-      // بيانات الجدول الرئيسي
-      rows.forEach((row, index) => {
-        const rowData = [
-          row.name,
-          row.usd.toFixed(2),
-          row.tryy.toFixed(2),
-          row.syp.toFixed(2),
-          row.eur.toFixed(2)
-        ];
-        
-        const excelRow = worksheet.addRow(rowData);
-        const isEven = index % 2 === 0;
-        excelRow.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: isEven ? 'FFEFF6FF' : 'FFFFFFFF' }
-        };
-        excelRow.alignment = { vertical: 'middle', horizontal: 'center' };
-        excelRow.height = 22;
-        
-        excelRow.eachCell((cell, colNumber) => {
-          cell.border = {
-            top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-            bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-            left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-            right: { style: 'thin', color: { argb: 'FFE5E7EB' } }
-          };
-          
-          if (colNumber >= 2 && colNumber <= 5) {
-            const numValue = parseFloat(String(cell.value));
-            cell.font = {
-              bold: true,
-              color: { argb: numValue >= 0 ? 'FF047857' : 'FFDC2626' }
-            };
-            cell.numFmt = '0.00';
-          }
-          
-          if (colNumber === 1) {
-            cell.font = { bold: true, color: { argb: 'FF1F2937' } };
-            cell.alignment = { vertical: 'middle', horizontal: 'right' };
-          }
-        });
-      });
-
-      // تحديد عروض الأعمدة
-      worksheet.columns = [
-        { width: 25 }, // الجهة
-        { width: 15 }, // دولار
-        { width: 15 }, // تركي
-        { width: 15 }, // سوري
-        { width: 15 }  // يورو
-      ];
-
-      console.log('[Mutabaka] Writing workbook to buffer');
-      const buffer = await workbook.xlsx.writeBuffer();
+      
+      const csvContent = '\ufeff' + lines.join('\n');
       
       const directory = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
       if (!directory) {
         throw new Error('تعذر تحديد موقع الحفظ');
       }
       
-      const filename = `matches-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      const filename = `matches-${new Date().toISOString().slice(0, 10)}.csv`;
       const targetUri = `${directory}${filename}`;
       
-      console.log('[Mutabaka] Converting buffer to base64');
-      const { Buffer } = await import('buffer');
-      const base64 = Buffer.from(buffer).toString('base64');
-      
-      console.log('[Mutabaka] Writing file to', targetUri);
-      await FileSystem.writeAsStringAsync(targetUri, base64, { 
-        encoding: FileSystem.EncodingType.Base64 
+      console.log('[Mutabaka] Writing CSV file to', targetUri);
+      await FileSystem.writeAsStringAsync(targetUri, csvContent, { 
+        encoding: FileSystem.EncodingType.UTF8 
       });
 
       console.log('[Mutabaka] File written successfully, attempting to share');
-      const Sharing = await import('expo-sharing');
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(targetUri, {
-          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          dialogTitle: 'مشاركة ملف المطابقات',
-          UTI: 'com.microsoft.excel.xlsx',
-        });
-        console.log('[Mutabaka] File shared successfully');
-      } else {
-        console.warn('[Mutabaka] Sharing not available, showing alert');
-        Alert.alert('تم الحفظ', `تم حفظ الملف في:\n${targetUri}`);
-      }
+      await Share.share({
+        message: csvContent,
+        title: filename,
+      });
+      
+      console.log('[Mutabaka] File shared successfully');
     } catch (exportError) {
       console.error('[Mutabaka] Failed to export matches', exportError);
       Alert.alert('تعذر التصدير', `حدث خطأ أثناء إنشاء الملف:\n${exportError instanceof Error ? exportError.message : String(exportError)}`);
+    } finally {
+      setExporting(false);
     }
-  }, [rows, totals]);
+  }, [rows, totals, exporting]);
 
   return (
     <BackgroundGradient>
@@ -639,10 +479,16 @@ export default function MatchesScreen() {
               accessibilityRole="button"
               accessibilityLabel="تصدير إلى ملف"
               onPress={handleExport}
-              disabled={!rows.length}
+              disabled={!rows.length || exporting}
             >
-              <FeatherIcon name="download" size={16} color={rows.length ? palette.exportText : palette.exportDisabledText} />
-              <Text style={[styles.exportText, { color: rows.length ? palette.exportText : palette.exportDisabledText }]}>تصدير</Text>
+              {exporting ? (
+                <ActivityIndicator size="small" color={palette.exportText} />
+              ) : (
+                <FeatherIcon name="download" size={16} color={rows.length ? palette.exportText : palette.exportDisabledText} />
+              )}
+              <Text style={[styles.exportText, { color: rows.length ? palette.exportText : palette.exportDisabledText }]}>
+                {exporting ? 'جاري التصدير...' : 'تصدير'}
+              </Text>
             </Pressable>
           </View>
 
