@@ -1202,6 +1202,7 @@ export default function ChatScreen() {
           variant: isSystem ? 'system' : transaction ? 'transaction' : 'text',
           transaction: transaction ?? undefined,
           attachment: null,
+          senderName: 'Unknown',
         };
       }),
     [conversationId],
