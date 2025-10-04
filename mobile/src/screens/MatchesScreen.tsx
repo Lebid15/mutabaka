@@ -17,6 +17,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+import * as RNHTMLtoPDF from 'react-native-html-to-pdf';
 import BackgroundGradient from '../components/BackgroundGradient';
 import type { RootStackParamList } from '../navigation';
 import { useThemeMode } from '../theme';
@@ -389,54 +391,219 @@ export default function MatchesScreen() {
     
     setExporting(true);
     try {
-      console.log('[Mutabaka] Starting simple export with', rows.length, 'rows');
+      console.log('[Mutabaka] Starting PDF export with', rows.length, 'rows');
       
-      // استخدام تصدير CSV بسيط بدون مكتبات معقدة
-      const lines: string[] = [];
-      
-      // العنوان
-      lines.push('مطابقاتي - ملخص الحسابات');
-      lines.push('');
-      
-      // ملخص الإجمالي
-      lines.push('ملخص الإجمالي');
-      lines.push('العملة,الإجمالي');
-      lines.push(`دولار,${totals.usd.toFixed(2)}`);
-      lines.push(`تركي,${totals.tryy.toFixed(2)}`);
-      lines.push(`سوري,${totals.syp.toFixed(2)}`);
-      lines.push(`يورو,${totals.eur.toFixed(2)}`);
-      lines.push('');
-      
-      // تفاصيل المطابقات
-      lines.push('تفاصيل المطابقات');
-      lines.push('الجهة,دولار,تركي,سوري,يورو');
-      
-      rows.forEach((row) => {
-        lines.push(`${row.name},${row.usd.toFixed(2)},${row.tryy.toFixed(2)},${row.syp.toFixed(2)},${row.eur.toFixed(2)}`);
-      });
-      
-      const csvContent = '\ufeff' + lines.join('\n');
-      
-      const directory = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
-      if (!directory) {
-        throw new Error('تعذر تحديد موقع الحفظ');
-      }
-      
-      const filename = `matches-${new Date().toISOString().slice(0, 10)}.csv`;
-      const targetUri = `${directory}${filename}`;
-      
-      console.log('[Mutabaka] Writing CSV file to', targetUri);
-      await FileSystem.writeAsStringAsync(targetUri, csvContent, { 
-        encoding: FileSystem.EncodingType.UTF8 
-      });
+      // بناء HTML للـ PDF بتنسيق جميل
+      const htmlContent = `
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Arial', 'Helvetica', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 30px;
+      color: #1a202c;
+    }
+    .container {
+      background: white;
+      border-radius: 16px;
+      padding: 30px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    .header {
+      text-align: center;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 25px;
+      border-radius: 12px;
+      margin-bottom: 30px;
+      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+    .header h1 {
+      font-size: 32px;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    .header p {
+      font-size: 14px;
+      opacity: 0.9;
+    }
+    .section {
+      margin-bottom: 30px;
+    }
+    .section-title {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: white;
+      padding: 15px 20px;
+      border-radius: 8px;
+      font-size: 20px;
+      font-weight: bold;
+      margin-bottom: 15px;
+      box-shadow: 0 2px 10px rgba(16, 185, 129, 0.3);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    thead {
+      background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
+      color: white;
+    }
+    th {
+      padding: 15px;
+      text-align: center;
+      font-weight: bold;
+      font-size: 16px;
+    }
+    td {
+      padding: 12px 15px;
+      text-align: center;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    tbody tr:nth-child(even) {
+      background-color: #f9fafb;
+    }
+    tbody tr:hover {
+      background-color: #eff6ff;
+    }
+    .currency-name {
+      font-weight: bold;
+      color: #1f2937;
+    }
+    .amount {
+      font-weight: bold;
+      font-size: 15px;
+    }
+    .positive { color: #047857; }
+    .negative { color: #dc2626; }
+    .summary-table tbody tr {
+      background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+    }
+    .summary-table tbody tr:nth-child(even) {
+      background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+    }
+    .footer {
+      text-align: center;
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 2px solid #e5e7eb;
+      color: #6b7280;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📊 مطابقاتي</h1>
+      <p>ملخص شامل للحسابات والمطابقات - ${new Date().toLocaleDateString('ar-EG', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      })}</p>
+    </div>
 
-      console.log('[Mutabaka] File written successfully, attempting to share');
-      await Share.share({
-        message: csvContent,
-        title: filename,
-      });
-      
-      console.log('[Mutabaka] File shared successfully');
+    <div class="section">
+      <div class="section-title">💰 ملخص الإجمالي</div>
+      <table class="summary-table">
+        <thead>
+          <tr>
+            <th>العملة</th>
+            <th>الإجمالي</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="currency-name">🇺🇸 دولار أمريكي</td>
+            <td class="amount ${totals.usd >= 0 ? 'positive' : 'negative'}">
+              ${totals.usd.toFixed(2)} USD
+            </td>
+          </tr>
+          <tr>
+            <td class="currency-name">🇹🇷 ليرة تركية</td>
+            <td class="amount ${totals.tryy >= 0 ? 'positive' : 'negative'}">
+              ${totals.tryy.toFixed(2)} TRY
+            </td>
+          </tr>
+          <tr>
+            <td class="currency-name">🇸🇾 ليرة سورية</td>
+            <td class="amount ${totals.syp >= 0 ? 'positive' : 'negative'}">
+              ${totals.syp.toFixed(2)} SYP
+            </td>
+          </tr>
+          <tr>
+            <td class="currency-name">🇪🇺 يورو</td>
+            <td class="amount ${totals.eur >= 0 ? 'positive' : 'negative'}">
+              ${totals.eur.toFixed(2)} EUR
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-title">📋 تفاصيل المطابقات</div>
+      <table>
+        <thead>
+          <tr>
+            <th>الجهة</th>
+            <th>🇺🇸 دولار</th>
+            <th>🇹🇷 تركي</th>
+            <th>🇸🇾 سوري</th>
+            <th>🇪🇺 يورو</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(row => `
+          <tr>
+            <td style="font-weight: bold; text-align: right; padding-right: 20px;">${row.name}</td>
+            <td class="amount ${row.usd >= 0 ? 'positive' : 'negative'}">${row.usd.toFixed(2)}</td>
+            <td class="amount ${row.tryy >= 0 ? 'positive' : 'negative'}">${row.tryy.toFixed(2)}</td>
+            <td class="amount ${row.syp >= 0 ? 'positive' : 'negative'}">${row.syp.toFixed(2)}</td>
+            <td class="amount ${row.eur >= 0 ? 'positive' : 'negative'}">${row.eur.toFixed(2)}</td>
+          </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="footer">
+      تم إنشاء هذا التقرير بواسطة تطبيق المطابقة<br>
+      جميع الأرقام بصيغة عشرية (رقمين بعد الفاصلة)
+    </div>
+  </div>
+</body>
+</html>
+      `;
+
+      console.log('[Mutabaka] Generating PDF from HTML');
+      const options = {
+        html: htmlContent,
+        fileName: `matches-${new Date().toISOString().slice(0, 10)}`,
+        directory: 'Documents',
+      };
+
+      const file = await RNHTMLtoPDF.generatePDF(options);
+      console.log('[Mutabaka] PDF generated at:', file.filePath);
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(file.filePath!, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'مشاركة ملف المطابقات',
+          UTI: 'com.adobe.pdf',
+        });
+        console.log('[Mutabaka] PDF shared successfully');
+      } else {
+        Alert.alert('تم الحفظ', `تم حفظ الملف في:\n${file.filePath}`);
+      }
     } catch (exportError) {
       console.error('[Mutabaka] Failed to export matches', exportError);
       Alert.alert('تعذر التصدير', `حدث خطأ أثناء إنشاء الملف:\n${exportError instanceof Error ? exportError.message : String(exportError)}`);
