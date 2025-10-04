@@ -893,7 +893,7 @@ class APIClient {
     });
 
     try {
-      const res = await fetch(`${this.baseUrl}/api/login-qr`);
+      const res = await fetch(`${this.baseUrl}/api/auth/login-qr/create`);
       if (!res.ok) {
         return fallback();
       }

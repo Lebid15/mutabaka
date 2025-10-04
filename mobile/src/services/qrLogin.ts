@@ -29,7 +29,7 @@ export async function approveWebLogin(params: ApproveWebLoginParams): Promise<Ap
       },
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        'X-Device-ID': deviceId,
+        'X-Device-Id': deviceId,
       },
       auth: false, // نحن نضيف Authorization يدوياً
     });

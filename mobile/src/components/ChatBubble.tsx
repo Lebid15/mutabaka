@@ -40,6 +40,7 @@ interface ChatBubbleProps {
   time: string;
   date?: string;
   isMine?: boolean;
+  senderName?: string;
   status?: 'sent' | 'delivered' | 'read';
   deliveredPassively?: boolean;
   variant?: 'text' | 'transaction' | 'system' | 'attachment' | 'wallet';
@@ -49,7 +50,7 @@ interface ChatBubbleProps {
   highlightActive?: boolean;
 }
 
-function ChatBubbleBase({ text, caption, time, date, isMine, status, deliveredPassively, variant = 'text', transaction, attachment, highlightQuery, highlightActive }: ChatBubbleProps) {
+function ChatBubbleBase({ text, caption, time, date, isMine, senderName, status, deliveredPassively, variant = 'text', transaction, attachment, highlightQuery, highlightActive }: ChatBubbleProps) {
   const { mode } = useThemeMode();
   const isLight = mode === 'light';
   const isTransaction = variant === 'transaction' && transaction;
@@ -775,6 +776,21 @@ function ChatBubbleBase({ text, caption, time, date, isMine, status, deliveredPa
 
   return (
     <>
+      {senderName && !isSystem ? (
+        <View style={{ 
+          alignSelf: isMine ? 'flex-start' : 'flex-end',
+          marginBottom: 3,
+        }}>
+          <Text style={{ 
+            color: isLight ? '#667085' : '#8B92A6', 
+            fontSize: 11, 
+            fontWeight: '500',
+            writingDirection: 'rtl',
+          }}>
+            {senderName}
+          </Text>
+        </View>
+      ) : null}
       <View
         className={container}
         style={[transactionStyle, highlightContainerStyle]}

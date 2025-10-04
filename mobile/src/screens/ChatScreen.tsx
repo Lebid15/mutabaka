@@ -261,6 +261,7 @@ interface NormalizedMessage {
   id: string;
   conversationId: string;
   author: 'me' | 'them';
+  senderName: string;
   text: string;
   caption?: string | null;
   time: string;
@@ -2114,6 +2115,9 @@ export default function ChatScreen() {
           }
         }
         const author: NormalizedMessage['author'] = computedIsMine ? 'me' : 'them';
+        const senderName = computedIsMine 
+          ? (currentUser?.display_name || currentUser?.username || 'أنا')
+          : (msg.senderDisplay || msg.sender?.display_name || msg.sender?.username || 'مستخدم');
         const deliveryDisplay = isSystem
           ? null
           : mapDeliveryStatus(msg.delivery_status, msg.status, msg.delivery_context ?? null);
@@ -2121,6 +2125,7 @@ export default function ChatScreen() {
           id: String(msg.id),
           conversationId: String(msg.conversation),
           author,
+          senderName,
           text: body,
           caption: walletMeta.detected ? null : (trimmedBody || null),
           time: formatMessageTime(msg.created_at),
@@ -3065,7 +3070,7 @@ export default function ChatScreen() {
   const renderEmpty = useCallback(() => {
     if (shouldUseBackend && loadingMessages) {
       return (
-        <View style={styles.emptyState}>
+        <View style={[styles.emptyState, { transform: [{ scaleY: -1 }, { scaleX: -1 }] }]}>
           <Text style={[styles.emptyText, { color: tokens.textMuted }]}>جارٍ تحميل الرسائل…</Text>
         </View>
       );
@@ -3140,6 +3145,7 @@ export default function ChatScreen() {
           time={item.time}
           date={item.date}
           isMine={item.author === 'me'}
+          senderName={item.senderName}
           status={item.status}
           deliveredPassively={item.deliveredPassively}
           variant={item.variant}
