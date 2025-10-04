@@ -65,6 +65,10 @@ def count_active_devices(user) -> int:
     return UserDevice.objects.filter(user=user, status__in=_ACTIVE_STATUSES, is_web=False).count()
 
 
+def count_active_web_devices(user) -> int:
+    return UserDevice.objects.filter(user=user, status__in=_ACTIVE_STATUSES, is_web=True).count()
+
+
 @transaction.atomic
 def link_device(*, user, device_id: Optional[str], label: Optional[str], platform: Optional[str], app_version: Optional[str], push_token: Optional[str]) -> LinkResult:
     now = timezone.now()

@@ -257,6 +257,7 @@ User = get_user_model()
 class UserSearchViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = User.objects.all().order_by('id')
     serializer_class = PublicUserSerializer
+    permission_classes = [permissions.IsAuthenticated]  # Allow web access without device check
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -270,6 +271,7 @@ class UserSearchViewSet(viewsets.ReadOnlyModelViewSet):
 
 class ContactRelationViewSet(viewsets.ModelViewSet):
     serializer_class = ContactRelationSerializer
+    permission_classes = [permissions.IsAuthenticated]  # Allow web access without device check
 
     def get_queryset(self):
         return ContactRelation.objects.filter(owner=self.request.user)

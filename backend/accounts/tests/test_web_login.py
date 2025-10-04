@@ -129,3 +129,53 @@ class WebLoginFlowTests(APITestCase):
         still_pending = self.client.get(status_url)
         self.assertEqual(still_pending.status_code, status.HTTP_200_OK)
         self.assertEqual(still_pending.json()['status'], 'pending')
+
+    def test_web_device_limit_enforced(self):
+        """Test that users cannot approve more than 5 web devices."""
+        # Setup: Login with primary mobile device
+        first_login = self._login()
+        primary = self.client.post(
+            self.device_link_url,
+            {'label': 'Primary Phone', 'platform': 'android'},
+            format='json',
+            **self._auth_headers(first_login['access']),
+        )
+        device_id = primary.json()['device']['device_id']
+        tokens = self._login(device_id)
+        auth_headers = self._auth_headers(tokens['access'], device_id)
+
+        # Approve 5 web devices (should all succeed)
+        for i in range(5):
+            qr_resp = self.client.get(self.login_qr_create_url)
+            qr_data = qr_resp.json()
+            approve_resp = self.client.post(
+                self.login_qr_approve_url,
+                {'payload': qr_data['payload'], 'label': f'Browser {i+1}'},
+                format='json',
+                **auth_headers,
+            )
+            self.assertEqual(approve_resp.status_code, status.HTTP_200_OK, 
+                           f"Browser {i+1} should be approved")
+
+        # Verify we have exactly 5 web devices
+        web_devices_count = UserDevice.objects.filter(
+            user=self.user, 
+            is_web=True,
+            status__in=[UserDevice.Status.PRIMARY, UserDevice.Status.ACTIVE]
+        ).count()
+        self.assertEqual(web_devices_count, 5)
+
+        # Try to approve 6th web device (should fail)
+        qr_resp = self.client.get(self.login_qr_create_url)
+        qr_data = qr_resp.json()
+        reject_resp = self.client.post(
+            self.login_qr_approve_url,
+            {'payload': qr_data['payload'], 'label': 'Browser 6'},
+            format='json',
+            **auth_headers,
+        )
+        self.assertEqual(reject_resp.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(reject_resp.json()['detail'], 'web_device_limit_reached')
+        self.assertIn('message', reject_resp.json())
+        self.assertEqual(reject_resp.json()['limit'], 5)
+        self.assertEqual(reject_resp.json()['current'], 5)

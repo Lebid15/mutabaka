@@ -13,6 +13,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import UserDevice, WebLoginSession, _hash_token
 from .permissions import ActiveDeviceRequired
+from .device_service import count_active_web_devices
 
 
 def _sanitize_label(value: str | None) -> str:
@@ -160,6 +161,18 @@ class LoginQrApproveView(APIView):
             if session.is_expired:
                 session.mark_expired(save=True)
                 return Response({'detail': 'expired'}, status=status.HTTP_410_GONE)
+
+            # Check web device limit
+            web_limit = getattr(settings, 'USER_WEB_DEVICE_MAX_ACTIVE', 5)
+            active_web_count = count_active_web_devices(request.user)
+            
+            if active_web_count >= web_limit:
+                return Response({
+                    'detail': 'web_device_limit_reached',
+                    'message': f'الحد الأقصى {web_limit} متصفحات. يرجى إلغاء متصفح قديم أولاً.',
+                    'limit': web_limit,
+                    'current': active_web_count
+                }, status=status.HTTP_409_CONFLICT)
 
             now = timezone.now()
             label = _sanitize_label(request.data.get('label') or request.data.get('device_label'))
