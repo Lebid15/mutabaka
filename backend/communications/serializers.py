@@ -14,11 +14,14 @@ from .models import (
     ContactLink,
     PrivacyPolicy,
     ConversationSettlement,
+    LoginPageSetting,
+    LoginInstruction,
     is_wallet_settlement_body,
 )
 from .push import send_message_push
 from finance.models import Currency
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 
 try:
     # استخدم نفس الدوال المساعدة من views بدون تكرار كبير
@@ -104,6 +107,85 @@ class PrivacyPolicySerializer(serializers.ModelSerializer):
     class Meta:
         model = PrivacyPolicy
         fields = ["id", "title", "content", "document_type", "updated_at", "created_at"]
+
+
+class LoginInstructionSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = LoginInstruction
+        fields = ["id", "title", "description", "icon_hint", "display_order"]
+
+
+class LoginPageSettingSerializer(serializers.ModelSerializer):
+    login_logo_url = serializers.SerializerMethodField()
+    qr_overlay_logo_url = serializers.SerializerMethodField()
+    footer_year = serializers.SerializerMethodField()
+    instructions = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LoginPageSetting
+        fields = [
+            "id",
+            "hero_title",
+            "hero_description",
+            "instructions_title",
+            "stay_logged_in_label",
+            "stay_logged_in_hint",
+            "alternate_login_label",
+            "alternate_login_url",
+            "footer_links_label",
+            "footer_note",
+            "footer_secondary_note",
+            "footer_brand_name",
+            "footer_year_override",
+            "login_logo_url",
+            "qr_overlay_logo_url",
+            "footer_year",
+            "instructions",
+        ]
+
+    def _build_absolute_uri(self, path: str | None) -> str | None:
+        if not path:
+            return None
+        request = self.context.get('request') if hasattr(self, 'context') else None
+        if request is not None:
+            try:
+                return request.build_absolute_uri(path)
+            except Exception:
+                pass
+        return path
+
+    def get_login_logo_url(self, obj: LoginPageSetting) -> str | None:
+        try:
+            if obj.login_logo:
+                return self._build_absolute_uri(obj.login_logo.url)
+        except Exception:
+            return None
+        return None
+
+    def get_qr_overlay_logo_url(self, obj: LoginPageSetting) -> str | None:
+        try:
+            if obj.qr_overlay_logo:
+                return self._build_absolute_uri(obj.qr_overlay_logo.url)
+        except Exception:
+            return None
+        return None
+
+    def get_footer_year(self, obj: LoginPageSetting) -> str:
+        raw = (obj.footer_year_override or '').strip()
+        if raw:
+            return raw
+        try:
+            year = timezone.now().year
+        except Exception:
+            from datetime import datetime
+            year = datetime.utcnow().year
+        return str(year)
+
+    def get_instructions(self, obj: LoginPageSetting):
+        qs = obj.instructions.filter(is_active=True).order_by('display_order', 'id')
+        serializer = LoginInstructionSerializer(qs, many=True, context=self.context)
+        return serializer.data
 
 class ContactRelationSerializer(serializers.ModelSerializer):
     contact = PublicUserSerializer(read_only=True)

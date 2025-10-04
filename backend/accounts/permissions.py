@@ -64,7 +64,11 @@ class ActiveDeviceRequired(BasePermission):
             self.message = 'device_not_active'
             return False
         # Enforce max active count even if DB drifted (fail-safe)
-        active_count = UserDevice.objects.filter(user=user, status__in=_active_statuses()).count()
+        active_count = UserDevice.objects.filter(
+            user=user,
+            status__in=_active_statuses(),
+            is_web=False,
+        ).count()
         limit = getattr(settings, 'USER_DEVICE_MAX_ACTIVE', 3)
         if active_count > limit:
             self.message = 'device_limit_exceeded'

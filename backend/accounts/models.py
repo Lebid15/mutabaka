@@ -3,7 +3,10 @@ from django.db import models
 from django.db.models import Q
 from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
+from django.utils.crypto import constant_time_compare
+import hashlib
 import secrets
+import uuid
 
 
 def _generate_device_id() -> str:
@@ -126,6 +129,7 @@ class UserDevice(models.Model):
     platform = models.CharField(max_length=40, blank=True)
     app_version = models.CharField(max_length=40, blank=True)
     push_token = models.CharField(max_length=256, blank=True)
+    is_web = models.BooleanField(default=False, help_text="Whether this device represents a linked web/browser session")
     created_at = models.DateTimeField(auto_now_add=True)
     last_seen_at = models.DateTimeField(null=True, blank=True)
     pending_token = models.CharField(max_length=96, blank=True)
@@ -136,6 +140,7 @@ class UserDevice(models.Model):
             models.Index(fields=['user', 'status']),
             models.Index(fields=['pending_token']),
             models.Index(fields=['user', 'last_seen_at']),
+            models.Index(fields=['user', 'is_web']),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -170,3 +175,61 @@ class UserDevice(models.Model):
 
     def __str__(self):  # pragma: no cover - debug read
         return f"{self.user_id}:{self.id}({self.status})"
+
+
+def _hash_token(value: str) -> str:
+    return hashlib.sha256(value.encode('utf-8')).hexdigest()
+
+
+class WebLoginSession(models.Model):
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        APPROVED = 'approved', 'Approved'
+        CONSUMED = 'consumed', 'Consumed'
+        EXPIRED = 'expired', 'Expired'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    token_hash = models.CharField(max_length=128, unique=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
+    user = models.ForeignKey(CustomUser, null=True, blank=True, on_delete=models.SET_NULL, related_name='web_login_sessions')
+    approved_at = models.DateTimeField(null=True, blank=True)
+    approved_device = models.ForeignKey(UserDevice, null=True, blank=True, on_delete=models.SET_NULL, related_name='login_sessions')
+    approval_ip = models.GenericIPAddressField(null=True, blank=True)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    access_token = models.TextField(blank=True)
+    refresh_token = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ('-created_at',)
+        indexes = [
+            models.Index(fields=['status', 'expires_at']),
+            models.Index(fields=['created_at']),
+        ]
+
+    @property
+    def is_expired(self) -> bool:
+        return timezone.now() >= self.expires_at
+
+    def mark_expired(self, *, save: bool = True) -> None:
+        self.status = self.Status.EXPIRED
+        if save:
+            self.save(update_fields=['status'])
+
+    def matches_token(self, raw_token: str) -> bool:
+        hashed = _hash_token(raw_token)
+        return constant_time_compare(hashed, self.token_hash)
+
+    @classmethod
+    def create_new(cls, ttl_seconds: int = 90) -> tuple['WebLoginSession', str]:
+        raw_token = secrets.token_urlsafe(32)
+        expires_at = timezone.now() + timezone.timedelta(seconds=max(30, ttl_seconds))
+        session = cls.objects.create(
+            expires_at=expires_at,
+            token_hash=_hash_token(raw_token),
+        )
+        return session, raw_token
+
+    def __str__(self) -> str:  # pragma: no cover - debug helper
+        return f"LoginSession({self.id})[{self.status}]"

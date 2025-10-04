@@ -61,6 +61,138 @@ class BrandingSetting(models.Model):
         return f"BrandingSetting(active={self.active})"
 
 
+class LoginPageSetting(models.Model):
+    """Configurable content for the public login page."""
+
+    login_logo = models.ImageField(
+        upload_to='branding/login/',
+        null=True,
+        blank=True,
+        help_text="شعار مخصص لشاشة تسجيل الدخول (يُستخدم إن وجد بدل الشعار العام)",
+    )
+    qr_overlay_logo = models.ImageField(
+        upload_to='branding/login/',
+        null=True,
+        blank=True,
+        help_text="شعار صغير يُعرض داخل رمز QR (اختياري)",
+    )
+    hero_title = models.CharField(
+        max_length=255,
+        default="طريقة تسجيل الدخول إلى حسابك في موقع مطابقة ويب:",
+        help_text="العنوان الرئيسي الظاهر أعلى التعليمات",
+    )
+    hero_description = models.TextField(
+        blank=True,
+        help_text="وصف مختصر يظهر تحت العنوان الرئيسي (اختياري)",
+    )
+    instructions_title = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="عنوان قسم الخطوات (مثلاً: خطوات ربط الجهاز)",
+    )
+    stay_logged_in_label = models.CharField(
+        max_length=255,
+        default="ابقَ مسجل الدخول على هذا المتصفح",
+        help_text="النص بجانب مربع الاختيار للبقاء متصلاً",
+    )
+    stay_logged_in_hint = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="شرح موجز يظهر بجانب خيار البقاء متصلاً (اختياري)",
+    )
+    alternate_login_label = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="نص رابط تسجيل الدخول البديل (مثل تسجيل الدخول برقم الهاتف)",
+    )
+    alternate_login_url = models.CharField(
+        max_length=512,
+        blank=True,
+        help_text="الرابط المستخدم لزر/رابط تسجيل الدخول البديل",
+    )
+    footer_links_label = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="نص موحد لروابط السياسة والشروط إن رغبت بإظهاره في سطر منفصل",
+    )
+    footer_note = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="نص يظهر أعلى روابط التذييل (اختياري)",
+    )
+    footer_secondary_note = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="نص سفلي إضافي للتذييل (مثال: جميع الحقوق محفوظة)",
+    )
+    footer_brand_name = models.CharField(
+        max_length=120,
+        default="Mutabaka",
+        help_text="اسم العلامة التجارية الذي سيظهر في التذييل",
+    )
+    footer_year_override = models.CharField(
+        max_length=16,
+        blank=True,
+        help_text="اكتب سنة مخصصة إن رغبت (اتركه فارغًا لاستخدام السنة الحالية)",
+    )
+    is_active = models.BooleanField(default=True, verbose_name="مُفعل؟")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at', '-id']
+        verbose_name = "إعداد صفحة تسجيل الدخول"
+        verbose_name_plural = "إعدادات صفحة تسجيل الدخول"
+
+    def __str__(self):  # pragma: no cover
+        return f"LoginPageSetting({self.hero_title[:30]!r})"
+
+
+class LoginInstruction(models.Model):
+    """Individual instruction rows displayed next to the QR code."""
+
+    page = models.ForeignKey(
+        LoginPageSetting,
+        on_delete=models.CASCADE,
+        related_name='instructions',
+        verbose_name="الإعداد المرتبط",
+    )
+    title = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="عنوان قصير أو جزء مميز ضمن الخطوة (اختياري)",
+    )
+    description = models.TextField(help_text="نص الخطوة (يمكن إدخال HTML بسيط)")
+    icon_hint = models.CharField(
+        max_length=64,
+        blank=True,
+        help_text="إشارة أو رمز صغير يظهر بجانب الخطوة (اختياري، مثل اسم أيقونة)",
+    )
+    display_order = models.PositiveIntegerField(default=0, help_text="الترتيب التصاعدي للعرض")
+    is_active = models.BooleanField(default=True, verbose_name="مُفعل؟")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['display_order', 'id']
+        verbose_name = "تعليمات تسجيل الدخول"
+        verbose_name_plural = "تعليمات تسجيل الدخول"
+
+    def __str__(self):  # pragma: no cover
+        base = ''
+        try:
+            base = (self.title or '').strip()
+            if not base:
+                try:
+                    base = (self.description or '').split('\n', 1)[0].strip()
+                except Exception:
+                    base = ''
+            if not base:
+                base = f"Instruction #{self.pk or ''}"
+        except Exception:
+            base = ''
+        return base[:60]
+
 class PrivacyPolicy(models.Model):
     """Stores privacy policy / terms content manageable from the admin."""
 

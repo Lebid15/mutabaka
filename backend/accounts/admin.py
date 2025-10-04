@@ -3,7 +3,7 @@ from django.contrib.auth.admin import UserAdmin
 from django.utils.translation import gettext_lazy as _
 from django.db import models
 from django.urls import reverse
-from .models import CustomUser, UserSecurityAudit, UserDevice
+from .models import CustomUser, UserSecurityAudit, UserDevice, WebLoginSession
 from .forms import CustomUserChangeForm, CustomUserCreationForm
 
 @admin.register(CustomUser)
@@ -189,8 +189,8 @@ class UserSecurityAuditAdmin(admin.ModelAdmin):
 
 @admin.register(UserDevice)
 class UserDeviceAdmin(admin.ModelAdmin):
-    list_display = ("id_short", "user", "device_info", "status", "created_at", "last_seen_at")
-    list_filter = ("status", "platform", "created_at")
+    list_display = ("id_short", "user", "device_info", "status", "is_web", "created_at", "last_seen_at")
+    list_filter = ("status", "platform", "is_web", "created_at")
     search_fields = ("user__username", "label", "id", "app_version")
     readonly_fields = ("id", "created_at", "last_seen_at", "pending_expires_at", "pending_token")
     autocomplete_fields = ("user",)
@@ -198,7 +198,7 @@ class UserDeviceAdmin(admin.ModelAdmin):
     
     fieldsets = (
         (_("Device Info"), {
-            "fields": ("user", "label", "platform", "app_version", "status", "push_token")
+            "fields": ("user", "label", "platform", "app_version", "status", "is_web", "push_token")
         }),
         (_("Timestamps"), {
             "fields": ("created_at", "last_seen_at", "pending_token", "pending_expires_at")
@@ -224,4 +224,30 @@ class UserDeviceAdmin(admin.ModelAdmin):
     
     def has_add_permission(self, request):
         # Devices are created by the system, not manually
+        return False
+
+
+@admin.register(WebLoginSession)
+class WebLoginSessionAdmin(admin.ModelAdmin):
+    list_display = ("id", "status", "user", "created_at", "expires_at", "approved_at", "consumed_at")
+    search_fields = ("id", "user__username")
+    list_filter = ("status", "created_at")
+    readonly_fields = (
+        "id",
+        "created_at",
+        "expires_at",
+        "status",
+        "user",
+        "approved_at",
+        "approved_device",
+        "approval_ip",
+        "consumed_at",
+        "access_token",
+        "refresh_token",
+    )
+
+    def has_add_permission(self, request):  # pragma: no cover - sessions are system managed
+        return False
+
+    def has_change_permission(self, request, obj=None):  # pragma: no cover - sessions are read-only
         return False

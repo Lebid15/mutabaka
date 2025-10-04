@@ -204,6 +204,7 @@ MEDIA_ROOT = BASE_DIR / 'media'
 # Device management defaults
 USER_DEVICE_MAX_ACTIVE = int(os.getenv('USER_DEVICE_MAX_ACTIVE', '3'))
 USER_DEVICE_PENDING_TTL_MINUTES = int(os.getenv('USER_DEVICE_PENDING_TTL_MINUTES', '15'))
+WEB_LOGIN_QR_TTL_SECONDS = int(os.getenv('WEB_LOGIN_QR_TTL_SECONDS', '90'))
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -230,6 +231,9 @@ REST_FRAMEWORK = {
             'pin_verify': '20/minute',
             'devices_register': '10/minute',
             'devices_approve': '10/minute',
+            'login_qr': '30/minute',
+            'login_qr_status': '120/minute',
+            'login_qr_approve': '30/minute',
         },
 }
 

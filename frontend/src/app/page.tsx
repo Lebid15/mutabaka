@@ -4,16 +4,16 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { IconType } from 'react-icons';
-import { useRouter } from 'next/navigation';
-import { apiClient } from '../lib/api';
+import QRCode from 'qrcode';
+import { apiClient, type LoginPageConfig, type LoginInstructionConfig } from '../lib/api';
 import { listTeam, listConversationMembers, addTeamMemberToConversation, removeMemberFromConversation, TeamMember } from '../lib/api-team';
 import { attachPrimingListeners, tryPlayMessageSound, setRuntimeSoundUrl } from '../lib/sound';
 import { useThemeMode } from './theme-context';
-import { FaMoneyBillTrendUp, FaXTwitter } from 'react-icons/fa6';
+import { FaMoneyBillTrendUp, FaXTwitter, FaRegClock } from 'react-icons/fa6';
 import { FaWhatsapp, FaFacebookF, FaYoutube, FaTelegramPlane, FaInstagram, FaSnapchatGhost, FaLinkedinIn } from 'react-icons/fa';
 import { SiTiktok } from 'react-icons/si';
 import { HiOutlineEnvelope } from 'react-icons/hi2';
-import { FiLink } from 'react-icons/fi';
+import { FiLink, FiRefreshCw } from 'react-icons/fi';
 import { AiOutlineFileDone } from 'react-icons/ai';
 
 // قائمة احتياطية (fallback) في حال تأخر تحميل العملات من الخادم
@@ -35,7 +35,7 @@ const formatTimeShort = (iso?: string) => {
   try {
     const d = iso ? new Date(iso) : new Date();
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  } catch {
+  } catch (_err) {
     return '';
   }
 };
@@ -46,7 +46,7 @@ const formatDateShort = (iso?: string) => {
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const year = d.getFullYear();
     return `${day}/${month}/${year}`;
-  } catch {
+  } catch (_err) {
     return '';
   }
 };
@@ -132,7 +132,7 @@ const dayKeyOf = (iso?: string) => {
   try {
     const d = iso ? new Date(iso) : new Date();
     return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
-  } catch {
+  } catch (_err) {
     return 'unknown';
   }
 };
@@ -145,7 +145,7 @@ const dayLabelOf = (iso?: string) => {
     if (sameCalendarDay(d, now)) return 'اليوم';
     if (sameCalendarDay(d, yest)) return 'أمس';
     return d.toLocaleDateString('ar', { year: 'numeric', month: 'long', day: 'numeric' });
-  } catch { return ''; }
+  } catch (_err) { return ''; }
 };
 // Helper: treat special admin-like usernames as admin
 function isAdminLike(u?: string | null) {
@@ -169,6 +169,39 @@ const normalizeNumberString = (raw: string) => {
 const DEFAULT_BRANDING_LOGO = '/frontend/public/icons/mlogo.jpg';
 const EMOJI_PALETTE = ['😀','😂','😍','👍','🙏','🎉','💰','📌','❤️','😢','😎','🤔','✅','❌','🔥','🌟','🥰','😮','💡','📈','🤥','🌎'];
 const EMOJI_CLUSTER_REGEX = /^[\p{Extended_Pictographic}\u200d\uFE0F]+$/u;
+
+type LoginInstructionView = LoginInstructionConfig & {
+  display_order?: number | null;
+};
+
+type LoginPageState = LoginPageConfig & {
+  instructions: LoginInstructionView[];
+};
+
+const DEFAULT_LOGIN_PAGE_STATE: LoginPageState = {
+  id: null,
+  hero_title: 'سجّل الدخول بسهولة عبر التطبيق',
+  hero_description: 'افتح تطبيق متطابقا على جوالك واضغط على رمز QR، ثم امسح الرمز الظاهر على الشاشة لإتمام تسجيل الدخول بشكل فوري وآمن.',
+  instructions_title: 'خطوات تسجيل الدخول عبر الهاتف:',
+  stay_logged_in_label: 'إبقَ مسجل الدخول على هذا الجهاز',
+  stay_logged_in_hint: 'يمكنك إلغاء تفعيل الخيار من داخل التطبيق في أي وقت.',
+  alternate_login_label: 'تواجه مشكلة؟ استخدم تسجيل الدخول العادي',
+  alternate_login_url: '',
+  footer_links_label: 'روابط مفيدة',
+  footer_note: 'الدعم متاح على مدار الساعة عبر قنواتنا الرسمية.',
+  footer_secondary_note: 'جميع الحقوق محفوظة.',
+  footer_brand_name: 'Mutabaka',
+  footer_year_override: '',
+  footer_year: new Date().getFullYear().toString(),
+  login_logo_url: null,
+  qr_overlay_logo_url: null,
+  instructions: [
+    { id: null, title: 'افتح التطبيق', description: 'شغّل تطبيق متطابقا على هاتفك المسجل.', icon_hint: 'app', display_order: 1 },
+    { id: null, title: 'اذهب لقسم QR', description: 'من القائمة الرئيسية اختر “تسجيل الدخول عبر QR”.', icon_hint: 'menu', display_order: 2 },
+    { id: null, title: 'وجّه الكاميرا', description: 'وجّه كاميرا هاتفك نحو الرمز الظاهر على الشاشة.', icon_hint: 'scan', display_order: 3 },
+    { id: null, title: 'تم تسجيل الدخول', description: 'سيتم فتح حسابك فور التحقق من الرمز.', icon_hint: 'success', display_order: 4 },
+  ],
+};
 
 const isEmojiGrapheme = (segment: string) => {
   if (!segment) return false;
@@ -194,7 +227,7 @@ const truncateContactPreview = (raw: string) => {
       const limit = allEmoji ? 7 : 20;
       return segments.slice(0, limit).join('');
     }
-  } catch {}
+  } catch (_err) {}
   const compact = raw.replace(/\s+/g, '');
   const allEmoji = compact.length > 0 && EMOJI_CLUSTER_REGEX.test(compact);
   const limit = allEmoji ? 7 : 20;
@@ -465,7 +498,7 @@ function parseTransaction(body: string): null | { direction: 'lna'|'lkm'; amount
     const sym = m[3];
     const note = (m[4] || '').trim();
     return { direction: dir, amount: isNaN(amount) ? 0 : amount, currency: sym, symbol: sym, note: note || undefined };
-  } catch { return null; }
+  } catch (_err) { return null; }
 }
 
 function normalizeServerTransaction(raw: any): null | { direction: 'lna'|'lkm'; amount: number; currency: string; symbol: string; note?: string } {
@@ -629,7 +662,7 @@ function SidebarHeaderAddContact({ onAdded, existingUsernames, currentUsername, 
       const msg = (e && e.message) ? e.message : 'تعذر إنشاء المحادثة';
       setError(msg);
       if (e && (e.status === 403 || e.status === 401)) {
-        try { onSubscriptionGate && onSubscriptionGate(msg); } catch {}
+        try { onSubscriptionGate && onSubscriptionGate(msg); } catch (_err) {}
       }
     } finally {
       setLoading(false);
@@ -637,7 +670,7 @@ function SidebarHeaderAddContact({ onAdded, existingUsernames, currentUsername, 
   };
 
   const logout = () => {
-    try { localStorage.removeItem('auth_tokens_v1'); } catch {}
+    try { localStorage.removeItem('auth_tokens_v1'); } catch (_err) {}
     window.location.href = '/';
   };
 
@@ -717,62 +750,6 @@ function SidebarHeaderAddContact({ onAdded, existingUsernames, currentUsername, 
   );
 }
 
-function PasswordField({ value, onChange, tone = 'dark', inputClassName }: { value: string; onChange: (v:string)=>void; tone?: 'light'|'dark'; inputClassName?: string }) {
-  const [show, setShow] = useState(false);
-  const iconClasses = tone === 'light'
-    ? 'text-orange-300 hover:text-orange-400'
-    : 'text-gray-400 hover:text-gray-200';
-  const finalInputClass = inputClassName || (tone === 'light'
-    ? 'w-full pl-9 pr-3 bg-white/80 border border-orange-200 rounded py-2 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-300 transition'
-    : 'w-full pl-9 pr-3 bg-chatBg border border-chatDivider rounded py-2 text-sm text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-green-600');
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setShow((s) => !s)}
-        className={`absolute inset-y-0 left-0 pl-3 flex items-center transition-colors ${iconClasses}`}
-        title={show ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
-        aria-label={show ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
-      >
-        {show ? (
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            className="w-4 h-4"
-            strokeWidth="1.6"
-          >
-            <path d="M1 1l22 22" strokeLinecap="round" />
-            <path d="M10.58 10.58a2 2 0 0 0 2.84 2.84" />
-            <path d="M9.88 5.12A10.37 10.37 0 0 1 12 5c7 0 10 7 10 7a18.68 18.68 0 0 1-3.16 4.38" />
-            <path d="M6.53 6.53C3.85 8.36 2 12 2 12a18.5 18.5 0 0 0 5.17 5.88" />
-          </svg>
-        ) : (
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            className="w-4 h-4"
-            strokeWidth="1.6"
-          >
-            <path d="M1 12s3-7 11-7 11 7 11 7-3 7-11 7S1 12 1 12Z" />
-            <circle cx="12" cy="12" r="3" />
-          </svg>
-        )}
-      </button>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="كلمة المرور"
-        type={show ? 'text' : 'password'}
-        className={finalInputClass}
-      />
-    </div>
-  );
-}
-
 export default function Home() {
   const scrollRef = useRef<HTMLDivElement|null>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -800,20 +777,33 @@ export default function Home() {
   // Auth/session
   const [isAuthed, setIsAuthed] = useState(false);
   const [authStatus, setAuthStatus] = useState<'checking'|'authed'|'anon'>('checking');
-  const [identifier, setIdentifier] = useState('');
-  const [password, setPassword] = useState('');
-  const [useTeamLogin, setUseTeamLogin] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    try { return localStorage.getItem('useTeamLogin') === '1'; } catch { return false; }
-  });
-  const [ownerUsername, setOwnerUsername] = useState('');
-  const [teamUsername, setTeamUsername] = useState('');
-  const [error, setError] = useState<string|null>(null);
-  const [loading, setLoading] = useState(false);
-  const [brandingLogo, setBrandingLogo] = useState<string>(DEFAULT_BRANDING_LOGO);
+  const [loginConfig, setLoginConfig] = useState<LoginPageState>(DEFAULT_LOGIN_PAGE_STATE);
+  const [brandingLogo, setBrandingLogo] = useState<string>(DEFAULT_LOGIN_PAGE_STATE.login_logo_url ?? DEFAULT_BRANDING_LOGO);
+  const [qrOverlayLogo, setQrOverlayLogo] = useState<string | null>(DEFAULT_LOGIN_PAGE_STATE.qr_overlay_logo_url ?? null);
+  const [loginQrDataUrl, setLoginQrDataUrl] = useState<string>('');
+  const [qrRefreshing, setQrRefreshing] = useState(false);
+  const [qrExpiryAt, setQrExpiryAt] = useState<number | null>(null);
+  const [qrCountdown, setQrCountdown] = useState<number>(0);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [profile, setProfile] = useState<any|null>(null);
   const [contactLinks, setContactLinks] = useState<ContactLinkView[]>([]);
   const { isLight: isLightTheme, toggleTheme } = useThemeMode();
+
+  const sortedInstructions = useMemo(() => {
+    const list = Array.isArray(loginConfig.instructions) ? loginConfig.instructions : [];
+    return list
+      .slice()
+      .sort((a, b) => {
+        const ao = typeof a.display_order === 'number' ? a.display_order : Number.MAX_SAFE_INTEGER;
+        const bo = typeof b.display_order === 'number' ? b.display_order : Number.MAX_SAFE_INTEGER;
+        return ao - bo;
+      })
+      .filter((entry) => {
+        const title = (entry?.title || '').trim();
+        const description = (entry?.description || '').trim();
+        return Boolean(title || description);
+      });
+  }, [loginConfig.instructions]);
 
   const mapContactLinks = useCallback((items: ContactLinkDTO[]): ContactLinkView[] => {
     return items
@@ -846,6 +836,91 @@ export default function Home() {
       })
       .filter((entry): entry is ContactLinkView => Boolean(entry));
   }, []);
+
+  const refreshLoginQr = useCallback(async () => {
+    if (isAuthed) return;
+    setQrRefreshing(true);
+    setLoginError(null);
+    try {
+      const { payload, expires_in } = await apiClient.getLoginQrPayload();
+      const finalPayload = payload || `mutabaka://link?token=${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+      let dataUrl = '';
+      try {
+        dataUrl = await QRCode.toDataURL(finalPayload, {
+          errorCorrectionLevel: 'M',
+          width: 440,
+          margin: 1,
+          color: {
+            dark: '#050d1a',
+            light: '#ffffff',
+          },
+        });
+      } catch (_err) {
+        dataUrl = '';
+      }
+      setLoginQrDataUrl(dataUrl);
+      const ttl = Number.isFinite(expires_in) ? Math.max(10, Math.floor(expires_in)) : 60;
+      setQrExpiryAt(Date.now() + ttl * 1000);
+    } catch (err: any) {
+      setLoginError(err?.message || 'تعذّر إنشاء رمز QR. حاول التحديث مرة أخرى.');
+      const fallbackPayload = `mutabaka://link?token=${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+      try {
+        const dataUrl = await QRCode.toDataURL(fallbackPayload, {
+          errorCorrectionLevel: 'M',
+          width: 440,
+          margin: 1,
+          color: {
+            dark: '#050d1a',
+            light: '#ffffff',
+          },
+        });
+        setLoginQrDataUrl(dataUrl);
+      } catch (_err) {
+        setLoginQrDataUrl('');
+      }
+      setQrExpiryAt(Date.now() + 60000);
+    } finally {
+      setQrRefreshing(false);
+    }
+  }, [isAuthed, apiClient]);
+
+  useEffect(() => {
+    if (isAuthed) return;
+    refreshLoginQr();
+  }, [isAuthed, refreshLoginQr]);
+
+  useEffect(() => {
+    if (isAuthed || !qrExpiryAt) {
+      setQrCountdown(0);
+      return;
+    }
+    const updateCountdown = () => {
+      const remaining = Math.max(0, Math.ceil((qrExpiryAt - Date.now()) / 1000));
+      setQrCountdown(remaining);
+      return remaining;
+    };
+    updateCountdown();
+    const timer = window.setInterval(() => {
+      const remaining = updateCountdown();
+      if (remaining <= 0) {
+        window.clearInterval(timer);
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [qrExpiryAt, isAuthed]);
+
+  useEffect(() => {
+    if (isAuthed || !qrExpiryAt) return;
+    const remainingMs = qrExpiryAt - Date.now() - 3000;
+    if (remainingMs <= 0) {
+      refreshLoginQr();
+      return;
+    }
+    const tid = window.setTimeout(() => {
+      refreshLoginQr();
+    }, Math.max(3000, remainingMs));
+    return () => window.clearTimeout(tid);
+  }, [qrExpiryAt, isAuthed, refreshLoginQr]);
 
   // Contacts & conversations
   const [contacts, setContacts] = useState<any[]>([]);
@@ -898,6 +973,7 @@ export default function Home() {
   const exportModalRef = useRef<HTMLDivElement|null>(null);
 
   useEffect(() => {
+    if (isAuthed) return;
     let cancelled = false;
     const resolveLogoUrl = async (raw?: string | null) => {
       const trimmed = (raw || '').trim();
@@ -928,24 +1004,32 @@ export default function Home() {
           img.src = candidate;
         });
         return canLoad ? candidate : DEFAULT_BRANDING_LOGO;
-      } catch {
+      } catch (_err) {
         return DEFAULT_BRANDING_LOGO;
       }
     };
     (async () => {
       try {
-        const data = await apiClient.getBranding();
+        const config = await apiClient.getLoginPageConfig();
         if (cancelled) return;
-        const resolved = await resolveLogoUrl(data?.logo_url ?? null);
-        if (!cancelled) setBrandingLogo(resolved);
-      } catch {
-        if (!cancelled) setBrandingLogo(DEFAULT_BRANDING_LOGO);
+        setLoginConfig((prev) => ({ ...prev, ...config, instructions: Array.isArray(config?.instructions) ? config.instructions : prev.instructions }));
+        const resolved = await resolveLogoUrl(config?.login_logo_url ?? null);
+        if (!cancelled) {
+          setBrandingLogo(resolved);
+          setQrOverlayLogo(config?.qr_overlay_logo_url || null);
+        }
+      } catch (_err) {
+        if (!cancelled) {
+          setLoginConfig(DEFAULT_LOGIN_PAGE_STATE);
+          setBrandingLogo(DEFAULT_LOGIN_PAGE_STATE.login_logo_url ?? DEFAULT_BRANDING_LOGO);
+          setQrOverlayLogo(DEFAULT_LOGIN_PAGE_STATE.qr_overlay_logo_url ?? null);
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isAuthed]);
 
   useEffect(() => {
     if (isAuthed || contactLinksFetchedRef.current) return;
@@ -956,7 +1040,7 @@ export default function Home() {
         const raw = await apiClient.getContactLinks();
         if (cancelled) return;
         setContactLinks(mapContactLinks(raw));
-      } catch {
+      } catch (_err) {
         if (cancelled) return;
         setContactLinks([]);
       }
@@ -979,7 +1063,7 @@ export default function Home() {
       const padded = base64 + '==='.slice((base64.length + 3) % 4);
       const json = typeof atob === 'function' ? atob(padded) : Buffer.from(padded, 'base64').toString('utf8');
       return JSON.parse(json);
-    } catch { return null; }
+    } catch (_err) { return null; }
   }, []);
 
   // Current sender display: prefer team member name if acting as team member
@@ -1119,7 +1203,7 @@ export default function Home() {
     try {
       const payload = getJwtPayload();
       return !!(payload && payload.actor === 'team_member');
-    } catch { return false; }
+    } catch (_err) { return false; }
   })();
 
   // Ensure team list is available when acting as team member (for display names)
@@ -1133,7 +1217,7 @@ export default function Home() {
         if (access) {
           listTeam(access).then(list => setTeamList(Array.isArray(list) ? list : [])).catch(()=>{});
         }
-      } catch {}
+      } catch (_err) {}
     }
   }, [isAuthed, getJwtPayload]);
 
@@ -1155,7 +1239,7 @@ export default function Home() {
             metaForConv = { user_a_id: conv.user_a.id, user_b_id: conv.user_b.id };
             setConvMetaById(prev => ({ ...prev, [convId]: metaForConv! }));
           }
-        } catch {}
+        } catch (_err) {}
       }
       // rebuild pair wallet from net rows from the perspective of current user
       const pair: Record<string, number> = { ...initialWallet };
@@ -1170,7 +1254,7 @@ export default function Home() {
         if (code) pair[code] = isNaN(val) ? 0 : Number((flip * val).toFixed(5));
       }
       setPairWalletByConv(prev => ({ ...prev, [convId]: pair }));
-    } catch {}
+    } catch (_err) {}
   }, [apiClient, convMetaById, profile?.id]);
 
   // Toasts
@@ -1203,7 +1287,7 @@ export default function Home() {
       if (addAlt) return { action: 'added', name: addAlt[1] };
       const add2 = t.match(/إضافة\s+([^\s]+)\s+إلى\s+المحادثة/);
       if (add2) return { action: 'added', name: add2[1] };
-    } catch {}
+    } catch (_err) {}
     return null;
   };
 
@@ -1679,7 +1763,7 @@ export default function Home() {
 
   // Initial auth check and audio priming
   useEffect(() => {
-  (async () => {
+    (async () => {
       try {
         const me = await apiClient.getProfile().catch(() => null);
         if (me) {
@@ -1690,14 +1774,14 @@ export default function Home() {
           setIsAuthed(false);
           setAuthStatus('anon');
         }
-      } catch {
+      } catch (_err) {
         setIsAuthed(false);
         setAuthStatus('anon');
       }
     })();
-    try { attachPrimingListeners(); } catch {}
+    try { attachPrimingListeners(); } catch (_err) {}
     // Load admin-configured notification sound (if any) so the whole app uses it, not only Settings page
-    (async () => { try { const url = await apiClient.getNotificationSoundUrl(); if (url) setRuntimeSoundUrl(url); } catch {} })();
+    (async () => { try { const url = await apiClient.getNotificationSoundUrl(); if (url) setRuntimeSoundUrl(url); } catch (_err) {} })();
   }, []);
   // إرسال عبر Pusher HTTP API
   const sendChat = async () => {
@@ -1831,7 +1915,7 @@ export default function Home() {
     const now = Date.now();
     const socket = wsRef.current;
     if (socket && socket.readyState === WebSocket.OPEN && now - lastTypingSentRef.current > 1200) {
-      try { socket.send(JSON.stringify({ type: 'typing', state: 'start' })); lastTypingSentRef.current = now; } catch {}
+      try { socket.send(JSON.stringify({ type: 'typing', state: 'start' })); lastTypingSentRef.current = now; } catch (_err) {}
     }
   };
   const [noteModalOpen, setNoteModalOpen] = useState(false);
@@ -1854,8 +1938,8 @@ export default function Home() {
           el.selectionEnd = caret;
           el.style.height = 'auto';
           el.style.height = Math.min(160, el.scrollHeight) + 'px';
-        } catch {
-          try { el.focus(); } catch {}
+        } catch (_err) {
+          try { el.focus(); } catch (_err2) {}
         }
       });
       return next;
@@ -1906,7 +1990,7 @@ export default function Home() {
           )
           : <span key={idx}>{part}</span>
       ));
-    } catch { return text; }
+    } catch (_err) { return text; }
   };
 
   const resolveMessageRefKey = useCallback((msg: any, idx: number) => {
@@ -1963,7 +2047,7 @@ export default function Home() {
       const convArr = await apiClient.listConversations();
       hydrateConversations(convArr);
       pushToast({ type: 'success', msg: 'تم تحديث جهات الاتصال' });
-    } catch {
+    } catch (_err) {
       pushToast({ type: 'error', msg: 'تعذر تحديث جهات الاتصال' });
     }
   };
@@ -2185,7 +2269,7 @@ export default function Home() {
         node.classList.remove('ring-2', 'ring-yellow-300/60');
       }, 1200);
       return () => window.clearTimeout(tid);
-    } catch {}
+    } catch (_err) {}
   }, [activeMatchIdx, searchMatches, searchQuery]);
   
   useEffect(()=>{
@@ -2250,7 +2334,7 @@ export default function Home() {
               setSubBannerMsg(`أنت على النسخة المجانية — متبقٍ ${days} يوم`);
             }
           }
-        } catch {}
+        } catch (_err) {}
 
         const convs = await apiClient.listConversations();
         if (!active) return;
@@ -2266,7 +2350,7 @@ export default function Home() {
           }
           return cp;
         });
-      } catch {}
+  } catch (_err) {}
     })();
     return () => { active = false; };
   }, [isAuthed, profile?.id]);
@@ -2288,7 +2372,7 @@ export default function Home() {
           setUnreadByConv(next);
         }
       }
-    } catch {}
+  } catch (_err) {}
     setUnreadRestored(true);
   }, [isAuthed, profile?.id, unreadRestored]);
 
@@ -2298,7 +2382,7 @@ export default function Home() {
     try {
       const key = `unread_by_conv_v1_${profile.id}`;
       if (typeof window !== 'undefined') localStorage.setItem(key, JSON.stringify(unreadByConv));
-    } catch {}
+    } catch (_err) {}
   }, [unreadByConv, isAuthed, profile?.id]);
 
   // Restore last selected conversation from localStorage (per-user) or fallback to first
@@ -2319,7 +2403,7 @@ export default function Home() {
         const n = Number(raw);
         savedId = Number.isFinite(n) ? n : null;
       }
-    } catch {}
+    } catch (_err) {}
     if (savedId && contacts.some(c => c.id === savedId)) {
       const idx = contacts.findIndex(c => c.id === savedId);
       setCurrentContactIndex(idx);
@@ -2347,18 +2431,18 @@ export default function Home() {
     try {
       const key = `selected_conversation_id_${profile?.id ?? 'anon'}`;
       if (typeof window !== 'undefined') localStorage.setItem(key, String(selectedConversationId));
-    } catch {}
+    } catch (_err) {}
   }, [selectedConversationId, profile?.id]);
 
   // Live inbox: subscribe to per-user inbox WS for conversation list updates (no polling)
   useEffect(() => {
     if (!isAuthed) return;
     let closed = false;
-    const sub = apiClient.connectInboxWithRetry();
-    sub.on('open', () => { try { console.debug('[INBOX WS] open'); } catch {} });
+  const sub = apiClient.connectInboxWithRetry();
+  sub.on('open', () => { try { console.debug('[INBOX WS] open'); } catch (_err) {} });
     sub.on('message', (e: MessageEvent) => {
       // Debug inbox traffic
-      try { const dbg = JSON.parse(e.data); if (dbg?.type) console.debug('[INBOX WS]', dbg.type, dbg); } catch {}
+  try { const dbg = JSON.parse(e.data); if (dbg?.type) console.debug('[INBOX WS]', dbg.type, dbg); } catch (_err) {}
       if (closed) return;
       try {
         const data = JSON.parse(e.data);
@@ -2382,7 +2466,7 @@ export default function Home() {
                 const convs = await apiClient.listConversations();
                 const convArr = Array.isArray(convs) ? convs : [];
                 hydrateConversations(convArr);
-              } catch {}
+              } catch (_err) {}
             })();
             return copy;
           });
@@ -2396,21 +2480,21 @@ export default function Home() {
               const isHidden = typeof document !== 'undefined' && document.hidden;
               const muted = contacts.some(c => c.id === convId && c.isMuted);
               if ((isHidden || mobileView !== 'chat') && !muted) {
-                try { tryPlayMessageSound(); } catch {}
+                try { tryPlayMessageSound(); } catch (_err) {}
               }
             } else {
               setUnreadByConv(prev => ({ ...prev, [convId]: 0 }));
             }
           }
         }
-      } catch {}
+      } catch (_err) {}
     });
-    sub.on('close', (e: CloseEvent) => { try { console.debug('[INBOX WS] close', e.code, e.reason); } catch {} });
-    sub.on('error', (e: Event) => { try { console.debug('[INBOX WS] error', e); } catch {} });
+    sub.on('close', (e: CloseEvent) => { try { console.debug('[INBOX WS] close', e.code, e.reason); } catch (_err) {} });
+    sub.on('error', (e: Event) => { try { console.debug('[INBOX WS] error', e); } catch (_err) {} });
     const hb = setInterval(() => {
       const s: WebSocket | null = (sub as any).socket || null;
       if (s && s.readyState === WebSocket.OPEN) {
-        try { s.send(JSON.stringify({ type: 'ping' })); } catch {}
+        try { s.send(JSON.stringify({ type: 'ping' })); } catch (_err) {}
       }
     }, 15000);
     return () => { closed = true; clearInterval(hb); sub.close(); };
@@ -2466,14 +2550,14 @@ export default function Home() {
           const fresh = await apiClient.getCurrencies();
           setServerCurrencies(fresh);
           cid = fresh.find(c=>c.code===selectedCurrency)?.id;
-        } catch {}
+        } catch (_err) {}
         // محاولة bootstrap وإنشاء العملات الافتراضية
         try {
           await apiClient.bootstrapCurrencies();
           const again = await apiClient.getCurrencies();
           setServerCurrencies(again);
           cid = again.find(c=>c.code===selectedCurrency)?.id;
-        } catch {}
+        } catch (_err) {}
     }
     if (!cid) throw new Error('لا توجد عملات مهيأة بعد. جرّب إعادة تحميل الصفحة أو تسجيل الخروج والدخول أو تكرار العملية لاحقاً.');
       for (const op of ops) {
@@ -2501,7 +2585,7 @@ export default function Home() {
             metaForConv = { user_a_id: conv.user_a.id, user_b_id: conv.user_b.id };
             setConvMetaById(prev => ({ ...prev, [selectedConversationId]: metaForConv! }));
           }
-        } catch {}
+        } catch (_err) {}
       }
       // إعادة حساب المحفظة الزوجية من n.net (سجل المعاملات) من منظور المستخدم الحالي
       const pair: Record<string, number> = { ...initialWallet };
@@ -2593,7 +2677,7 @@ export default function Home() {
     const key = (process.env.NEXT_PUBLIC_PUSHER_KEY as string) || '';
     const cluster = (process.env.NEXT_PUBLIC_PUSHER_CLUSTER as string) || '';
     if (!key || !cluster) {
-      try { console.warn('[Pusher] Chat feed disabled: missing NEXT_PUBLIC_PUSHER_*'); } catch {}
+      try { console.warn('[Pusher] Chat feed disabled: missing NEXT_PUBLIC_PUSHER_*'); } catch (_err) {}
       return;
     }
     let pusher: any = null;
@@ -2736,7 +2820,7 @@ export default function Home() {
             }
           }
         }
-      } catch {}
+      } catch (_err) {}
     };
     (async () => {
       try {
@@ -2746,13 +2830,13 @@ export default function Home() {
         channel = pusher.subscribe(channelName);
         channel.bind('message', onMessage);
       } catch (e) {
-        try { console.error('[Pusher] chat init failed', e); } catch {}
+        try { console.error('[Pusher] chat init failed', e); } catch (_err) {}
       }
     })();
     return () => {
-      try { channel && channel.unbind('message', onMessage); } catch {}
-      try { pusher && pusher.unsubscribe && pusher.unsubscribe(channelName); } catch {}
-      try { pusher && pusher.disconnect && pusher.disconnect(); } catch {}
+      try { channel && channel.unbind('message', onMessage); } catch (_err) {}
+      try { pusher && pusher.unsubscribe && pusher.unsubscribe(channelName); } catch (_err) {}
+      try { pusher && pusher.disconnect && pusher.disconnect(); } catch (_err) {}
     };
   }, [contacts, isAuthed, mobileView, processDeleteEvent, profile?.username, selectedConversationId]);
   
@@ -2859,7 +2943,7 @@ export default function Home() {
               metaForConv = { user_a_id: conv.user_a.id, user_b_id: conv.user_b.id };
               setConvMetaById(prev => ({ ...prev, [selectedConversationId]: metaForConv! }));
             }
-          } catch {}
+          } catch (_err) {}
         }
         // بناء المحفظة للعرض من net_balance (تجميعة سجل المعاملات) بمنظور المستخدم الحالي
         const pair: Record<string, number> = { ...initialWallet };
@@ -2892,7 +2976,7 @@ export default function Home() {
         const payload = JSON.parse(ev.data);
         const PUSHER_ENABLED = Boolean(process.env.NEXT_PUBLIC_PUSHER_KEY && process.env.NEXT_PUBLIC_PUSHER_CLUSTER);
         if (payload?.type) {
-          try { console.debug('[CHAT WS]', payload.type, { conversation_id: payload.conversation_id, id: payload.id, client_id: payload.client_id, created_at: payload.created_at }); } catch {}
+          try { console.debug('[CHAT WS]', payload.type, { conversation_id: payload.conversation_id, id: payload.id, client_id: payload.client_id, created_at: payload.created_at }); } catch (_err) {}
         }
         if (processDeleteEvent(payload)) {
           return;
@@ -3095,7 +3179,7 @@ export default function Home() {
                       return updated;
                     }));
                   }
-                } catch {}
+                } catch (_err) {}
               })();
             }
             const isViewing = selectedConversationId === payload.conversation_id && mobileView === 'chat';
@@ -3107,7 +3191,7 @@ export default function Home() {
               if ((isHidden || mobileView !== 'chat') && !muted) {
                 try {
                   tryPlayMessageSound().then(ok => { if (!ok) pushToast({ type: 'info', msg: 'انقر في الصفحة لتفعيل صوت الإشعارات' }); }).catch(()=>{});
-                } catch {}
+                } catch (_err) {}
               }
             } else {
               setUnreadByConv(prev => ({ ...prev, [payload.conversation_id]: 0 }));
@@ -3119,9 +3203,9 @@ export default function Home() {
                 if (socket && socket.readyState === WebSocket.OPEN && idNum > 0) {
                   try {
                     socket.send(JSON.stringify({ type: 'read', last_read_id: lastMsgIdRef.current }));
-                  } catch {}
+                  } catch (_err) {}
                 }
-              } catch {}
+              } catch (_err) {}
             }
           }
           return;
@@ -3187,13 +3271,13 @@ export default function Home() {
             }));
           }
         }
-      } catch {}
+  } catch (_err) {}
     });
     controller.on('open', () => { wsRef.current = (controller as any).socket || null; });
     controller.on('close', () => { wsRef.current = null; });
     // initialize reference immediately in case 'open' fires very fast
     wsRef.current = (controller as any).socket || null;
-    return () => { wsRef.current = null; try { controller.close(); } catch {} };
+  return () => { wsRef.current = null; try { controller.close(); } catch (_err) {} };
   }, [isAuthed, selectedConversationId, profile?.username, mobileView, currentSenderDisplay, applyConversationPreview, previewFromMessage]);
 
   // Emit read when window gains focus (if WS is open and we have a last id)
@@ -3204,86 +3288,13 @@ export default function Home() {
         if (socket && socket.readyState === WebSocket.OPEN && lastMsgIdRef.current > 0) {
           socket.send(JSON.stringify({ type: 'read', last_read_id: lastMsgIdRef.current }));
         }
-      } catch {}
+  } catch (_err) {}
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, []);
 
   // Zero-polling: لا يوجد استعلام دوري للرسائل؛ WS هو المصدر الوحيد بعد الجلب الأولي.
-
-  const router = useRouter();
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    try {
-      setLoading(true);
-      if (useTeamLogin) {
-        const owner = ownerUsername.trim();
-        const team = teamUsername.trim();
-        if (!owner || !team || !password.trim()) {
-          throw new Error('يرجى إدخال اسم المالك واسم عضو الفريق وكلمة المرور');
-        }
-        // Latin-only usernames to match backend rule
-        const latinRe = /^[A-Za-z]+$/;
-        if (!latinRe.test(owner) || !latinRe.test(team)) {
-          throw new Error('أسماء المستخدمين (المالك وعضو الفريق) يجب أن تكون أحرف لاتينية فقط (A-Z)');
-        }
-        try {
-          await apiClient.teamLogin(owner, team, password);
-        } catch (e:any) {
-          // Normalize backend message
-          if ((e?.message || '').toLowerCase().includes('invalid credentials')) {
-            throw new Error('بيانات تسجيل الدخول غير صحيحة. تأكد من اسم المالك وعضو الفريق وكلمة المرور');
-          }
-          throw e;
-        }
-      } else {
-        try {
-          await apiClient.login(identifier, password);
-        } catch (e:any) {
-          if (e && e.otp_required) {
-            const code = typeof window !== 'undefined' ? window.prompt('أدخل رمز التحقق (OTP) من تطبيق المصادقة') : '';
-            if (!code) throw e;
-            await apiClient.login(identifier, password, code);
-          } else if ((e?.message || '').toLowerCase().includes('no active account')) {
-            // UX: اقترح وضع عضو فريق تلقائياً إذا لم نجد حساب أساسي
-            setUseTeamLogin(true);
-            setTeamUsername(identifier);
-            setError('لم يتم العثور على حساب أساسي بهذا الاسم. جرّب تسجيل دخول عضو فريق: أدخل اسم مستخدم المالك واسم عضو الفريق وكلمة المرور.');
-            return; // لا تكمل إعادة التوجيه
-          } else {
-            throw e;
-          }
-        }
-      }
-      const me = await apiClient.getProfile().catch(()=>null);
-      if(me) setProfile(me);
-      setIsAuthed(true);
-      setAuthStatus('authed');
-      // Redirect-after-login
-      try {
-        const dest = sessionStorage.getItem('redirectAfterLogin') || '/';
-        sessionStorage.removeItem('redirectAfterLogin');
-        router.replace(dest);
-      } catch {
-        router.replace('/');
-      }
-    } catch (err:any) {
-      const status = err?.status;
-      const backendDetail = err?.data?.detail;
-      let msg = err?.message || 'فشل تسجيل الدخول';
-      if (backendDetail && typeof backendDetail === 'string' && backendDetail.toLowerCase() !== msg.toLowerCase()) {
-        msg = `${msg} — ${backendDetail}`;
-      }
-      if (typeof status === 'number') {
-        msg = `${msg} (HTTP ${status})`;
-      }
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   if (authStatus === 'checking') {
     return (
@@ -3294,152 +3305,224 @@ export default function Home() {
   }
 
   if (!isAuthed) {
-    const inputClass = isLightTheme
-      ? 'w-full pl-9 pr-3 bg-white/80 border border-orange-200/70 rounded-lg py-2 text-sm text-gray-800 placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-300 transition'
-      : 'w-full pl-9 pr-3 bg-chatBg border border-chatDivider rounded py-2 text-sm text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-green-600';
-    const formClass = isLightTheme
-      ? 'w-full max-w-sm bg-white/80 border border-orange-100/80 backdrop-blur-md rounded-3xl p-10 pt-12 flex flex-col gap-7 shadow-[0_35px_60px_-15px_rgba(255,153,51,0.35)] text-gray-700'
-      : 'w-full max-w-sm bg-chatPanel border border-chatDivider rounded-2xl p-10 pt-12 flex flex-col gap-7 shadow-2xl/40';
-    const checkboxClasses = isLightTheme
-      ? 'accent-orange-400'
-      : 'accent-green-600';
-    const labelTextClass = isLightTheme ? 'text-gray-600' : '';
-    const inputIconClass = isLightTheme ? 'text-orange-300' : 'text-gray-400';
-    const submitClass = isLightTheme
-      ? 'bg-gradient-to-r from-orange-400 via-orange-500 to-orange-600 hover:from-orange-500 hover:to-orange-700 text-white shadow-lg disabled:opacity-60 rounded-lg py-2 font-semibold text-sm transition'
-      : 'bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded py-2 font-semibold text-sm';
     const toggleButtonClass = isLightTheme
       ? 'text-orange-400 hover:text-orange-500 bg-white/70 border border-orange-200/60 shadow-sm'
       : 'text-yellow-300 hover:text-yellow-200 bg-chatPanel/60 border border-chatDivider shadow-lg';
     const toggleIcon = isLightTheme ? <MoonIcon className="w-5 h-5" /> : <SunIcon className="w-5 h-5" />;
-    const displayedContactLinks = contactLinks.slice(0, 10);
+    const displayedContactLinks = contactLinks.slice(0, 8);
     const hasContactLinks = displayedContactLinks.length > 0;
-    const consentTextClass = isLightTheme ? 'text-xs text-gray-500 text-center leading-relaxed' : 'text-xs text-gray-400 text-center leading-relaxed';
-    const consentLinkClass = isLightTheme ? 'text-blue-600 hover:text-blue-500 underline-offset-2 hover:underline' : 'text-blue-400 hover:text-blue-300 underline-offset-2 hover:underline';
     const contactIconButtonBase = isLightTheme
-      ? 'group relative flex h-14 w-14 items-center justify-center rounded-2xl overflow-hidden border border-white/60 bg-white/70 shadow-[0_24px_50px_-28px_rgba(249,115,22,0.55)] backdrop-blur-sm transition-all duration-300 hover:-translate-y-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300/60'
-      : 'group relative flex h-14 w-14 items-center justify-center rounded-2xl overflow-hidden border border-white/10 bg-white/5 shadow-[0_24px_50px_-28px_rgba(14,165,233,0.45)] backdrop-blur-sm transition-all duration-300 hover:-translate-y-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40';
+      ? 'group relative flex h-14 w-14 items-center justify-center rounded-2xl overflow-hidden border border-white/60 bg-white/70 shadow-[0_24px_50px_-28px_rgba(249,115,22,0.35)] backdrop-blur-sm transition-all duration-300 hover:-translate-y-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300/60'
+      : 'group relative flex h-14 w-14 items-center justify-center rounded-2xl overflow-hidden border border-white/10 bg-white/5 shadow-[0_24px_50px_-28px_rgba(14,165,233,0.35)] backdrop-blur-sm transition-all duration-300 hover:-translate-y-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40';
     const contactGlowBase = 'pointer-events-none absolute inset-0 rounded-2xl blur-xl opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-focus-visible:opacity-100';
     const contactIconInnerBase = 'relative z-[1] flex h-11 w-11 items-center justify-center rounded-2xl transition-transform duration-300 group-hover:scale-[1.08] group-focus-visible:scale-[1.08]';
+    const countdownMinutes = Math.floor(Math.max(0, qrCountdown) / 60);
+    const countdownSeconds = Math.max(0, qrCountdown) % 60;
+    const countdownLabel = `${String(countdownMinutes).padStart(2, '0')}:${String(countdownSeconds).padStart(2, '0')}`;
+    const countdownVariant = qrCountdown <= 10 ? 'text-red-500' : (isLightTheme ? 'text-emerald-600' : 'text-emerald-200');
+  const heroTitle = (loginConfig.hero_title || DEFAULT_LOGIN_PAGE_STATE.hero_title).trim();
+  const heroDescription = ((loginConfig.hero_description ?? DEFAULT_LOGIN_PAGE_STATE.hero_description) ?? '').trim();
+  const instructionsTitle = ((loginConfig.instructions_title ?? DEFAULT_LOGIN_PAGE_STATE.instructions_title) ?? '').trim();
+  const stayLoggedInLabel = ((loginConfig.stay_logged_in_label ?? DEFAULT_LOGIN_PAGE_STATE.stay_logged_in_label) ?? '').trim();
+  const stayLoggedInHint = ((loginConfig.stay_logged_in_hint ?? DEFAULT_LOGIN_PAGE_STATE.stay_logged_in_hint) ?? '').trim();
+    const alternateLoginLabel = (loginConfig.alternate_login_label || '').trim();
+    const alternateLoginUrl = (loginConfig.alternate_login_url || '').trim();
+  const footerNote = ((loginConfig.footer_note ?? DEFAULT_LOGIN_PAGE_STATE.footer_note) ?? '').trim();
+  const footerSecondary = ((loginConfig.footer_secondary_note ?? DEFAULT_LOGIN_PAGE_STATE.footer_secondary_note) ?? '').trim();
+  const footerBrand = ((loginConfig.footer_brand_name ?? DEFAULT_LOGIN_PAGE_STATE.footer_brand_name) ?? '').trim();
+  const footerYear = ((loginConfig.footer_year_override ?? loginConfig.footer_year ?? DEFAULT_LOGIN_PAGE_STATE.footer_year) ?? new Date().getFullYear().toString()).trim();
 
     return (
-      <div className={`relative min-h-screen flex items-center justify-center p-6 md:p-8 transition-colors duration-500 ${isLightTheme ? 'bg-gradient-to-br from-white via-orange-50 to-orange-100 text-gray-900' : 'bg-chatBg text-gray-100'}`}>
+      <div className={`relative min-h-screen flex flex-col p-6 md:p-10 transition-colors duration-500 ${isLightTheme ? 'bg-gradient-to-br from-white via-orange-50 to-orange-100 text-gray-900' : 'bg-chatBg text-gray-100'}`}>
         <button
           type="button"
           onClick={toggleTheme}
-          className={`absolute top-6 right-6 md:top-8 md:right-8 grid place-items-center w-11 h-11 rounded-full backdrop-blur transition ${toggleButtonClass}`}
+          className={`fixed top-6 right-6 md:top-8 md:right-8 grid place-items-center w-11 h-11 rounded-full backdrop-blur transition ${toggleButtonClass}`}
           aria-label={isLightTheme ? 'تفعيل الوضع الداكن' : 'تفعيل الوضع الفاتح'}
           title={isLightTheme ? 'تفعيل الوضع الداكن' : 'تفعيل الوضع الفاتح'}
         >
           {toggleIcon}
         </button>
-        <div className="flex w-full flex-col items-center gap-6">
-          <form onSubmit={handleLogin} className={`${formClass} transition-all duration-500`}>
-          <div className="flex flex-col items-center gap-4 -mt-2">
-            <img
-              src={brandingLogo || DEFAULT_BRANDING_LOGO}
-              alt="شعار التطبيق"
-              className="h-40 md:h-52 w-auto object-contain drop-shadow-xl transition-all duration-200"
-              onError={(e)=>{
-                const target = e.currentTarget as HTMLImageElement & { dataset: DOMStringMap & { fallbackApplied?: string } };
-                if (target.dataset.fallbackApplied !== '1') {
-                  target.dataset.fallbackApplied = '1';
-                  target.src = DEFAULT_BRANDING_LOGO;
-                }
-              }}
-            />
-          </div>
-          {error && <div className={`${isLightTheme ? 'text-red-500' : 'text-red-400'} text-xs text-center`}>{error}</div>}
-          <div className="flex items-center justify-between text-xs">
-            <label className={`flex items-center gap-2 cursor-pointer select-none ${labelTextClass}`}>
-              <input
-                type="checkbox"
-                className={checkboxClasses}
-                checked={useTeamLogin}
-                onChange={e=>{ setUseTeamLogin(e.target.checked); try { localStorage.setItem('useTeamLogin', e.target.checked ? '1' : '0'); } catch {} }}
-              />
-              <span>تسجيل دخول عضو فريق</span>
-            </label>
+
+        <div className="w-full max-w-6xl mx-auto flex-1 flex flex-col gap-12">
+          <div className="flex flex-col lg:flex-row gap-10 lg:gap-16 items-start">
+            <div className="flex-1 flex flex-col gap-6 order-2 lg:order-1">
+              <div className="flex items-center gap-4">
+                <img
+                  src={brandingLogo || DEFAULT_BRANDING_LOGO}
+                  alt="شعار متطابقا"
+                  className="w-16 h-16 rounded-3xl object-contain shadow-lg"
+                  onError={(e) => {
+                    const target = e.currentTarget as HTMLImageElement & { dataset: DOMStringMap & { fallbackApplied?: string } };
+                    if (target.dataset.fallbackApplied !== '1') {
+                      target.dataset.fallbackApplied = '1';
+                      target.src = DEFAULT_BRANDING_LOGO;
+                    }
+                  }}
+                />
+                <div>
+                  <p className={`text-xs uppercase tracking-[0.3em] ${isLightTheme ? 'text-orange-400/80' : 'text-emerald-200/80'}`}>login</p>
+                  <h1 className="text-3xl md:text-4xl font-black leading-snug">{heroTitle || 'تسجيل دخول سريع'}</h1>
+                </div>
+              </div>
+              {heroDescription && (
+                <p className={`max-w-xl text-base leading-8 ${isLightTheme ? 'text-gray-600' : 'text-gray-300'}`}>
+                  {heroDescription}
+                </p>
+              )}
+              <div className={`rounded-3xl border px-6 py-5 flex items-center gap-4 ${isLightTheme ? 'bg-white/80 border-orange-100 shadow-[0_25px_45px_-20px_rgba(249,115,22,0.25)]' : 'bg-white/5 border-white/10 backdrop-blur-sm shadow-[0_25px_45px_-20px_rgba(16,185,129,0.4)]'}`}>
+                <div className={`flex flex-col ${isLightTheme ? 'text-gray-700' : 'text-gray-100'}`}>
+                  <span className="text-sm font-semibold flex items-center gap-2">
+                    <FaRegClock className={countdownVariant} />
+                    تنتهي صلاحية الرمز خلال
+                    <span className={`font-bold text-lg ${countdownVariant}`}>{countdownLabel}</span>
+                  </span>
+                  <span className="text-xs opacity-70">
+                    يتم تحديث الرمز تلقائياً للحفاظ على الأمان.
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="w-full max-w-sm order-1 lg:order-2">
+              <div className={`relative overflow-hidden rounded-[28px] p-6 flex flex-col gap-5 border ${isLightTheme ? 'bg-white/90 border-white shadow-[0_35px_60px_-15px_rgba(249,115,22,0.35)]' : 'bg-[#0F172A]/70 border-white/10 shadow-[0_35px_60px_-15px_rgba(16,185,129,0.35)] backdrop-blur-lg'}`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className={`text-xs uppercase tracking-[0.25em] ${isLightTheme ? 'text-orange-400/70' : 'text-emerald-200/70'}`}>scan</span>
+                    <h2 className="text-lg font-semibold">ادخل لحسابك الآن</h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => refreshLoginQr()}
+                    disabled={qrRefreshing}
+                    className={`inline-flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-full transition ${isLightTheme ? 'bg-orange-50 text-orange-500 hover:bg-orange-100 disabled:opacity-60' : 'bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-60'}`}
+                  >
+                    <FiRefreshCw className={qrRefreshing ? 'animate-spin' : ''} />
+                    تحديث الرمز
+                  </button>
+                </div>
+
+                <div className="relative aspect-square w-full rounded-3xl bg-white flex items-center justify-center overflow-hidden">
+                  {loginQrDataUrl ? (
+                    <>
+                      <img src={loginQrDataUrl} alt="رمز تسجيل الدخول" className="w-full h-full object-contain" />
+                      {qrOverlayLogo && (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className={`w-20 h-20 rounded-3xl flex items-center justify-center shadow-xl ${isLightTheme ? 'bg-white/85' : 'bg-white/90'}`}>
+                            <img src={qrOverlayLogo} alt="شعار الرمز" className="w-12 h-12 object-contain" />
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className={`w-full h-full flex flex-col items-center justify-center gap-3 text-center ${isLightTheme ? 'text-gray-500' : 'text-gray-300'}`}>
+                      <div className="w-16 h-16 rounded-2xl border-2 border-dashed border-current animate-pulse" />
+                      <span className="text-sm">جاري إنشاء الرمز...</span>
+                    </div>
+                  )}
+                </div>
+
+                {loginError && (
+                  <div className="text-xs text-red-400 text-center">
+                    {loginError}
+                  </div>
+                )}
+
+                {stayLoggedInLabel && (
+                  <div className={`rounded-2xl border px-4 py-3 ${isLightTheme ? 'bg-orange-50/80 border-orange-100 text-orange-600' : 'bg-white/5 border-white/10 text-emerald-200/90'}`}>
+                    <div className="text-sm font-semibold">{stayLoggedInLabel}</div>
+                    {stayLoggedInHint && <div className="text-xs mt-1 leading-5 opacity-80">{stayLoggedInHint}</div>}
+                  </div>
+                )}
+
+                {alternateLoginLabel && alternateLoginUrl && (
+                  <a
+                    href={alternateLoginUrl}
+                    className={`text-xs font-semibold underline underline-offset-4 text-center ${isLightTheme ? 'text-blue-600 hover:text-blue-500' : 'text-blue-300 hover:text-blue-200'}`}
+                  >
+                    {alternateLoginLabel}
+                  </a>
+                )}
+              </div>
+            </div>
           </div>
 
-          {useTeamLogin ? (
-            <>
-              {/* Owner username */}
-              <div className="relative">
-                <span className={`pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 ${inputIconClass}`}>
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-                    <path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm0 2c-3.866 0-7 3.134-7 7h2a5 5 0 0 1 10 0h2c0-3.866-3.134-7-7-7z" />
-                  </svg>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className={`rounded-3xl border p-6 ${isLightTheme ? 'bg-white/80 border-white shadow-[0_30px_60px_-30px_rgba(249,115,22,0.35)]' : 'bg-white/5 border-white/10 backdrop-blur-sm shadow-[0_30px_60px_-30px_rgba(16,185,129,0.4)]'}`}>
+              <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                <span className={`inline-flex items-center justify-center w-9 h-9 rounded-2xl font-semibold ${isLightTheme ? 'bg-orange-500/10 text-orange-500' : 'bg-emerald-400/10 text-emerald-200'}`}>
+                  ①
                 </span>
-                <input value={ownerUsername} onChange={e=>setOwnerUsername(e.target.value)} placeholder="اسم مستخدم المالك" className={inputClass} />
-              </div>
-              {/* Team username */}
-              <div className="relative">
-                <span className={`pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 ${inputIconClass}`}>
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-                    <path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm0 2c-3.866 0-7 3.134-7 7h2a5 5 0 0 1 10 0h2c0-3.866-3.134-7-7-7z" />
-                  </svg>
-                </span>
-                <input value={teamUsername} onChange={e=>setTeamUsername(e.target.value)} placeholder="اسم مستخدم عضو الفريق" className={inputClass} />
-              </div>
-              {/* Password with eye toggle */}
-              <PasswordField value={password} onChange={setPassword} tone={isLightTheme ? 'light' : 'dark'} inputClassName={inputClass} />
-            </>
-          ) : (
-            <>
-              {/* Username with icon */}
-              <div className="relative">
-                <span className={`pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 ${inputIconClass}`}>
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-                    <path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm0 2c-3.866 0-7 3.134-7 7h2a5 5 0 0 1 10 0h2c0-3.866-3.134-7-7-7z" />
-                  </svg>
-                </span>
-                <input value={identifier} onChange={e=>setIdentifier(e.target.value)} placeholder="اسم المستخدم أو البريد" className={inputClass} />
-              </div>
-              {/* Password with eye toggle */}
-              <PasswordField value={password} onChange={setPassword} tone={isLightTheme ? 'light' : 'dark'} inputClassName={inputClass} />
-            </>
-          )}
-          <button disabled={loading} className={submitClass}>{loading ? '...' : 'دخول'}</button>
-          <p className={consentTextClass}>
-            تسجيل الدخول يؤكد موافقتك على
-            {' '}
-            <a href="/terms" className={consentLinkClass}>
-              شروط الاستخدام
-            </a>
-            {' '}
-            و
-            {' '}
-            <a href="/policy" className={consentLinkClass}>
-              سياسة الخصوصية
-            </a>
-            .
-          </p>
-          {hasContactLinks && (
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-3" dir="ltr">
-              {displayedContactLinks.map((link) => {
-                const { Icon, bubbleClass, iconClass } = link.meta;
-                return (
-                  <a
-                    key={link.id}
-                    href={link.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={contactIconButtonBase}
-                    title={link.display}
-                    aria-label={link.display}
-                  >
-                    <span aria-hidden className={`${contactGlowBase} ${link.meta.glowClass ?? 'bg-orange-400/30'}`} />
-                    <span className={`${contactIconInnerBase} ${bubbleClass}`}>
-                      <Icon className={`h-6 w-6 ${iconClass}`} aria-hidden="true" />
-                    </span>
-                    <span className="sr-only">{link.display}</span>
-                  </a>
-                );
-              })}
+                {instructionsTitle || 'خطوات العمل'}
+              </h3>
+              <ol className="space-y-4">
+                {sortedInstructions.length > 0 ? (
+                  sortedInstructions.map((step, idx) => {
+                    const title = (step.title || '').trim();
+                    const description = (step.description || '').trim();
+                    return (
+                      <li key={step.id ?? `${idx}-${title}`}
+                        className={`flex items-start gap-4 rounded-2xl border p-4 ${isLightTheme ? 'border-orange-100 bg-white/70' : 'border-white/10 bg-white/5'}`}>
+                        <span className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl font-semibold text-base ${isLightTheme ? 'bg-orange-500/15 text-orange-500' : 'bg-emerald-400/15 text-emerald-200'}`}>
+                          {idx + 1}
+                        </span>
+                        <div className="flex-1 space-y-1">
+                          {title && <h4 className="text-sm font-semibold">{title}</h4>}
+                          {description && <p className="text-sm leading-6 opacity-80">{description}</p>}
+                        </div>
+                      </li>
+                    );
+                  })
+                ) : (
+                  <li className="text-sm opacity-70">تابع التعليمات على تطبيق الهاتف لإكمال تسجيل الدخول.</li>
+                )}
+              </ol>
             </div>
-          )}
-        </form>
+
+            <div className={`rounded-3xl border p-6 flex flex-col gap-6 ${isLightTheme ? 'bg-white/70 border-white shadow-[0_30px_60px_-30px_rgba(249,115,22,0.35)]' : 'bg-white/5 border-white/10 backdrop-blur-sm shadow-[0_30px_60px_-30px_rgba(16,185,129,0.4)]'}`}>
+              <div>
+                <h3 className="text-lg font-bold mb-2">{loginConfig.footer_links_label || DEFAULT_LOGIN_PAGE_STATE.footer_links_label}</h3>
+                <p className={`text-sm leading-6 ${isLightTheme ? 'text-gray-600' : 'text-gray-300'}`}>
+                  {footerNote}
+                </p>
+              </div>
+
+              {hasContactLinks && (
+                <div className="flex flex-wrap items-center gap-3" dir="ltr">
+                  {displayedContactLinks.map((link) => {
+                    const { Icon, bubbleClass, iconClass } = link.meta;
+                    return (
+                      <a
+                        key={link.id}
+                        href={link.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={contactIconButtonBase}
+                        title={link.display}
+                        aria-label={link.display}
+                      >
+                        <span aria-hidden className={`${contactGlowBase} ${link.meta.glowClass ?? 'bg-orange-400/30'}`} />
+                        <span className={`${contactIconInnerBase} ${bubbleClass}`}>
+                          <Icon className={`h-6 w-6 ${iconClass}`} aria-hidden="true" />
+                        </span>
+                        <span className="sr-only">{link.display}</span>
+                      </a>
+                    );
+                  })}
+                </div>
+              )}
+
+              {footerSecondary && (
+                <div className={`text-sm leading-6 ${isLightTheme ? 'text-gray-500' : 'text-gray-400'}`}>
+                  {footerSecondary}
+                </div>
+              )}
+
+              <div className={`mt-auto text-xs uppercase tracking-[0.3em] ${isLightTheme ? 'text-gray-400' : 'text-gray-500'}`}>
+                {footerBrand} © {footerYear || new Date().getFullYear()}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -3524,7 +3607,7 @@ export default function Home() {
                             setContacts(prev.map(c=> c.id===contact.id ? { ...c, isMuted: !c.isMuted } : c));
                             try {
                               if (contact.isMuted) await apiClient.unmuteConversation(contact.id); else await apiClient.muteConversation(contact.id);
-                            } catch {
+                            } catch (_err) {
                               setContacts(prev);
                             } finally {
                               setMuteBusyFor(null);
@@ -3646,7 +3729,7 @@ export default function Home() {
                                 setContacts(prev.map(c=> c.id===contact.id ? { ...c, isMuted: !c.isMuted } : c));
                                 try {
                                   if (contact.isMuted) await apiClient.unmuteConversation(contact.id); else await apiClient.muteConversation(contact.id);
-                                } catch {
+                                } catch (_err) {
                                   setContacts(prev);
                                 } finally {
                                   setMuteBusyFor(null);
@@ -4313,7 +4396,7 @@ export default function Home() {
                     setPendingAttachment(f);
                     // نظّف قيمة المدخل للسماح باختيار نفس الملف لاحقاً
                     (e.target as HTMLInputElement).value = '';
-                  } catch {}
+                  } catch (_err) {}
                 }} />
                 <button className="text-gray-400 hover:text-white" title="إرفاق" onClick={()=>{ const el = document.getElementById('chat_file_input') as HTMLInputElement|null; el?.click(); }}><svg xmlns='http://www.w3.org/2000/svg' className='h-5 w-5' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M15.172 7l-6.586 6.586a2 2 0 102.828 2.828L18 9.828a4 4 0 10-5.656-5.656L6.343 10.172'/></svg></button>
                 <div className="relative">

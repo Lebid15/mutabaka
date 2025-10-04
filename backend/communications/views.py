@@ -19,6 +19,7 @@ from .models import (
     TeamMember,
     ConversationMember,
     BrandingSetting,
+    LoginPageSetting,
     PrivacyPolicy,
     ContactLink,
     get_conversation_viewer_ids,
@@ -31,6 +32,7 @@ from .serializers import (
     ConversationMemberSerializer,
     ContactLinkSerializer,
     PrivacyPolicySerializer,
+    LoginPageSettingSerializer,
 )
 from .permissions import IsParticipant
 from django.conf import settings
@@ -1820,6 +1822,71 @@ class BrandingView(APIView):
                 except Exception:
                     url = None
         return Response({'logo_url': url})
+
+
+class LoginPageView(APIView):
+    permission_classes = [AllowAny]
+
+    def _get_branding_logo(self, request):
+        branding = BrandingSetting.objects.filter(active=True).order_by('-updated_at', '-id').first()
+        if not branding or not getattr(branding, 'logo', None):
+            return None
+        try:
+            return request.build_absolute_uri(branding.logo.url)
+        except Exception:
+            try:
+                return branding.logo.url
+            except Exception:
+                return None
+
+    def _default_payload(self):
+        try:
+            current_year = str(timezone.now().year)
+        except Exception:
+            from datetime import datetime
+            current_year = str(datetime.utcnow().year)
+        return {
+            'id': None,
+            'hero_title': "طريقة تسجيل الدخول إلى حسابك في موقع مطابقة ويب:",
+            'hero_description': "اتبع الخطوات التالية لإتمام الربط عبر رمز QR من تطبيق مطابقة على هاتفك.",
+            'instructions_title': "خطوات تسجيل الدخول:",
+            'stay_logged_in_label': "ابقَ مسجل الدخول على هذا المتصفح",
+            'stay_logged_in_hint': "استخدم هذا الخيار على أجهزتك الشخصية فقط.",
+            'alternate_login_label': "تسجيل الدخول برقم الهاتف",
+            'alternate_login_url': "",
+            'footer_links_label': "شروط الاستخدام و سياسة الخصوصية",
+            'footer_note': "تابعنا أو تواصل معنا عبر القنوات التالية:",
+            'footer_secondary_note': "جميع الحقوق محفوظة لموقع مطابقة",
+            'footer_brand_name': "Mutabaka",
+            'footer_year_override': "",
+            'login_logo_url': None,
+            'qr_overlay_logo_url': None,
+            'footer_year': current_year,
+            'instructions': [
+                {'id': None, 'title': "", 'description': "افتح تطبيق <strong>مطابقة</strong> على هاتفك النقّال", 'icon_hint': "app", 'display_order': 1},
+                {'id': None, 'title': "", 'description': "اضغط على زر القائمة ⋮ في التطبيق", 'icon_hint': "menu", 'display_order': 2},
+                {'id': None, 'title': "", 'description': "انتقل إلى قسم <strong>الأجهزة المرتبطة</strong> ثم اختر <strong>ربط جهاز</strong>", 'icon_hint': "devices", 'display_order': 3},
+                {'id': None, 'title': "", 'description': "وجّه الكاميرا نحو رمز QR ليتم تسجيل دخولك تلقائيًا", 'icon_hint': "scan", 'display_order': 4},
+            ],
+        }
+
+    def get(self, request):
+        setting = (
+            LoginPageSetting.objects.filter(is_active=True)
+            .prefetch_related('instructions')
+            .order_by('-updated_at', '-id')
+            .first()
+        )
+        if setting:
+            serializer = LoginPageSettingSerializer(setting, context={'request': request})
+            payload = serializer.data
+        else:
+            payload = self._default_payload()
+        if not payload.get('login_logo_url'):
+            branding_logo = self._get_branding_logo(request)
+            if branding_logo:
+                payload['login_logo_url'] = branding_logo
+        return Response(payload)
 
 
 class ContactLinkListView(APIView):

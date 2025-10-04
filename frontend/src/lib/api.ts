@@ -5,6 +5,67 @@ import { API_BASE, WS_BASE, WS_PATH_CONVERSATION, WS_PATH_INBOX, defaultReconnec
 
 export type Tokens = { access: string; refresh: string };
 
+export type LoginInstructionConfig = {
+  id: number | null;
+  title: string;
+  description: string;
+  icon_hint?: string | null;
+  display_order?: number | null;
+};
+
+export type LoginPageConfig = {
+  id: number | null;
+  hero_title: string;
+  hero_description?: string | null;
+  instructions_title?: string | null;
+  stay_logged_in_label?: string | null;
+  stay_logged_in_hint?: string | null;
+  alternate_login_label?: string | null;
+  alternate_login_url?: string | null;
+  footer_links_label?: string | null;
+  footer_note?: string | null;
+  footer_secondary_note?: string | null;
+  footer_brand_name?: string | null;
+  footer_year?: string | null;
+  footer_year_override?: string | null;
+  login_logo_url?: string | null;
+  qr_overlay_logo_url?: string | null;
+  instructions: LoginInstructionConfig[];
+};
+
+export type LoginQrPayload = {
+  payload: string;
+  expires_in: number;
+};
+
+export type LoginInstructionPayload = {
+  id: number | null;
+  title: string;
+  description: string;
+  icon_hint: string | null;
+  display_order: number;
+};
+
+export type LoginPagePayload = {
+  id: number | null;
+  hero_title: string;
+  hero_description: string;
+  instructions_title: string;
+  stay_logged_in_label: string;
+  stay_logged_in_hint: string;
+  alternate_login_label: string;
+  alternate_login_url: string;
+  footer_links_label: string;
+  footer_note: string;
+  footer_secondary_note: string;
+  footer_brand_name: string;
+  footer_year_override: string;
+  login_logo_url: string | null;
+  qr_overlay_logo_url: string | null;
+  footer_year: string;
+  instructions: LoginInstructionPayload[];
+};
+
 class APIClient {
   baseUrl: string;
   access: string | null = null;
@@ -647,6 +708,62 @@ class APIClient {
     }
   }
 
+  async getLoginPagePayload(): Promise<LoginPagePayload | null> {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/login-page`);
+      if (!res.ok) return null;
+      const data = await res.json().catch(() => null);
+      if (!data || typeof data !== 'object') return null;
+      const normalizeString = (value: any): string => (typeof value === 'string' ? value : '');
+      const normalizeMaybeString = (value: any): string | null => {
+        if (value === null || value === undefined) return null;
+        return typeof value === 'string' ? value : String(value ?? '');
+      };
+      const instructionsRaw = Array.isArray((data as any).instructions) ? (data as any).instructions : [];
+      const instructions: LoginInstructionPayload[] = instructionsRaw
+        .map((item: any, idx: number) => {
+          const description = normalizeString(item?.description);
+          if (!description.trim()) return null;
+          const idRaw = item?.id;
+          const id = typeof idRaw === 'number' ? idRaw : (Number.isFinite(Number(idRaw)) ? Number(idRaw) : null);
+          const icon = normalizeString(item?.icon_hint);
+          const title = normalizeString(item?.title);
+          const orderRaw = item?.display_order;
+          const display_order = Number.isFinite(Number(orderRaw)) ? Number(orderRaw) : idx;
+          return {
+            id,
+            title,
+            description,
+            icon_hint: icon || null,
+            display_order,
+          } as LoginInstructionPayload;
+        })
+  .filter((item: LoginInstructionPayload | null): item is LoginInstructionPayload => Boolean(item));
+      instructions.sort((a, b) => a.display_order - b.display_order);
+      return {
+        id: typeof (data as any).id === 'number' ? (data as any).id : null,
+        hero_title: normalizeString((data as any).hero_title),
+        hero_description: normalizeString((data as any).hero_description),
+        instructions_title: normalizeString((data as any).instructions_title),
+        stay_logged_in_label: normalizeString((data as any).stay_logged_in_label),
+        stay_logged_in_hint: normalizeString((data as any).stay_logged_in_hint),
+        alternate_login_label: normalizeString((data as any).alternate_login_label),
+        alternate_login_url: normalizeString((data as any).alternate_login_url),
+        footer_links_label: normalizeString((data as any).footer_links_label),
+        footer_note: normalizeString((data as any).footer_note),
+        footer_secondary_note: normalizeString((data as any).footer_secondary_note),
+        footer_brand_name: normalizeString((data as any).footer_brand_name) || 'Mutabaka',
+        footer_year_override: normalizeString((data as any).footer_year_override),
+        login_logo_url: normalizeMaybeString((data as any).login_logo_url),
+        qr_overlay_logo_url: normalizeMaybeString((data as any).qr_overlay_logo_url),
+        footer_year: normalizeString((data as any).footer_year) || new Date().getFullYear().toString(),
+        instructions,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   async getContactLinks(): Promise<Array<{ id: number; icon: string; icon_display: string; label: string; value: string }>> {
     try {
       const res = await fetch(`${this.baseUrl}/api/contact-links`);
@@ -673,6 +790,125 @@ class APIClient {
         .filter((item): item is { id: number; icon: string; icon_display: string; label: string; value: string } => Boolean(item));
     } catch {
       return [];
+    }
+  }
+
+  async getLoginPageConfig(): Promise<LoginPageConfig> {
+    const fallback = (): LoginPageConfig => ({
+      id: null,
+      hero_title: 'طريقة تسجيل الدخول إلى حسابك في موقع مطابقة ويب:',
+      hero_description: 'اتبع الخطوات التالية لإتمام الربط عبر رمز QR من تطبيق مطابقة على هاتفك.',
+      instructions_title: 'خطوات تسجيل الدخول:',
+      stay_logged_in_label: 'ابقَ مسجل الدخول على هذا المتصفح',
+      stay_logged_in_hint: 'استخدم هذا الخيار على أجهزتك الشخصية فقط.',
+      alternate_login_label: 'تسجيل الدخول برقم الهاتف',
+      alternate_login_url: '',
+      footer_links_label: 'شروط الاستخدام و سياسة الخصوصية',
+      footer_note: 'تابعنا أو تواصل معنا عبر القنوات التالية:',
+      footer_secondary_note: 'جميع الحقوق محفوظة لموقع مطابقة',
+      footer_brand_name: 'Mutabaka',
+      footer_year_override: '',
+      footer_year: new Date().getFullYear().toString(),
+      login_logo_url: null,
+      qr_overlay_logo_url: null,
+      instructions: [
+        { id: null, title: '', description: 'افتح تطبيق مطابقة على هاتفك النقّال', icon_hint: 'app', display_order: 1 },
+        { id: null, title: '', description: 'اضغط على زر القائمة ⋮ في التطبيق', icon_hint: 'menu', display_order: 2 },
+        { id: null, title: '', description: 'اذهب إلى قسم الأجهزة المرتبطة ثم اختر ربط جهاز', icon_hint: 'devices', display_order: 3 },
+        { id: null, title: '', description: 'وجّه الكاميرا نحو رمز QR ليتم تسجيل دخولك تلقائيًا', icon_hint: 'scan', display_order: 4 },
+      ],
+    });
+
+    const defaults = fallback();
+
+    try {
+      const payload = await this.getLoginPagePayload();
+      if (!payload) return defaults;
+
+      const sanitize = (value: string | null | undefined, fallback: string | null = null): string | null => {
+        if (typeof value === 'string') {
+          const trimmed = value.trim();
+          if (trimmed.length > 0) return trimmed;
+        }
+        if (typeof fallback === 'string' && fallback.trim().length > 0) {
+          return fallback.trim();
+        }
+        return null;
+      };
+
+      const mapInstructions = (): LoginInstructionConfig[] => {
+        const items = Array.isArray(payload.instructions) ? payload.instructions : [];
+        return items
+          .map((item, idx) => {
+            const description = sanitize(item?.description, null);
+            if (!description) return null;
+            const title = sanitize(item?.title, '') || '';
+            const iconHint = sanitize(item?.icon_hint, null);
+            const orderRaw = Number.isFinite(item?.display_order) ? Number(item.display_order) : Number(item?.display_order ?? idx + 1);
+            const display_order = Number.isFinite(orderRaw) ? Number(orderRaw) : idx + 1;
+            const id = Number.isFinite(item?.id) ? Number(item.id) : (Number.isFinite(Number(item?.id)) ? Number(item?.id) : null);
+            return {
+              id,
+              title,
+              description,
+              icon_hint: iconHint,
+              display_order,
+            } as LoginInstructionConfig;
+          })
+          .filter((entry): entry is LoginInstructionConfig => Boolean(entry));
+      };
+
+      const instructions = mapInstructions();
+
+      const config: LoginPageConfig = {
+        id: Number.isFinite(payload.id) ? Number(payload.id) : null,
+        hero_title: sanitize(payload.hero_title, defaults.hero_title) || defaults.hero_title,
+        hero_description: sanitize(payload.hero_description, defaults.hero_description) || defaults.hero_description,
+        instructions_title: sanitize(payload.instructions_title, defaults.instructions_title) || defaults.instructions_title,
+        stay_logged_in_label: sanitize(payload.stay_logged_in_label, defaults.stay_logged_in_label) || defaults.stay_logged_in_label,
+        stay_logged_in_hint: sanitize(payload.stay_logged_in_hint, defaults.stay_logged_in_hint) || defaults.stay_logged_in_hint,
+        alternate_login_label: sanitize(payload.alternate_login_label, defaults.alternate_login_label) || defaults.alternate_login_label,
+        alternate_login_url: sanitize(payload.alternate_login_url, null),
+        footer_links_label: sanitize(payload.footer_links_label, defaults.footer_links_label) || defaults.footer_links_label,
+        footer_note: sanitize(payload.footer_note, defaults.footer_note) || defaults.footer_note,
+        footer_secondary_note: sanitize(payload.footer_secondary_note, defaults.footer_secondary_note) || defaults.footer_secondary_note,
+        footer_brand_name: sanitize(payload.footer_brand_name, defaults.footer_brand_name) || defaults.footer_brand_name,
+        footer_year_override: sanitize(payload.footer_year_override, null),
+        footer_year: sanitize(payload.footer_year, defaults.footer_year) || defaults.footer_year,
+        login_logo_url: sanitize(payload.login_logo_url, null),
+        qr_overlay_logo_url: sanitize(payload.qr_overlay_logo_url, null),
+        instructions: instructions.length > 0 ? instructions : defaults.instructions.slice(),
+      };
+
+      return config;
+    } catch {
+      return defaults;
+    }
+  }
+
+  async getLoginQrPayload(): Promise<LoginQrPayload> {
+    const fallback = (): LoginQrPayload => ({
+      payload: `mutabaka://link?token=${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`,
+      expires_in: 60,
+    });
+
+    try {
+      const res = await fetch(`${this.baseUrl}/api/login-qr`);
+      if (!res.ok) {
+        return fallback();
+      }
+      const data = await res.json().catch(() => null);
+      if (!data || typeof data !== 'object') return fallback();
+      const payloadRaw = (data as any).payload || (data as any).qr_payload || (data as any).url || (data as any).qr;
+      const payload = typeof payloadRaw === 'string' && payloadRaw.trim().length ? payloadRaw.trim() : null;
+      const expiresRaw = (data as any).expires_in ?? (data as any).expiresIn ?? (data as any).ttl ?? 60;
+      const expires = Number(expiresRaw);
+      return {
+        payload: payload || fallback().payload,
+        expires_in: Number.isFinite(expires) && expires > 5 ? expires : fallback().expires_in,
+      };
+    } catch {
+      return fallback();
     }
   }
 

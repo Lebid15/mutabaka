@@ -14,6 +14,8 @@ from .models import (
     PushSubscription,
     NotificationSetting,
     BrandingSetting,
+    LoginPageSetting,
+    LoginInstruction,
     PrivacyPolicy,
     ContactLink,
     TeamMember,
@@ -83,6 +85,49 @@ class PrivacyPolicyAdminForm(forms.ModelForm):
 
     class Meta:
         model = PrivacyPolicy
+        fields = "__all__"
+
+
+class LoginInstructionInlineForm(forms.ModelForm):
+    description = forms.CharField(
+        label="الوصف",
+        widget=CKEditorWidget(config_name="default"),
+        required=True,
+    )
+
+    class Meta:
+        model = LoginInstruction
+        fields = "__all__"
+
+
+class LoginInstructionInline(admin.StackedInline):
+    model = LoginInstruction
+    form = LoginInstructionInlineForm
+    extra = 1
+    fields = ("is_active", "display_order", "title", "description", "icon_hint")
+    ordering = ("display_order", "id")
+    show_change_link = True
+
+
+class LoginPageSettingAdminForm(forms.ModelForm):
+    hero_description = forms.CharField(
+        label="وصف العنوان",
+        widget=CKEditorWidget(config_name="default"),
+        required=False,
+    )
+    footer_note = forms.CharField(
+        label="نص التذييل",
+        widget=CKEditorWidget(config_name="default"),
+        required=False,
+    )
+    footer_secondary_note = forms.CharField(
+        label="نص تذييل إضافي",
+        widget=CKEditorWidget(config_name="default"),
+        required=False,
+    )
+
+    class Meta:
+        model = LoginPageSetting
         fields = "__all__"
 
 
@@ -203,6 +248,28 @@ class BrandingSettingAdmin(admin.ModelAdmin):
             pass
         return "-"
     logo_preview.short_description = "Preview"
+
+
+@admin.register(LoginPageSetting)
+class LoginPageSettingAdmin(admin.ModelAdmin):
+    form = LoginPageSettingAdminForm
+    inlines = [LoginInstructionInline]
+    list_display = ("hero_title", "is_active", "updated_at")
+    list_editable = ("is_active",)
+    list_filter = ("is_active",)
+    search_fields = ("hero_title", "hero_description", "footer_note")
+    ordering = ("-updated_at", "-id")
+    fieldsets = (
+        ("الحالة", {"fields": ("is_active",)}),
+        ("الشعار والصور", {"fields": ("login_logo", "qr_overlay_logo")}),
+        ("العنوان", {"fields": ("hero_title", "hero_description", "instructions_title")}),
+        ("خيارات الواجهة", {"fields": ("stay_logged_in_label", "stay_logged_in_hint", "alternate_login_label", "alternate_login_url")}),
+        ("التذييل", {"fields": ("footer_links_label", "footer_note", "footer_secondary_note", "footer_brand_name", "footer_year_override")}),
+    )
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.prefetch_related('instructions')
 
 
 @admin.register(PrivacyPolicy)

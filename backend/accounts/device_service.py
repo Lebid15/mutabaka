@@ -62,7 +62,7 @@ def _issue_pending(device: UserDevice) -> str:
 
 
 def count_active_devices(user) -> int:
-    return UserDevice.objects.filter(user=user, status__in=_ACTIVE_STATUSES).count()
+    return UserDevice.objects.filter(user=user, status__in=_ACTIVE_STATUSES, is_web=False).count()
 
 
 @transaction.atomic
@@ -79,12 +79,12 @@ def link_device(*, user, device_id: Optional[str], label: Optional[str], platfor
 
     if device is None:
         if active_count == 0:
-            device = UserDevice(user=user, status=UserDevice.Status.PRIMARY)
+            device = UserDevice(user=user, status=UserDevice.Status.PRIMARY, is_web=False)
             _set_metadata(device, label=label, platform=platform, app_version=app_version, push_token=push_token)
             device.last_seen_at = now
             device.save()
             return LinkResult(device=device, pending_token=None, requires_replace=False)
-        device = UserDevice(user=user, status=UserDevice.Status.PENDING)
+        device = UserDevice(user=user, status=UserDevice.Status.PENDING, is_web=False)
         _set_metadata(device, label=label, platform=platform, app_version=app_version, push_token=push_token)
         device.save()
         token = _issue_pending(device)
@@ -239,6 +239,7 @@ def serialize_device(device: UserDevice) -> dict:
         'created_at': device.created_at.isoformat() if device.created_at else None,
         'last_seen_at': device.last_seen_at.isoformat() if device.last_seen_at else None,
         'pending_expires_at': device.pending_expires_at.isoformat() if device.pending_expires_at else None,
+        'is_web': device.is_web,
     }
 
 
