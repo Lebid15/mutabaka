@@ -36,6 +36,7 @@ export type LoginPageConfig = {
 export type LoginQrPayload = {
   payload: string;
   expires_in: number;
+  request_id: string | null;
 };
 
 export type LoginInstructionPayload = {
@@ -890,6 +891,7 @@ class APIClient {
     const fallback = (): LoginQrPayload => ({
       payload: `mutabaka://link?token=${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`,
       expires_in: 60,
+      request_id: null,
     });
 
     try {
@@ -903,12 +905,24 @@ class APIClient {
       const payload = typeof payloadRaw === 'string' && payloadRaw.trim().length ? payloadRaw.trim() : null;
       const expiresRaw = (data as any).expires_in ?? (data as any).expiresIn ?? (data as any).ttl ?? 60;
       const expires = Number(expiresRaw);
+      const requestId = (data as any).request_id || null;
       return {
         payload: payload || fallback().payload,
         expires_in: Number.isFinite(expires) && expires > 5 ? expires : fallback().expires_in,
+        request_id: requestId,
       };
     } catch {
       return fallback();
+    }
+  }
+
+  async checkLoginQrStatus(requestId: string): Promise<{ status: string; access?: string; refresh?: string; user?: any }> {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/auth/login-qr/${requestId}/status`);
+      const data = await res.json().catch(() => ({ status: 'error' }));
+      return data;
+    } catch {
+      return { status: 'error' };
     }
   }
 

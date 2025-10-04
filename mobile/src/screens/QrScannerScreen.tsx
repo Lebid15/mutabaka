@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, PermissionsAndroid, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Camera } from 'react-native-camera-kit';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import FeatherIcon from '@expo/vector-icons/Feather';
 import BackgroundGradient from '../components/BackgroundGradient';
@@ -16,6 +16,7 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'QrScanner'>
 
 export default function QrScannerScreen() {
   const navigation = useNavigation<NavigationProp>();
+  const route = useRoute();
   const { tokens } = useThemeMode();
   const [isProcessing, setIsProcessing] = useState(false);
   const [scanned, setScanned] = useState(false);
@@ -118,6 +119,41 @@ export default function QrScannerScreen() {
     },
     [isProcessing, scanned, navigation]
   );
+
+  // Handle deep link parameters - AFTER handleBarCodeRead is defined
+  useEffect(() => {
+    const handleDeepLink = (event: { url: string }) => {
+      const url = event.url;
+      console.log('[QrScanner] Deep link received:', url);
+      
+      if (url && url.startsWith('mutabaka://link')) {
+        handleBarCodeRead({ nativeEvent: { codeStringValue: url } });
+      }
+    };
+
+    // Check if app was opened with a deep link
+    Linking.getInitialURL().then((url) => {
+      if (url && url.startsWith('mutabaka://link')) {
+        console.log('[QrScanner] Initial URL:', url);
+        handleBarCodeRead({ nativeEvent: { codeStringValue: url } });
+      }
+    });
+
+    // Listen for deep links while app is running
+    const subscription = Linking.addEventListener('url', handleDeepLink);
+
+    // Also check route params as fallback
+    const params = route.params as any;
+    if (params?.token && params?.rid) {
+      const payload = `mutabaka://link?token=${params.token}&rid=${params.rid}`;
+      console.log('[QrScanner] Route params detected:', payload);
+      handleBarCodeRead({ nativeEvent: { codeStringValue: payload } });
+    }
+
+    return () => {
+      subscription.remove();
+    };
+  }, [route.params, handleBarCodeRead]);
 
   const handleGoBack = useCallback(() => {
     navigation.goBack();

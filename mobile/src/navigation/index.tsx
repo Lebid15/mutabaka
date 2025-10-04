@@ -80,15 +80,18 @@ export default function RootNavigator() {
   }, [mode, tokens]);
 
   const linking = useMemo<LinkingOptions<RootStackParamList> | undefined>(() => {
-    if (!qaEnabled) {
-      return undefined;
+    const prefixes = ['mutabaka://'];
+    const screens: any = {
+      QrScanner: 'link',
+    };
+    if (qaEnabled) {
+      prefixes.push('qa://');
+      screens.QADevices = 'devices';
     }
     return {
-      prefixes: ['qa://'],
+      prefixes,
       config: {
-        screens: {
-          QADevices: 'devices',
-        },
+        screens,
       },
     };
   }, [qaEnabled]);

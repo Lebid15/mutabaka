@@ -202,7 +202,7 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 # Device management defaults
-USER_DEVICE_MAX_ACTIVE = int(os.getenv('USER_DEVICE_MAX_ACTIVE', '3'))
+USER_DEVICE_MAX_ACTIVE = int(os.getenv('USER_DEVICE_MAX_ACTIVE', '10'))  # زيادة مؤقتة للتطوير
 USER_DEVICE_PENDING_TTL_MINUTES = int(os.getenv('USER_DEVICE_PENDING_TTL_MINUTES', '15'))
 WEB_LOGIN_QR_TTL_SECONDS = int(os.getenv('WEB_LOGIN_QR_TTL_SECONDS', '90'))
 

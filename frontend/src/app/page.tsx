@@ -842,7 +842,7 @@ export default function Home() {
     setQrRefreshing(true);
     setLoginError(null);
     try {
-      const { payload, expires_in } = await apiClient.getLoginQrPayload();
+      const { payload, expires_in, request_id } = await apiClient.getLoginQrPayload();
       const finalPayload = payload || `mutabaka://link?token=${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
       let dataUrl = '';
       try {
@@ -861,6 +861,11 @@ export default function Home() {
       setLoginQrDataUrl(dataUrl);
       const ttl = Number.isFinite(expires_in) ? Math.max(10, Math.floor(expires_in)) : 60;
       setQrExpiryAt(Date.now() + ttl * 1000);
+      
+      // Store request_id for polling
+      if (request_id) {
+        (window as any).__qr_request_id = request_id;
+      }
     } catch (err: any) {
       setLoginError(err?.message || 'تعذّر إنشاء رمز QR. حاول التحديث مرة أخرى.');
       const fallbackPayload = `mutabaka://link?token=${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
@@ -921,6 +926,56 @@ export default function Home() {
     }, Math.max(3000, remainingMs));
     return () => window.clearTimeout(tid);
   }, [qrExpiryAt, isAuthed, refreshLoginQr]);
+
+  // Poll QR status for auto-login
+  useEffect(() => {
+    if (isAuthed || !qrExpiryAt) return;
+    
+    const requestId = (window as any).__qr_request_id;
+    if (!requestId) return;
+
+    let active = true;
+    const pollStatus = async () => {
+      if (!active || isAuthed) return;
+      
+      try {
+        const result = await apiClient.checkLoginQrStatus(requestId);
+        
+        if (!active) return;
+        
+        if (result.status === 'approved' && result.access && result.refresh) {
+          // Auto login!
+          await handleQrLoginSuccess(result.access, result.refresh, result.user);
+        } else if (result.status === 'expired' || result.status === 'consumed') {
+          // QR expired, refresh it
+          refreshLoginQr();
+        }
+      } catch (err) {
+        console.error('[QR Polling] Error:', err);
+      }
+    };
+
+    // Poll every second
+    const interval = setInterval(pollStatus, 1000);
+    
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [isAuthed, qrExpiryAt, apiClient, refreshLoginQr]);
+
+  // Helper function for QR login success
+  const handleQrLoginSuccess = async (access: string, refresh: string, user: any) => {
+    try {
+      await apiClient.saveAuthTokens(access, refresh);
+      setIsAuthed(true);
+      setLoginQrDataUrl('');
+      setQrExpiryAt(null);
+      delete (window as any).__qr_request_id;
+    } catch (err) {
+      console.error('[QR Login] Error saving tokens:', err);
+    }
+  };
 
   // Contacts & conversations
   const [contacts, setContacts] = useState<any[]>([]);
