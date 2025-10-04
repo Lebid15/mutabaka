@@ -1,5 +1,7 @@
 # Real-time (WebSocket) Stable Setup
 
+**Production Ready**: Connected to `https://mutabaka.com`
+
 ## Backend (ASGI)
 Use an ASGI server (recommended `uvicorn`) instead of `runserver` for consistent WebSocket behavior.
 
