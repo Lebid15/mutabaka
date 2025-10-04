@@ -965,16 +965,17 @@ export default function Home() {
   }, [isAuthed, qrExpiryAt, apiClient, refreshLoginQr]);
 
   // Helper function for QR login success
-  const handleQrLoginSuccess = async (access: string, refresh: string, user: any) => {
-    try {
-      await apiClient.saveAuthTokens(access, refresh);
-      setIsAuthed(true);
-      setLoginQrDataUrl('');
-      setQrExpiryAt(null);
-      delete (window as any).__qr_request_id;
-    } catch (err) {
-      console.error('[QR Login] Error saving tokens:', err);
+  const handleQrLoginSuccess = (access: string, refresh: string, user: any) => {
+    // Save tokens directly to apiClient
+    apiClient.access = access;
+    apiClient.refresh = refresh;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('auth_tokens_v1', JSON.stringify({ access, refresh }));
     }
+    setIsAuthed(true);
+    setLoginQrDataUrl('');
+    setQrExpiryAt(null);
+    delete (window as any).__qr_request_id;
   };
 
   // Contacts & conversations
