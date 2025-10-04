@@ -232,7 +232,7 @@ REST_FRAMEWORK = {
             'devices_register': '10/minute',
             'devices_approve': '10/minute',
             'login_qr': '100/minute',
-            'login_qr_status': '500/minute',
+            'login_qr_status': '100000/minute',
             'login_qr_approve': '30/minute',
         },
 }
