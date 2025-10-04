@@ -11,6 +11,7 @@ import PinSetupScreen from '../screens/PinSetupScreen';
 import PinUnlockScreen from '../screens/PinUnlockScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import RefreshContactsScreen from '../screens/RefreshContactsScreen';
+import QrScannerScreen from '../screens/QrScannerScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import SubscriptionsScreen from '../screens/SubscriptionsScreen';
 import TeamScreen from '../screens/TeamScreen';
@@ -43,6 +44,7 @@ export type RootStackParamList = {
   Subscriptions: undefined;
   Team: undefined;
   RefreshContacts: undefined;
+  QrScanner: undefined;
   DevicePending: {
     credentials: LoginCredentials;
     device: LinkedDevice;
@@ -108,6 +110,7 @@ export default function RootNavigator() {
         <Stack.Screen name="Subscriptions" component={SubscriptionsScreen} />
         <Stack.Screen name="Team" component={TeamScreen} />
         <Stack.Screen name="RefreshContacts" component={RefreshContactsScreen} />
+        <Stack.Screen name="QrScanner" component={QrScannerScreen} />
         {qaEnabled ? <Stack.Screen name="QADevices" component={QADevicesScreen} /> : null}
       </Stack.Navigator>
     </NavigationContainer>

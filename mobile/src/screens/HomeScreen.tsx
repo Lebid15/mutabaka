@@ -231,7 +231,7 @@ function mergeUnreadCounts(
   return merged;
 }
 
-type MenuAction = 'profile' | 'matches' | 'settings' | 'subscriptions' | 'team' | 'refresh' | 'logout';
+type MenuAction = 'profile' | 'matches' | 'settings' | 'subscriptions' | 'team' | 'refresh' | 'qr-web-link' | 'logout';
 
 function decodeJwtPayload(token?: string | null): Record<string, unknown> | null {
   if (!token) {
@@ -260,7 +260,7 @@ interface MenuItem {
   label: string;
   icon: ComponentProps<typeof FeatherIcon>['name'];
   path?: string;
-  navigateTo?: 'Profile' | 'Matches' | 'Settings' | 'Subscriptions' | 'Team' | 'RefreshContacts';
+  navigateTo?: 'Profile' | 'Matches' | 'Settings' | 'Subscriptions' | 'Team' | 'RefreshContacts' | 'QrScanner';
 }
 
 type ConversationMenuAction = 'pin' | 'unpin' | 'mute' | 'unmute' | 'clear' | 'delete';
@@ -442,6 +442,7 @@ export default function HomeScreen() {
     { key: 'subscriptions', label: 'الاشتراك', icon: 'credit-card', navigateTo: 'Subscriptions' },
     { key: 'team', label: 'فريق العمل', icon: 'users', navigateTo: 'Team' },
     { key: 'refresh', label: 'تحديث جهات الاتصال', icon: 'refresh-ccw', navigateTo: 'RefreshContacts' },
+    { key: 'qr-web-link', label: 'ربط الجوال بالمتصفح', icon: 'smartphone', navigateTo: 'QrScanner' },
       { key: 'logout', label: 'تسجيل الخروج', icon: 'log-out' },
     ];
     
