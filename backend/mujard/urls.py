@@ -167,7 +167,7 @@ urlpatterns = [
     path('api/auth/devices/revoke', DeviceRevokeView.as_view(), name='device_revoke'),
     path('api/auth/devices/replace', DeviceReplaceView.as_view(), name='device_replace'),
     path('api/auth/devices/rename', DeviceRenameView.as_view(), name='device_rename'),
-    path('api/auth/login-qr', LoginQrCreateView.as_view(), name='login_qr_create'),
+    path('api/auth/login-qr/create', LoginQrCreateView.as_view(), name='login_qr_create'),
     path('api/auth/login-qr/<uuid:request_id>/status', LoginQrStatusView.as_view(), name='login_qr_status'),
     path('api/auth/login-qr/approve', LoginQrApproveView.as_view(), name='login_qr_approve'),
 ]
