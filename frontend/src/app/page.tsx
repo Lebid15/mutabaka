@@ -1109,7 +1109,7 @@ export default function Home() {
   }, [isAuthed]);
 
   useEffect(() => {
-    if (isAuthed || contactLinksFetchedRef.current) return;
+    if (contactLinksFetchedRef.current) return;
     contactLinksFetchedRef.current = true;
     let cancelled = false;
     (async () => {
@@ -1125,7 +1125,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [isAuthed, mapContactLinks]);
+  }, [mapContactLinks]);
   // Decode JWT access payload
   const getJwtPayload = useCallback((): any | null => {
     try {
@@ -3390,6 +3390,7 @@ export default function Home() {
     const toggleIcon = isLightTheme ? <MoonIcon className="w-5 h-5" /> : <SunIcon className="w-5 h-5" />;
     const displayedContactLinks = contactLinks.slice(0, 8);
     const hasContactLinks = displayedContactLinks.length > 0;
+    console.log('🔍 Contact Links Debug:', { contactLinks, displayedContactLinks, hasContactLinks });
     const contactIconButtonBase = isLightTheme
       ? 'group relative flex h-14 w-14 items-center justify-center rounded-2xl overflow-hidden border border-white/60 bg-white/70 shadow-[0_24px_50px_-28px_rgba(249,115,22,0.35)] backdrop-blur-sm transition-all duration-300 hover:-translate-y-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300/60'
       : 'group relative flex h-14 w-14 items-center justify-center rounded-2xl overflow-hidden border border-white/10 bg-white/5 shadow-[0_24px_50px_-28px_rgba(14,165,233,0.35)] backdrop-blur-sm transition-all duration-300 hover:-translate-y-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40';
@@ -3440,63 +3441,85 @@ export default function Home() {
                   }}
                 />
                 <div>
-                  <p className={`text-xs uppercase tracking-[0.3em] ${isLightTheme ? 'text-orange-400/80' : 'text-emerald-200/80'}`}>login</p>
-                  <h1 className="text-3xl md:text-4xl font-black leading-snug">{heroTitle || 'تسجيل دخول سريع'}</h1>
+                  <h1 className="text-2xl md:text-3xl font-bold leading-snug">{heroTitle || 'تسجيل دخول سريع'}</h1>
                 </div>
               </div>
-              {heroDescription && (
-                <p className={`max-w-xl text-base leading-8 ${isLightTheme ? 'text-gray-600' : 'text-gray-300'}`}>
-                  {heroDescription}
-                </p>
-              )}
-              <div className={`rounded-3xl border px-6 py-5 flex items-center gap-4 ${isLightTheme ? 'bg-white/80 border-orange-100 shadow-[0_25px_45px_-20px_rgba(249,115,22,0.25)]' : 'bg-white/5 border-white/10 backdrop-blur-sm shadow-[0_25px_45px_-20px_rgba(16,185,129,0.4)]'}`}>
-                <div className={`flex flex-col ${isLightTheme ? 'text-gray-700' : 'text-gray-100'}`}>
-                  <span className="text-sm font-semibold flex items-center gap-2">
-                    <FaRegClock className={countdownVariant} />
-                    تنتهي صلاحية الرمز خلال
-                    <span className={`font-bold text-lg ${countdownVariant}`}>{countdownLabel}</span>
-                  </span>
-                  <span className="text-xs opacity-70">
-                    يتم تحديث الرمز تلقائياً للحفاظ على الأمان.
-                  </span>
-                </div>
+              
+              <div className={`rounded-3xl border p-6 ${isLightTheme ? 'bg-white/80 border-white shadow-[0_30px_60px_-30px_rgba(249,115,22,0.35)]' : 'bg-white/5 border-white/10 backdrop-blur-sm shadow-[0_30px_60px_-30px_rgba(16,185,129,0.4)]'}`}>
+                <h3 className="text-lg font-bold mb-4">خطوات تسجيل الدخول:</h3>
+                <ol className="space-y-3">
+                  {sortedInstructions.length > 0 ? (
+                    sortedInstructions.map((step, idx) => {
+                      const title = (step.title || '').trim();
+                      const description = (step.description || '').trim();
+                      return (
+                        <li key={step.id ?? `${idx}-${title}`}
+                          className={`flex items-center gap-3 rounded-2xl border p-3 ${isLightTheme ? 'border-orange-100 bg-white/70' : 'border-white/10 bg-white/5'}`}>
+                          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl font-semibold text-sm ${isLightTheme ? 'bg-orange-500/15 text-orange-500' : 'bg-emerald-400/15 text-emerald-200'}`}>
+                            {idx + 1}
+                          </span>
+                          <div className="flex-1 space-y-1">
+                            {title && <h4 className="text-sm font-semibold">{title}</h4>}
+                            {description && <p className="text-xs leading-5 opacity-80">{description}</p>}
+                          </div>
+                        </li>
+                      );
+                    })
+                  ) : (
+                    <>
+                      <li className={`flex items-center gap-3 rounded-2xl border p-3 ${isLightTheme ? 'border-orange-100 bg-white/70' : 'border-white/10 bg-white/5'}`}>
+                        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl font-semibold text-sm ${isLightTheme ? 'bg-orange-500/15 text-orange-500' : 'bg-emerald-400/15 text-emerald-200'}`}>1</span>
+                        <p className="text-sm">افتح تطبيق مطابقة على هاتفك المحمول</p>
+                      </li>
+                      <li className={`flex items-center gap-3 rounded-2xl border p-3 ${isLightTheme ? 'border-orange-100 bg-white/70' : 'border-white/10 bg-white/5'}`}>
+                        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl font-semibold text-sm ${isLightTheme ? 'bg-orange-500/15 text-orange-500' : 'bg-emerald-400/15 text-emerald-200'}`}>2</span>
+                        <p className="text-sm">اضغط على زر القائمة ثم اختر "ربط الجوال بالمتصفح"</p>
+                      </li>
+                      <li className={`flex items-center gap-3 rounded-2xl border p-3 ${isLightTheme ? 'border-orange-100 bg-white/70' : 'border-white/10 bg-white/5'}`}>
+                        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl font-semibold text-sm ${isLightTheme ? 'bg-orange-500/15 text-orange-500' : 'bg-emerald-400/15 text-emerald-200'}`}>3</span>
+                        <p className="text-sm">اذهب إلى قسم الكاميرا المضمنة لمسح رمز QR أعلاه</p>
+                      </li>
+                      <li className={`flex items-center gap-3 rounded-2xl border p-3 ${isLightTheme ? 'border-orange-100 bg-white/70' : 'border-white/10 bg-white/5'}`}>
+                        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl font-semibold text-sm ${isLightTheme ? 'bg-orange-500/15 text-orange-500' : 'bg-emerald-400/15 text-emerald-200'}`}>4</span>
+                        <p className="text-sm">وافق على الطلب وسيتم فتح حسابك تلقائياً</p>
+                      </li>
+                    </>
+                  )}
+                </ol>
               </div>
             </div>
 
-            <div className="w-full max-w-sm order-1 lg:order-2">
-              <div className={`relative overflow-hidden rounded-[28px] p-6 flex flex-col gap-5 border ${isLightTheme ? 'bg-white/90 border-white shadow-[0_35px_60px_-15px_rgba(249,115,22,0.35)]' : 'bg-[#0F172A]/70 border-white/10 shadow-[0_35px_60px_-15px_rgba(16,185,129,0.35)] backdrop-blur-lg'}`}>
+            <div className="w-full max-w-xs order-1 lg:order-2">
+              <div className={`relative overflow-hidden rounded-[28px] p-5 flex flex-col gap-4 border ${isLightTheme ? 'bg-white/90 border-white shadow-[0_35px_60px_-15px_rgba(249,115,22,0.35)]' : 'bg-[#0F172A]/70 border-white/10 shadow-[0_35px_60px_-15px_rgba(16,185,129,0.35)] backdrop-blur-lg'}`}>
                 <div className="flex items-center justify-between">
-                  <div className="flex flex-col">
-                    <span className={`text-xs uppercase tracking-[0.25em] ${isLightTheme ? 'text-orange-400/70' : 'text-emerald-200/70'}`}>scan</span>
-                    <h2 className="text-lg font-semibold">ادخل لحسابك الآن</h2>
-                  </div>
+                  <h2 className="text-base font-semibold">ادخل لحسابك الآن</h2>
                   <button
                     type="button"
                     onClick={() => refreshLoginQr()}
                     disabled={qrRefreshing}
-                    className={`inline-flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-full transition ${isLightTheme ? 'bg-orange-50 text-orange-500 hover:bg-orange-100 disabled:opacity-60' : 'bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-60'}`}
+                    className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full transition ${isLightTheme ? 'bg-orange-50 text-orange-500 hover:bg-orange-100 disabled:opacity-60' : 'bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-60'}`}
                   >
                     <FiRefreshCw className={qrRefreshing ? 'animate-spin' : ''} />
                     تحديث الرمز
                   </button>
                 </div>
 
-                <div className="relative aspect-square w-full rounded-3xl bg-white flex items-center justify-center overflow-hidden">
+                <div className="relative aspect-square w-full rounded-2xl bg-white flex items-center justify-center overflow-hidden">
                   {loginQrDataUrl ? (
                     <>
-                      <img src={loginQrDataUrl} alt="رمز تسجيل الدخول" className="w-full h-full object-contain" />
+                      <img src={loginQrDataUrl} alt="رمز تسجيل الدخول" className="w-full h-full object-contain p-3" />
                       {qrOverlayLogo && (
                         <div className="absolute inset-0 flex items-center justify-center">
-                          <div className={`w-20 h-20 rounded-3xl flex items-center justify-center shadow-xl ${isLightTheme ? 'bg-white/85' : 'bg-white/90'}`}>
-                            <img src={qrOverlayLogo} alt="شعار الرمز" className="w-12 h-12 object-contain" />
+                          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-xl ${isLightTheme ? 'bg-white/85' : 'bg-white/90'}`}>
+                            <img src={qrOverlayLogo} alt="شعار الرمز" className="w-10 h-10 object-contain" />
                           </div>
                         </div>
                       )}
                     </>
                   ) : (
                     <div className={`w-full h-full flex flex-col items-center justify-center gap-3 text-center ${isLightTheme ? 'text-gray-500' : 'text-gray-300'}`}>
-                      <div className="w-16 h-16 rounded-2xl border-2 border-dashed border-current animate-pulse" />
-                      <span className="text-sm">جاري إنشاء الرمز...</span>
+                      <div className="w-14 h-14 rounded-2xl border-2 border-dashed border-current animate-pulse" />
+                      <span className="text-xs">جاري إنشاء الرمز...</span>
                     </div>
                   )}
                 </div>
@@ -3507,101 +3530,62 @@ export default function Home() {
                   </div>
                 )}
 
-                {stayLoggedInLabel && (
-                  <div className={`rounded-2xl border px-4 py-3 ${isLightTheme ? 'bg-orange-50/80 border-orange-100 text-orange-600' : 'bg-white/5 border-white/10 text-emerald-200/90'}`}>
-                    <div className="text-sm font-semibold">{stayLoggedInLabel}</div>
-                    {stayLoggedInHint && <div className="text-xs mt-1 leading-5 opacity-80">{stayLoggedInHint}</div>}
+                <div className={`rounded-2xl border px-4 py-3 ${isLightTheme ? 'bg-orange-50/80 border-orange-100' : 'bg-white/5 border-white/10'}`}>
+                  <div className={`flex flex-col items-center text-center ${isLightTheme ? 'text-gray-700' : 'text-gray-100'}`}>
+                    <span className="text-sm font-semibold flex items-center gap-2">
+                      <FaRegClock className={countdownVariant} />
+                      تنتهي صلاحية الرمز خلال
+                      <span className={`font-bold text-lg ${countdownVariant}`}>{countdownLabel}</span>
+                    </span>
+                    <span className="text-xs opacity-70 mt-1">
+                      يتم تحديث الرمز تلقائياً للحفاظ على الأمان.
+                    </span>
                   </div>
-                )}
-
-                {alternateLoginLabel && alternateLoginUrl && (
-                  <a
-                    href={alternateLoginUrl}
-                    className={`text-xs font-semibold underline underline-offset-4 text-center ${isLightTheme ? 'text-blue-600 hover:text-blue-500' : 'text-blue-300 hover:text-blue-200'}`}
-                  >
-                    {alternateLoginLabel}
-                  </a>
-                )}
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className={`rounded-3xl border p-6 ${isLightTheme ? 'bg-white/80 border-white shadow-[0_30px_60px_-30px_rgba(249,115,22,0.35)]' : 'bg-white/5 border-white/10 backdrop-blur-sm shadow-[0_30px_60px_-30px_rgba(16,185,129,0.4)]'}`}>
-              <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                <span className={`inline-flex items-center justify-center w-9 h-9 rounded-2xl font-semibold ${isLightTheme ? 'bg-orange-500/10 text-orange-500' : 'bg-emerald-400/10 text-emerald-200'}`}>
-                  ①
-                </span>
-                {instructionsTitle || 'خطوات العمل'}
-              </h3>
-              <ol className="space-y-4">
-                {sortedInstructions.length > 0 ? (
-                  sortedInstructions.map((step, idx) => {
-                    const title = (step.title || '').trim();
-                    const description = (step.description || '').trim();
-                    return (
-                      <li key={step.id ?? `${idx}-${title}`}
-                        className={`flex items-start gap-4 rounded-2xl border p-4 ${isLightTheme ? 'border-orange-100 bg-white/70' : 'border-white/10 bg-white/5'}`}>
-                        <span className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl font-semibold text-base ${isLightTheme ? 'bg-orange-500/15 text-orange-500' : 'bg-emerald-400/15 text-emerald-200'}`}>
-                          {idx + 1}
-                        </span>
-                        <div className="flex-1 space-y-1">
-                          {title && <h4 className="text-sm font-semibold">{title}</h4>}
-                          {description && <p className="text-sm leading-6 opacity-80">{description}</p>}
-                        </div>
-                      </li>
-                    );
-                  })
-                ) : (
-                  <li className="text-sm opacity-70">تابع التعليمات على تطبيق الهاتف لإكمال تسجيل الدخول.</li>
-                )}
-              </ol>
-            </div>
-
-            <div className={`rounded-3xl border p-6 flex flex-col gap-6 ${isLightTheme ? 'bg-white/70 border-white shadow-[0_30px_60px_-30px_rgba(249,115,22,0.35)]' : 'bg-white/5 border-white/10 backdrop-blur-sm shadow-[0_30px_60px_-30px_rgba(16,185,129,0.4)]'}`}>
-              <div>
-                <h3 className="text-lg font-bold mb-2">{loginConfig.footer_links_label || DEFAULT_LOGIN_PAGE_STATE.footer_links_label}</h3>
-                <p className={`text-sm leading-6 ${isLightTheme ? 'text-gray-600' : 'text-gray-300'}`}>
-                  {footerNote}
+          <footer className={`mt-auto pt-6 pb-6 ${isLightTheme ? 'bg-gradient-to-t from-orange-50/50 to-transparent' : 'bg-gradient-to-t from-chatPanel/30 to-transparent'}`}>
+            <div className="flex justify-center items-center gap-3 mb-6" dir="ltr">
+              {displayedContactLinks.length > 0 ? (
+                displayedContactLinks.map((link) => {
+                  const { Icon, bubbleClass, iconClass } = link.meta;
+                  return (
+                    <a
+                      key={link.id}
+                      href={link.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={contactIconButtonBase}
+                      title={link.display}
+                      aria-label={link.display}
+                    >
+                      <span aria-hidden className={`${contactGlowBase} ${link.meta.glowClass ?? 'bg-orange-400/30'}`} />
+                      <span className={`${contactIconInnerBase} ${bubbleClass}`}>
+                        <Icon className={`h-6 w-6 ${iconClass}`} aria-hidden="true" />
+                      </span>
+                      <span className="sr-only">{link.display}</span>
+                    </a>
+                  );
+                })
+              ) : (
+                <p className={`text-xs ${isLightTheme ? 'text-gray-400' : 'text-gray-500'}`}>
+                  (لا توجد روابط تواصل - يمكن إضافتها من لوحة التحكم)
                 </p>
-              </div>
-
-              {hasContactLinks && (
-                <div className="flex flex-wrap items-center gap-3" dir="ltr">
-                  {displayedContactLinks.map((link) => {
-                    const { Icon, bubbleClass, iconClass } = link.meta;
-                    return (
-                      <a
-                        key={link.id}
-                        href={link.href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={contactIconButtonBase}
-                        title={link.display}
-                        aria-label={link.display}
-                      >
-                        <span aria-hidden className={`${contactGlowBase} ${link.meta.glowClass ?? 'bg-orange-400/30'}`} />
-                        <span className={`${contactIconInnerBase} ${bubbleClass}`}>
-                          <Icon className={`h-6 w-6 ${iconClass}`} aria-hidden="true" />
-                        </span>
-                        <span className="sr-only">{link.display}</span>
-                      </a>
-                    );
-                  })}
-                </div>
               )}
-
-              {footerSecondary && (
-                <div className={`text-sm leading-6 ${isLightTheme ? 'text-gray-500' : 'text-gray-400'}`}>
-                  {footerSecondary}
-                </div>
-              )}
-
-              <div className={`mt-auto text-xs uppercase tracking-[0.3em] ${isLightTheme ? 'text-gray-400' : 'text-gray-500'}`}>
-                {footerBrand} © {footerYear || new Date().getFullYear()}
-              </div>
             </div>
-          </div>
+            
+            <div className={`flex flex-wrap justify-center items-center gap-3 text-sm ${isLightTheme ? 'text-gray-600' : 'text-gray-400'}`}>
+              <a href="/terms" className="hover:underline">شروط الاستخدام</a>
+              <span>•</span>
+              <a href="/privacy" className="hover:underline">سياسة الخصوصية</a>
+              <span>•</span>
+              <span>
+                جميع الحقوق محفوظة © {footerBrand} {footerYear || new Date().getFullYear()}
+              </span>
+            </div>
+          </footer>
         </div>
       </div>
     );
