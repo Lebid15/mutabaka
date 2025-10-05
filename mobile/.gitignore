@@ -6,3 +6,10 @@ dist/
 .gradle/
 android/
 ios/
+
+# Keystores - NEVER commit these!
+*.jks
+*.keystore
+*.p12
+*.pem
+keystore.properties
