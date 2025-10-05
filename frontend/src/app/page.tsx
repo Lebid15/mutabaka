@@ -3431,9 +3431,9 @@ export default function Home() {
               <div className={`rounded-3xl border p-6 ${isLightTheme ? 'bg-white/80 border-white shadow-[0_30px_60px_-30px_rgba(249,115,22,0.35)]' : 'bg-white/5 border-white/10 backdrop-blur-sm shadow-[0_30px_60px_-30px_rgba(16,185,129,0.4)]'}`}>
                 <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
                   خطوات تسجيل الدخول الى موقع مطابقة ويب
-                  {brandingLogo && (
+                  {qrOverlayLogo && (
                     <img 
-                      src={brandingLogo} 
+                      src={qrOverlayLogo} 
                       alt="icon" 
                       className="w-6 h-6 object-contain"
                       onError={(e) => {

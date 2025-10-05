@@ -261,7 +261,7 @@ class LoginPageSettingAdmin(admin.ModelAdmin):
     ordering = ("-updated_at", "-id")
     fieldsets = (
         ("الحالة", {"fields": ("is_active",)}),
-        ("الشعار والصور", {"fields": ("login_logo",)}),
+        ("الشعار والصور", {"fields": ("login_logo", "qr_overlay_logo")}),
         ("العنوان", {"fields": ("hero_title", "hero_description", "instructions_title")}),
         ("خيارات الواجهة", {"fields": ("stay_logged_in_label", "stay_logged_in_hint", "alternate_login_label", "alternate_login_url")}),
         ("التذييل", {"fields": ("footer_links_label", "footer_note", "footer_secondary_note", "footer_brand_name", "footer_year_override")}),
