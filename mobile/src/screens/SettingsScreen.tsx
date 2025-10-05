@@ -45,6 +45,9 @@ import {
 } from '../services/devices';
 import { getStoredDeviceId } from '../lib/deviceIdentity';
 import { isQaBuild } from '../utils/qa';
+import { checkPermissionStatus, openNotificationSettings, getExpoPushToken } from '../lib/pushNotifications';
+import * as Notifications from 'expo-notifications';
+import { updateCurrentDevicePushToken } from '../services/devices';
 
 const QR_SIZE = 180;
 const SOUND_TEST_TIMEOUT_MS = 2500;
@@ -144,6 +147,9 @@ export default function SettingsScreen() {
   const [soundUrl, setSoundUrl] = useState<string | null>(null);
   const [loadingSound, setLoadingSound] = useState(true);
   const [testingSound, setTestingSound] = useState(false);
+
+  const [notificationPermission, setNotificationPermission] = useState<'granted' | 'denied' | 'undetermined'>('undetermined');
+  const [checkingNotifications, setCheckingNotifications] = useState(true);
 
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
@@ -332,13 +338,150 @@ export default function SettingsScreen() {
     }
   }, []);
 
+  const checkNotificationPermissions = useCallback(async () => {
+    if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
+      setNotificationPermission('denied');
+      setCheckingNotifications(false);
+      return;
+    }
+    
+    try {
+      setCheckingNotifications(true);
+      const status = await checkPermissionStatus();
+      setNotificationPermission(status);
+    } catch (error) {
+      console.warn('[Mutabaka] Failed to check notification permissions', error);
+      setNotificationPermission('denied');
+    } finally {
+      setCheckingNotifications(false);
+    }
+  }, []);
+
+  const handleEnableNotifications = useCallback(async () => {
+    // إذا كانت الإشعارات مفعّلة بالفعل، نحدّث Token مباشرة
+    if (notificationPermission === 'granted') {
+      try {
+        console.log('[Settings] 🔔 Updating push token...');
+        const pushToken = await getExpoPushToken();
+        
+        if (pushToken) {
+          console.log('[Settings] ✅ Push token obtained:', pushToken.substring(0, 20) + '...');
+          
+          // إرسال Token للسيرفر
+          await updateCurrentDevicePushToken(pushToken);
+          console.log('[Settings] ✅ Push token updated on server');
+          
+          Alert.alert(
+            'تم التحديث بنجاح! ✅',
+            'تم تحديث Token للإشعارات بنجاح.'
+          );
+        } else {
+          console.warn('[Settings] ⚠️ Push token is null');
+          Alert.alert(
+            'تعذر الحصول على Token',
+            'حاول إعادة تشغيل التطبيق.'
+          );
+        }
+      } catch (tokenError) {
+        console.error('[Settings] ❌ Failed to get/update push token:', tokenError);
+        Alert.alert(
+          'حدث خطأ',
+          'تعذر تحديث Token. حاول مرة أخرى.'
+        );
+      }
+      return;
+    }
+    
+    if (notificationPermission === 'undetermined') {
+      // يمكننا طلب الإذن مباشرة
+      try {
+        const { status } = await Notifications.requestPermissionsAsync({
+          ios: {
+            allowAlert: true,
+            allowBadge: true,
+            allowSound: true,
+          },
+        });
+        
+        if (status === 'granted') {
+          setNotificationPermission('granted');
+          
+          // 🎯 الآن نحصل على Push Token ونرسله للسيرفر
+          try {
+            console.log('[Settings] 🔔 Getting push token after permission granted...');
+            const pushToken = await getExpoPushToken();
+            
+            if (pushToken) {
+              console.log('[Settings] ✅ Push token obtained:', pushToken.substring(0, 20) + '...');
+              
+              // إرسال Token للسيرفر
+              await updateCurrentDevicePushToken(pushToken);
+              console.log('[Settings] ✅ Push token updated on server');
+              
+              Alert.alert(
+                'تم التفعيل بنجاح! ✅',
+                'تم تفعيل الإشعارات وتحديث إعداداتك. ستصلك الآن إشعارات بالرسائل الجديدة.'
+              );
+            } else {
+              console.warn('[Settings] ⚠️ Push token is null');
+              Alert.alert(
+                'تم التفعيل جزئياً',
+                'تم تفعيل الإشعارات، لكن قد تحتاج إلى إعادة تشغيل التطبيق لتفعيلها بالكامل.'
+              );
+            }
+          } catch (tokenError) {
+            console.error('[Settings] ❌ Failed to get/update push token:', tokenError);
+            // حتى لو فشل Token، الإشعارات مفعّلة
+            Alert.alert(
+              'تم التفعيل',
+              'تم تفعيل الإشعارات بنجاح! قد تحتاج إلى إعادة تشغيل التطبيق.'
+            );
+          }
+        } else {
+          setNotificationPermission('denied');
+          Alert.alert(
+            'تم رفض الإذن',
+            'لتفعيل الإشعارات، اذهب إلى إعدادات التطبيق.',
+            [
+              { text: 'إلغاء', style: 'cancel' },
+              { text: 'فتح الإعدادات', onPress: () => openNotificationSettings() },
+            ]
+          );
+        }
+      } catch (error) {
+        console.warn('[Mutabaka] Failed to request notification permissions', error);
+        Alert.alert('حدث خطأ', 'تعذر طلب إذن الإشعارات. حاول مرة أخرى.');
+      }
+    } else {
+      // تم رفض الإذن مسبقاً، يحتاج المستخدم فتح الإعدادات
+      Alert.alert(
+        'تفعيل الإشعارات',
+        'لتفعيل الإشعارات، اذهب إلى إعدادات الجهاز:\n\n1. اضغط "فتح الإعدادات"\n2. ابحث عن "الإشعارات"\n3. فعّل الإشعارات لتطبيق مطابقة',
+        [
+          { text: 'إلغاء', style: 'cancel' },
+          { 
+            text: 'فتح الإعدادات', 
+            onPress: () => {
+              openNotificationSettings().catch((error) => {
+                console.warn('[Mutabaka] Failed to open settings', error);
+                Alert.alert('تعذر الفتح', 'الرجاء فتح إعدادات الجهاز يدوياً وتفعيل الإشعارات لتطبيق مطابقة.');
+              });
+            },
+          },
+        ]
+      );
+    }
+  }, [notificationPermission]);
+
   useEffect(() => {
     loadSoundPreferences();
-  }, [loadSoundPreferences]);
+    checkNotificationPermissions();
+  }, [loadSoundPreferences, checkNotificationPermissions]);
 
   useFocusEffect(
     useCallback(() => {
       refreshPinState();
+      checkNotificationPermissions(); // تحديث حالة الإشعارات عند العودة للصفحة
       loadDevices('initial').catch((error) => {
         console.warn('[Mutabaka] Failed to load devices', error);
       });
@@ -791,6 +934,66 @@ export default function SettingsScreen() {
                     <Text style={[styles.cardSubtitle, textDirectionStyle, { color: palette.subText }]}>لتمكين الوصول السريع، أنشئ رمز PIN لهذا الجهاز.</Text>
                   )}
                 </View>
+
+                {/* قسم إدارة الإشعارات */}
+                {pushSupported ? (
+                  <View style={[styles.card, { backgroundColor: palette.cardBg, borderColor: palette.cardBorder }]}>
+                    <View style={[styles.cardHeader, { flexDirection: 'column', alignItems: 'flex-end' }]}>
+                      <View style={[styles.cardHeaderText, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}>
+                        <Text style={[styles.cardTitle, textDirectionStyle, { color: palette.heading }]}>إشعارات التطبيق</Text>
+                        <Text style={[styles.cardSubtitle, textDirectionStyle, { color: palette.subText }]}>
+                          احصل على إشعارات فورية بالرسائل الجديدة والتحديثات المهمة مباشرة على جهازك.
+                        </Text>
+                        {checkingNotifications ? (
+                          <View style={[styles.loadingRow, { marginTop: 8 }]}>
+                            <ActivityIndicator size="small" color={palette.headerIcon} />
+                            <Text style={[styles.loadingText, { color: palette.subText }]}>جاري الفحص...</Text>
+                          </View>
+                        ) : (
+                          renderBadge(
+                            notificationPermission === 'granted' ? 'مفعّلة' : 'معطّلة',
+                            notificationPermission === 'granted'
+                          )
+                        )}
+                      </View>
+                      
+                      {!checkingNotifications && notificationPermission !== 'granted' ? (
+                        <View style={[styles.buttonStack, { flexDirection: isRTL ? 'row-reverse' : 'row', marginTop: 12 }]}>
+                          <Pressable
+                            style={[styles.primaryButton, { backgroundColor: palette.primaryButtonBg, minWidth: 160 }]}
+                            onPress={handleEnableNotifications}
+                            accessibilityRole="button"
+                          >
+                            <FeatherIcon name="bell" size={16} color={palette.primaryButtonText} style={{ marginLeft: 6 }} />
+                            <Text style={[styles.buttonText, { color: palette.primaryButtonText }]}>تفعيل الإشعارات</Text>
+                          </Pressable>
+                        </View>
+                      ) : null}
+                    </View>
+
+                    {!checkingNotifications && notificationPermission === 'granted' ? (
+                      <View style={[styles.pinMetaRow, { borderColor: palette.divider }]}>
+                        <Text style={[styles.pinMetaText, textDirectionStyle, { color: palette.subText }]}>
+                          ✅ الإشعارات مفعّلة. ستصلك إشعارات بالرسائل والتحديثات الجديدة.
+                        </Text>
+                        <Pressable
+                          style={[styles.ghostButton, { backgroundColor: palette.ghostButtonBg, marginTop: 8 }]}
+                          onPress={handleEnableNotifications}
+                          accessibilityRole="button"
+                        >
+                          <FeatherIcon name="refresh-cw" size={14} color={palette.ghostButtonText} style={{ marginLeft: 6 }} />
+                          <Text style={[styles.buttonText, { color: palette.ghostButtonText, fontSize: 13 }]}>تحديث Token</Text>
+                        </Pressable>
+                      </View>
+                    ) : !checkingNotifications && notificationPermission === 'denied' ? (
+                      <View style={[styles.pinMetaRow, { borderColor: palette.divider }]}>
+                        <Text style={[styles.cardSubtitle, textDirectionStyle, { color: palette.subText }]}>
+                          ℹ️ لن تتمكن من معرفة الرسائل الجديدة بدون تفعيل الإشعارات. اضغط على الزر أعلاه للتفعيل من إعدادات الجهاز.
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
 
                 {qaEnabled && !currentUser?.is_team_member ? (
                   <View style={[styles.card, { backgroundColor: palette.cardBg, borderColor: palette.cardBorder }]}

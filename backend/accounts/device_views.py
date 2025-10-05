@@ -164,3 +164,54 @@ class DeviceRenameView(APIView):
         except LookupError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_404_NOT_FOUND)
         return Response({'device': serialize_device(renamed)})
+
+
+class DeviceUpdateTokenView(APIView):
+    """
+    تحديث Push Token للجهاز الحالي
+    يُستخدم عند تفعيل الإشعارات بعد رفضها سابقاً
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        acting: UserDevice = getattr(request, 'user_device', None)
+        device_id = _get_request_field(request, 'device_id')
+        push_token = _get_request_field(request, 'push_token')
+        
+        if not device_id:
+            return Response({'detail': 'device_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not push_token:
+            return Response({'detail': 'push_token is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # البحث عن الجهاز
+            device = UserDevice.objects.get(
+                user=request.user,
+                device_id=device_id
+            )
+            
+            # التحقق من الصلاحيات: يمكن للجهاز تحديث token نفسه فقط
+            if acting and acting.device_id != device_id:
+                return Response(
+                    {'detail': 'يمكنك تحديث token جهازك فقط'}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # تحديث Token
+            device.push_token = push_token
+            device.save(update_fields=['push_token'])
+            
+            logger.info(f"✅ Updated push token for device {device_id[:20]}...")
+            
+            return Response({'device': serialize_device(device)})
+            
+        except UserDevice.DoesNotExist:
+            return Response({'detail': 'الجهاز غير موجود'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as exc:
+            logger.exception(f"Failed to update push token: {exc}")
+            return Response(
+                {'detail': 'حدث خطأ أثناء تحديث token'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+

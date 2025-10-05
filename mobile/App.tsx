@@ -2,7 +2,7 @@ import 'react-native-gesture-handler';
 import './global.css';
 import * as Notifications from 'expo-notifications';
 import type { Notification } from 'expo-notifications';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -10,6 +10,15 @@ import { AppState, type AppStateStatus, I18nManager, Platform, type ViewStyle } 
 import RootNavigator from './src/navigation';
 import { ThemeProvider, useThemeMode } from './src/theme';
 import { initializeAppBadge, refreshAppBadge, setAppBadgeCount } from './src/lib/appBadge';
+import { getExpoPushToken, checkPermissionStatus } from './src/lib/pushNotifications';
+import { updateCurrentDevicePushToken } from './src/services/devices';
+import { getAccessToken } from './src/lib/authStorage';
+import messaging from '@react-native-firebase/messaging';
+
+// معالج الإشعارات في الخلفية (FCM Background Handler)
+messaging().setBackgroundMessageHandler(async (remoteMessage) => {
+  console.log('[FCM] Background message received:', remoteMessage);
+});
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -81,6 +90,8 @@ function extractUnreadCount(notification: Notification | null | undefined): numb
 }
 
 function useNotificationBadgeBridge() {
+  const lastPermissionCheckRef = useRef<string>('unknown');
+
   useEffect(() => {
     if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
       return;
@@ -88,10 +99,81 @@ function useNotificationBadgeBridge() {
     void initializeAppBadge();
   }, []);
 
+  // فحص وتحديث Push Token عند تغيير حالة التطبيق
   useEffect(() => {
     if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
       return undefined;
     }
+
+    const checkAndUpdatePushToken = async () => {
+      try {
+        // التحقق من حالة الأذونات
+        const currentPermission = await checkPermissionStatus();
+        
+        // إذا كانت الأذونات مفعّلة الآن ولم تكن من قبل
+        if (currentPermission === 'granted' && lastPermissionCheckRef.current !== 'granted') {
+          console.log('[App] 🔔 Notifications enabled, updating push token...');
+          
+          // التحقق من وجود access token (المستخدم مسجل دخول)
+          const accessToken = await getAccessToken();
+          if (!accessToken) {
+            console.log('[App] ⚠️ User not logged in, skipping token update');
+            lastPermissionCheckRef.current = currentPermission;
+            return;
+          }
+          
+          // الحصول على Push Token
+          const pushToken = await getExpoPushToken();
+          
+          if (pushToken) {
+            console.log('[App] ✅ Push token obtained:', pushToken.substring(0, 20) + '...');
+            
+            // تحديث Token في السيرفر
+            try {
+              await updateCurrentDevicePushToken(pushToken);
+              console.log('[App] ✅ Push token updated on server successfully');
+            } catch (updateError) {
+              console.warn('[App] ⚠️ Failed to update push token on server:', updateError);
+            }
+          } else {
+            console.warn('[App] ⚠️ Push token is null');
+          }
+        }
+        
+        lastPermissionCheckRef.current = currentPermission;
+      } catch (error) {
+        console.warn('[App] Failed to check/update push token:', error);
+      }
+    };
+
+    // فحص عند تحميل التطبيق
+    checkAndUpdatePushToken();
+
+    // معالج الإشعارات الواردة من FCM (Foreground)
+    const unsubscribeFCM = messaging().onMessage(async (remoteMessage) => {
+      console.log('[FCM] Foreground message received:', remoteMessage);
+      
+      // عرض الإشعار محلياً باستخدام expo-notifications
+      if (remoteMessage.notification) {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: remoteMessage.notification.title || 'إشعار جديد',
+            body: remoteMessage.notification.body || '',
+            data: remoteMessage.data || {},
+          },
+          trigger: null, // فوراً
+        });
+      }
+      
+      // تحديث Badge
+      const badge = remoteMessage.data?.unread_count;
+      if (badge !== undefined) {
+        const count = sanitizeBadgeCandidate(badge);
+        if (count !== null) {
+          void setAppBadgeCount(count);
+        }
+      }
+    });
 
     const receivedSubscription = Notifications.addNotificationReceivedListener((notification) => {
       const count = extractUnreadCount(notification);
@@ -112,6 +194,8 @@ function useNotificationBadgeBridge() {
     const appStateSubscription = AppState.addEventListener('change', (status: AppStateStatus) => {
       if (status === 'active') {
         refreshAppBadge();
+        // فحص وتحديث Token عند العودة للتطبيق
+        checkAndUpdatePushToken();
       }
     });
 
@@ -119,6 +203,7 @@ function useNotificationBadgeBridge() {
       receivedSubscription.remove();
       responseSubscription.remove();
       appStateSubscription.remove();
+      unsubscribeFCM(); // إلغاء الاشتراك في FCM
     };
   }, []);
 }
