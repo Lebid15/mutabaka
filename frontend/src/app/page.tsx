@@ -709,7 +709,6 @@ function SidebarHeaderAddContact({ onAdded, existingUsernames, currentUsername, 
               {!isTeamActor && <a href="/subscriptions" className="block px-3 py-2 text-sm text-gray-100 hover:bg-white/5">الاشتراك</a>}
               {!isTeamActor && <a href="/team" className="block px-3 py-2 text-sm text-gray-100 hover:bg-white/5">فريق العمل</a>}
               <button onClick={() => { onRefreshContacts && onRefreshContacts(); setMenuOpen(false); }} className="w-full text-right px-3 py-2 text-sm text-gray-100 hover:bg-white/5">تحديث جهات الاتصال</button>
-              <button onClick={() => { window.location.href = '/?qr=1'; setMenuOpen(false); }} className="w-full text-right px-3 py-2 text-sm text-gray-100 hover:bg-white/5">ربط الجوال بالمتصفح</button>
               <button onClick={logout} className="w-full text-right px-3 py-2 text-sm text-red-500  hover:bg-[#ef5350]/10">تسجيل الخروج</button>
             </div>
           )}
