@@ -192,6 +192,11 @@ USE_TZ = True  # Keep timezone support enabled
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'static'
 
+# Additional locations for static files
+STATICFILES_DIRS = [
+    BASE_DIR / 'mujard' / 'static',
+]
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
@@ -263,8 +268,8 @@ JAZZMIN_SETTINGS = {
     "site_brand": "Mutabaka",
     "welcome_sign": "مرحباً بك في لوحة التحكم",
     "show_ui_builder": False,
-    # Use Jazzmin's default styles for tabs; no custom CSS overrides
-    # "custom_css": "admin/tabs-fix.css",
+    # Custom CSS for orange section headers and tabs fix
+    "custom_css": "admin/custom-admin.css",
     # Ensure change forms render as tabbed UI (prevents stacked duplicate sections)
     "changeform_format": "horizontal_tabs",
     "changeform_format_overrides": {},

@@ -1,0 +1,51 @@
+/* Custom Admin Panel Styling */
+
+/* Make section headers (app labels) orange and bright in sidebar */
+.sidebar-dark-primary .nav-sidebar > .nav-item > .nav-link.active,
+.sidebar-dark-primary .nav-sidebar > .nav-item.menu-open > .nav-link,
+.nav-sidebar .nav-header {
+    color: #ff9500 !important;
+    font-weight: 600;
+}
+
+/* Target all app-level section headers */
+#accordionSidebar .app-list h3,
+.sidebar .nav-sidebar li.nav-header,
+.app-list .app-label {
+    color: #ff9500 !important;
+    font-weight: 600;
+    text-shadow: 0 0 5px rgba(255, 149, 0, 0.3);
+}
+
+/* For Jazzmin sidebar app headers */
+.main-sidebar .nav-sidebar > .nav-item > .nav-link[data-widget="treeview"] > p,
+.main-sidebar .brand-text {
+    color: #ff9500 !important;
+}
+
+/* Dropdown filters styling - Keep dark background, white text with warm yellow hover */
+
+/* Dropdown text color - White by default */
+select.form-control option,
+.select2-container--default .select2-results__option {
+    color: #ffffff !important;
+}
+
+/* Dropdown text - Warm yellow on hover */
+select.form-control option:hover,
+select.form-control option:focus,
+.select2-container--default .select2-results__option--highlighted[aria-selected],
+.select2-container--default .select2-results__option:hover {
+    color: #FFC107 !important;
+    background-color: inherit !important;
+}
+
+/* Ensure Jazzmin tab panes display correctly */
+.tab-content > .tab-pane { 
+    display: none; 
+}
+
+.tab-content > .tab-pane.active,
+.tab-content > .tab-pane.show { 
+    display: block; 
+}

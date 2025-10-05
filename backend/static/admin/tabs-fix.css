@@ -1,0 +1,4 @@
+/* Ensure Jazzmin tab panes display correctly. Some versions add only 'active' OR only 'show'. */
+.tab-content > .tab-pane { display: none; }
+.tab-content > .tab-pane.active,
+.tab-content > .tab-pane.show { display: block; }
