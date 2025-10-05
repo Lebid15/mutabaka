@@ -1,32 +1,78 @@
-# Exclude development-only artifacts from the EAS build archive
-android/.gradle/
-android/build/
-android/app/build/
-android/local.properties
-android/.idea/
+# ===== EAS Build Ignore - تقليل حجم الأرشيف =====
 
-# Expo prebuild outputs that can be regenerated
+# Node modules - سيتم تثبيتها على السيرفر
+node_modules/
+
+# Git repository - غير ضروري للبناء
+.git/
+.gitignore
+.gitmodules
+.github/
+
+# Native folders - EAS ينشئها تلقائياً
+android/
 ios/
 web-build/
 
-# Tooling caches and logs
+# Expo cache and temporary files
 .expo/
 .expo-shared/
-expo-dev-client
+expo-dev-client/
 device-preview/
+
+# Build outputs
+dist/
+build/
+*.apk
+*.aab
+*.ipa
+
+# Logs and temp files
 *.log
 *.tmp
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
-# Node modules are installed in the build environment
-node_modules/
-
-# Git metadata
-.git/
-.gitmodules
-.gitignore
-
-# Misc editor files
+# IDE and editor files
+.vscode/
+.idea/
 *.iml
 *.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# OS files
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# Test files
+__tests__/
+*.test.js
+*.test.ts
+*.test.tsx
+*.spec.js
+*.spec.ts
+*.spec.tsx
+coverage/
+.nyc_output/
+
+# Documentation (if you have large docs)
+docs/
+*.md
+
+# Large assets (uncomment if needed)
+# assets/videos/
+# assets/animations/
+
+# Backend and other services (not needed for mobile build)
+../backend/
+../frontend/
+../deploy/
+../infra/
+../docs/
