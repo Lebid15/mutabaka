@@ -3695,14 +3695,18 @@ export default function Home() {
                           className="w-full text-left px-3 py-2 text-xs text-gray-100 hover:bg-white/5 disabled:opacity-50"
                           disabled={muteBusyFor===contact.id}
                         >{contact.isMuted ? 'إلغاء الكتم' : 'كتم المحادثة'}</button>
-                        <button
-                          onClick={()=>{ setConfirmDialog({ open: true, kind: 'clear', convId: contact.id }); setOpenMenuForConvId(null); }}
-                          className="w-full text-left px-3 py-2 text-xs text-gray-100 hover:bg-white/5"
-                        >مسح محتوى الدردشة</button>
-                        <button
-                          onClick={()=>{ setConfirmDialog({ open: true, kind: 'delete', convId: contact.id }); setOpenMenuForConvId(null); }}
-                          className="w-full text-left px-3 py-2 text-xs text-red-300 hover:bg-red-500/10"
-                        >مسح جهة الاتصال</button>
+                        {!isTeamActor && (
+                          <button
+                            onClick={()=>{ setConfirmDialog({ open: true, kind: 'clear', convId: contact.id }); setOpenMenuForConvId(null); }}
+                            className="w-full text-left px-3 py-2 text-xs text-gray-100 hover:bg-white/5"
+                          >مسح محتوى الدردشة</button>
+                        )}
+                        {!isTeamActor && (
+                          <button
+                            onClick={()=>{ setConfirmDialog({ open: true, kind: 'delete', convId: contact.id }); setOpenMenuForConvId(null); }}
+                            className="w-full text-left px-3 py-2 text-xs text-red-300 hover:bg-red-500/10"
+                          >مسح جهة الاتصال</button>
+                        )}
                         <button
                           onClick={()=>{
                             setPinnedIds(prev => prev.includes(contact.id) ? prev.filter(id=>id!==contact.id) : [contact.id, ...prev]);
@@ -3817,14 +3821,18 @@ export default function Home() {
                               className="w-full text-left px-3 py-2 text-xs text-gray-100 hover:bg-white/5 disabled:opacity-50"
                               disabled={muteBusyFor===contact.id}
                             >{contact.isMuted ? 'إلغاء الكتم' : 'كتم المحادثة'}</button>
-                            <button
-                              onClick={()=>{ setConfirmDialog({ open: true, kind: 'clear', convId: contact.id }); setOpenMenuForConvId(null); }}
-                              className="w-full text-left px-3 py-2 text-xs text-gray-100 hover:bg-white/5"
-                            >مسح محتوى الدردشة</button>
-                            <button
-                              onClick={()=>{ setConfirmDialog({ open: true, kind: 'delete', convId: contact.id }); setOpenMenuForConvId(null); }}
-                              className="w-full text-left px-3 py-2 text-xs text-red-300 hover:bg-red-500/10"
-                            >مسح جهة الاتصال</button>
+                            {!isTeamActor && (
+                              <button
+                                onClick={()=>{ setConfirmDialog({ open: true, kind: 'clear', convId: contact.id }); setOpenMenuForConvId(null); }}
+                                className="w-full text-left px-3 py-2 text-xs text-gray-100 hover:bg-white/5"
+                              >مسح محتوى الدردشة</button>
+                            )}
+                            {!isTeamActor && (
+                              <button
+                                onClick={()=>{ setConfirmDialog({ open: true, kind: 'delete', convId: contact.id }); setOpenMenuForConvId(null); }}
+                                className="w-full text-left px-3 py-2 text-xs text-red-300 hover:bg-red-500/10"
+                              >مسح جهة الاتصال</button>
+                            )}
                             <button
                               onClick={()=>{
                                 setPinnedIds(prev => prev.includes(contact.id) ? prev.filter(id=>id!==contact.id) : [contact.id, ...prev]);
