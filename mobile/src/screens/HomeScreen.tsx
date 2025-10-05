@@ -1226,8 +1226,9 @@ export default function HomeScreen() {
     const muteIcon: ComponentProps<typeof FeatherIcon>['name'] = isMuted ? 'volume-2' : 'volume-x';
     const pinOptionKey: ConversationMenuAction = isPinned ? 'unpin' : 'pin';
   const pinLabel = isPinned ? 'إلغاء تثبيت المحادثة' : 'تثبيت المحادثة';
+    const isTeamMember = currentUser?.is_team_member === true;
 
-    return [
+    const allOptions: ConversationMenuOption[] = [
       {
         key: pinOptionKey,
         label: pinLabel,
@@ -1257,7 +1258,14 @@ export default function HomeScreen() {
         handler: handleRequestDeleteConversation,
       },
     ];
-  }, [conversationMenu, handleClearConversation, handleRequestDeleteConversation, handleToggleMuteConversation, handleTogglePinConversation]);
+    
+    // Hide clear and delete options for team members
+    if (isTeamMember) {
+      return allOptions.filter(option => option.key !== 'clear' && option.key !== 'delete');
+    }
+    
+    return allOptions;
+  }, [conversationMenu, handleClearConversation, handleRequestDeleteConversation, handleToggleMuteConversation, handleTogglePinConversation, currentUser?.is_team_member]);
 
   const conversationMenuModal = (
     <Modal
