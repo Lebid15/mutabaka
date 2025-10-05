@@ -25,7 +25,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.mobile",
+      "package": "com.lebid.mutabaka",
       "googleServicesFile": "./google-services.json"
     },
     "plugins": [
