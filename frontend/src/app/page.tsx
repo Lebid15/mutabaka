@@ -3427,26 +3427,22 @@ export default function Home() {
         <div className="w-full max-w-6xl mx-auto flex-1 flex flex-col gap-12">
           <div className="flex flex-col lg:flex-row gap-10 lg:gap-16 items-start">
             <div className="flex-1 flex flex-col gap-6 order-2 lg:order-1">
-              <div className="flex items-center gap-4">
-                <img
-                  src={brandingLogo || DEFAULT_BRANDING_LOGO}
-                  alt="شعار متطابقا"
-                  className="w-16 h-16 rounded-3xl object-contain shadow-lg"
-                  onError={(e) => {
-                    const target = e.currentTarget as HTMLImageElement & { dataset: DOMStringMap & { fallbackApplied?: string } };
-                    if (target.dataset.fallbackApplied !== '1') {
-                      target.dataset.fallbackApplied = '1';
-                      target.src = DEFAULT_BRANDING_LOGO;
-                    }
-                  }}
-                />
-                <div>
-                  <h1 className="text-2xl md:text-3xl font-bold leading-snug">{heroTitle || 'تسجيل دخول سريع'}</h1>
-                </div>
-              </div>
               
               <div className={`rounded-3xl border p-6 ${isLightTheme ? 'bg-white/80 border-white shadow-[0_30px_60px_-30px_rgba(249,115,22,0.35)]' : 'bg-white/5 border-white/10 backdrop-blur-sm shadow-[0_30px_60px_-30px_rgba(16,185,129,0.4)]'}`}>
-                <h3 className="text-lg font-bold mb-4">خطوات تسجيل الدخول:</h3>
+                <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                  خطوات تسجيل الدخول الى موقع مطابقة ويب
+                  {brandingLogo && (
+                    <img 
+                      src={brandingLogo} 
+                      alt="icon" 
+                      className="w-6 h-6 object-contain"
+                      onError={(e) => {
+                        const target = e.currentTarget as HTMLImageElement;
+                        target.style.display = 'none';
+                      }}
+                    />
+                  )}
+                </h3>
                 <ol className="space-y-3">
                   {sortedInstructions.length > 0 ? (
                     sortedInstructions.map((step, idx) => {
