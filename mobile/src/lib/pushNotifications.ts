@@ -1,14 +1,12 @@
-import { Platform } from 'react-native';
+import { Platform, Linking } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import messaging from '@react-native-firebase/messaging';
 
 /**
- * خدمة إدارة Expo Push Notifications
- * - تسجيل Expo Push Token
- * - معالجة الإشعارات الواردة
- * - إدارة الأذونات
- * 
- * ملاحظة: معطّل مؤقتاً في Development Build
- * يعمل فقط في Production Build مع Firebase أو Expo Go
+ * خدمة إدارة Push Notifications
+ * - يستخدم Firebase Cloud Messaging (FCM) للحصول على Token حقيقي
+ * - يستخدم expo-notifications لعرض الإشعارات
+ * - يدعم Android و iOS
  */
 
 let cachedPushToken: string | null = null;
@@ -89,8 +87,9 @@ async function requestPermissions(): Promise<boolean> {
 }
 
 /**
- * الحصول على Expo Push Token
+ * الحصول على FCM Push Token (Firebase Cloud Messaging)
  * يتم حفظه في cache لتجنب طلبات متكررة
+ * يعمل في Production و Development
  */
 export async function getExpoPushToken(): Promise<string | null> {
   // إذا كان موجود في cache، نرجعه مباشرة
@@ -105,7 +104,7 @@ export async function getExpoPushToken(): Promise<string | null> {
 
   tokenPromise = (async () => {
     try {
-      console.log('[PushNotifications] 🔔 Starting push token registration...');
+      console.log('[PushNotifications] 🔔 Starting FCM token registration...');
       
       // التحقق من الدعم
       if (!isPushNotificationsSupported()) {
@@ -115,7 +114,7 @@ export async function getExpoPushToken(): Promise<string | null> {
       
       console.log('[PushNotifications] ✅ Platform supported:', Platform.OS);
 
-      // طلب الأذونات
+      // طلب الأذونات من expo-notifications (للعرض)
       const hasPermission = await requestPermissions();
       if (!hasPermission) {
         console.warn('[PushNotifications] ❌ Permission denied');
@@ -124,22 +123,30 @@ export async function getExpoPushToken(): Promise<string | null> {
       
       console.log('[PushNotifications] ✅ Permission granted');
 
-      // الحصول على Push Token بدون projectId
-      // في بيئة التطوير، Expo يمكنه إنشاء Token بدون projectId
-      let tokenData;
-      try {
-        console.log('[PushNotifications] 📱 Requesting Expo Push Token...');
-        tokenData = await Notifications.getExpoPushTokenAsync();
-        console.log('[PushNotifications] ✅ Token received successfully');
-      } catch (error) {
-        // في بيئة التطوير، قد يفشل الحصول على Token
-        // هذا طبيعي ولا يؤثر على باقي وظائف التطبيق
-        console.warn('[PushNotifications] ⚠️ Could not get push token (expected in dev mode):', error);
+      // طلب إذن Firebase (مطلوب لـ FCM)
+      const authStatus = await messaging().requestPermission();
+      const fcmEnabled =
+        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+
+      if (!fcmEnabled) {
+        console.warn('[PushNotifications] ❌ FCM permission denied');
         return null;
       }
 
-      const token = tokenData.data;
-      
+      console.log('[PushNotifications] ✅ FCM permission granted');
+
+      // الحصول على FCM Token
+      let token: string | null = null;
+      try {
+        console.log('[PushNotifications] 📱 Requesting FCM Token...');
+        token = await messaging().getToken();
+        console.log('[PushNotifications] ✅ FCM Token received successfully');
+      } catch (error) {
+        console.error('[PushNotifications] ❌ Failed to get FCM token:', error);
+        return null;
+      }
+
       if (!token || typeof token !== 'string') {
         console.error('[PushNotifications] Invalid token received');
         return null;
@@ -152,9 +159,7 @@ export async function getExpoPushToken(): Promise<string | null> {
       return token;
 
     } catch (error) {
-      // في بيئة التطوير، قد يفشل الحصول على Token
-      // هذا طبيعي ولا يؤثر على باقي وظائف التطبيق
-      console.warn('[PushNotifications] Push notifications unavailable in dev mode (this is normal)');
+      console.error('[PushNotifications] ❌ Error getting FCM token:', error);
       return null;
     } finally {
       tokenPromise = null;
@@ -258,11 +263,15 @@ export async function checkPermissionStatus(): Promise<'granted' | 'denied' | 'u
 }
 
 /**
- * فتح إعدادات التطبيق (إذا تم رفض الأذونات)
- * ملاحظة: يحتاج المستخدم فتح الإعدادات يدوياً
+ * فتح إعدادات التطبيق في النظام (لتفعيل الإشعارات يدوياً)
+ * يفتح صفحة إعدادات التطبيق مباشرة في إعدادات الجهاز
  */
 export async function openNotificationSettings(): Promise<void> {
-  // لا يوجد API مباشر لفتح الإعدادات في expo-notifications
-  // المستخدم يحتاج الذهاب للإعدادات يدوياً
-  console.log('[PushNotifications] Please open app settings manually to enable notifications');
+  try {
+    await Linking.openSettings();
+    console.log('[PushNotifications] Opened app settings');
+  } catch (error) {
+    console.error('[PushNotifications] Failed to open settings:', error);
+    throw error;
+  }
 }

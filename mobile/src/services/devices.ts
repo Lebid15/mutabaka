@@ -204,6 +204,23 @@ export async function renameDevice(options: { deviceId: string; label: string })
   return response.device;
 }
 
+/**
+ * تحديث Push Token للجهاز الحالي
+ * يُستخدم عند تفعيل الإشعارات بعد رفضها سابقاً
+ */
+export async function updateCurrentDevicePushToken(pushToken: string): Promise<LinkedDevice> {
+  // device_id يُرسل تلقائياً في X-Device-Id header عبر request()
+  const response = await request<{ device: LinkedDevice }, Record<string, unknown>>({
+    path: 'auth/devices/update-token',
+    method: 'POST',
+    body: {
+      push_token: pushToken,
+    },
+  });
+  
+  return response.device;
+}
+
 export async function createPendingDeviceForTesting(options?: {
   label?: string;
   platform?: string;
