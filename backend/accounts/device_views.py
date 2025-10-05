@@ -175,11 +175,15 @@ class DeviceUpdateTokenView(APIView):
     
     def post(self, request):
         acting: UserDevice = getattr(request, 'user_device', None)
-        device_id = _get_request_field(request, 'device_id')
+        
+        # الحصول على device_id من الـ Header (مثل باقي الـ endpoints)
+        device_id = request.headers.get('X-Device-Id') or request.META.get('HTTP_X_DEVICE_ID')
+        
+        # الحصول على push_token من الـ body
         push_token = _get_request_field(request, 'push_token')
         
         if not device_id:
-            return Response({'detail': 'device_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': 'X-Device-Id header is required'}, status=status.HTTP_400_BAD_REQUEST)
         
         if not push_token:
             return Response({'detail': 'push_token is required'}, status=status.HTTP_400_BAD_REQUEST)
