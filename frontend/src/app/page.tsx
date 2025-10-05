@@ -779,7 +779,6 @@ export default function Home() {
   const [authStatus, setAuthStatus] = useState<'checking'|'authed'|'anon'>('checking');
   const [loginConfig, setLoginConfig] = useState<LoginPageState>(DEFAULT_LOGIN_PAGE_STATE);
   const [brandingLogo, setBrandingLogo] = useState<string>(DEFAULT_LOGIN_PAGE_STATE.login_logo_url ?? DEFAULT_BRANDING_LOGO);
-  const [qrOverlayLogo, setQrOverlayLogo] = useState<string | null>(DEFAULT_LOGIN_PAGE_STATE.qr_overlay_logo_url ?? null);
   const [loginQrDataUrl, setLoginQrDataUrl] = useState<string>('');
   const [qrRefreshing, setQrRefreshing] = useState(false);
   const [qrExpiryAt, setQrExpiryAt] = useState<number | null>(null);
@@ -1093,13 +1092,11 @@ export default function Home() {
         const resolved = await resolveLogoUrl(config?.login_logo_url ?? null);
         if (!cancelled) {
           setBrandingLogo(resolved);
-          setQrOverlayLogo(config?.qr_overlay_logo_url || null);
         }
       } catch (_err) {
         if (!cancelled) {
           setLoginConfig(DEFAULT_LOGIN_PAGE_STATE);
           setBrandingLogo(DEFAULT_LOGIN_PAGE_STATE.login_logo_url ?? DEFAULT_BRANDING_LOGO);
-          setQrOverlayLogo(DEFAULT_LOGIN_PAGE_STATE.qr_overlay_logo_url ?? null);
         }
       }
     })();
@@ -3431,9 +3428,9 @@ export default function Home() {
               <div className={`rounded-3xl border p-6 ${isLightTheme ? 'bg-white/80 border-white shadow-[0_30px_60px_-30px_rgba(249,115,22,0.35)]' : 'bg-white/5 border-white/10 backdrop-blur-sm shadow-[0_30px_60px_-30px_rgba(16,185,129,0.4)]'}`}>
                 <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
                   خطوات تسجيل الدخول الى موقع مطابقة ويب
-                  {qrOverlayLogo && (
+                  {brandingLogo && (
                     <img 
-                      src={qrOverlayLogo} 
+                      src={brandingLogo} 
                       alt="icon" 
                       className="w-6 h-6 object-contain"
                       onError={(e) => {
@@ -3504,10 +3501,10 @@ export default function Home() {
                   {loginQrDataUrl ? (
                     <>
                       <img src={loginQrDataUrl} alt="رمز تسجيل الدخول" className="w-full h-full object-contain p-3" />
-                      {qrOverlayLogo && (
+                      {brandingLogo && (
                         <div className="absolute inset-0 flex items-center justify-center">
                           <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-xl ${isLightTheme ? 'bg-white/85' : 'bg-white/90'}`}>
-                            <img src={qrOverlayLogo} alt="شعار الرمز" className="w-10 h-10 object-contain" />
+                            <img src={brandingLogo} alt="شعار الرمز" className="w-10 h-10 object-contain" />
                           </div>
                         </div>
                       )}
