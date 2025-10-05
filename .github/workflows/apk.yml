@@ -51,15 +51,69 @@ jobs:
         id: build-aab
         run: |
           echo "🏗️ Building AAB bundle for Google Play..."
-          eas build --platform android --profile production --non-interactive --wait --json > build-aab.json
-          cat build-aab.json
+          BUILD_OUTPUT=$(eas build --platform android --profile production --non-interactive --wait --json 2>&1 || true)
+          echo "$BUILD_OUTPUT" | tee build-aab-output.txt
+          
+          # Extract build ID and URL
+          BUILD_ID=$(echo "$BUILD_OUTPUT" | grep -oP '"id"\s*:\s*"\K[^"]+' | head -1 || echo "")
+          echo "BUILD_ID=$BUILD_ID" >> $GITHUB_ENV
           
       - name: Build Android APK for Testing
         id: build-apk
         run: |
           echo "🏗️ Building APK for testing/distribution..."
-          eas build --platform android --profile preview --non-interactive --wait --json > build-apk.json
-          cat build-apk.json
+          BUILD_OUTPUT=$(eas build --platform android --profile preview --non-interactive --wait --json 2>&1 || true)
+          echo "$BUILD_OUTPUT" | tee build-apk-output.txt
+          
+          # Extract build ID and URL
+          BUILD_ID=$(echo "$BUILD_OUTPUT" | grep -oP '"id"\s*:\s*"\K[^"]+' | head -1 || echo "")
+          echo "APK_BUILD_ID=$BUILD_ID" >> $GITHUB_ENV
+          
+      - name: Download builds from EAS
+        run: |
+          echo "📥 Downloading builds from EAS..."
+          mkdir -p downloads
+          
+          # Download AAB
+          if [ ! -z "$BUILD_ID" ]; then
+            echo "Downloading AAB (build: $BUILD_ID)..."
+            eas build:view $BUILD_ID --json > aab-info.json || true
+            AAB_URL=$(cat aab-info.json | grep -oP '"artifacts"\s*:\s*\{\s*"buildUrl"\s*:\s*"\K[^"]+' || echo "")
+            if [ ! -z "$AAB_URL" ]; then
+              curl -L -o downloads/mutabaka-release.aab "$AAB_URL"
+              echo "✅ AAB downloaded successfully"
+            fi
+          fi
+          
+          # Download APK
+          if [ ! -z "$APK_BUILD_ID" ]; then
+            echo "Downloading APK (build: $APK_BUILD_ID)..."
+            eas build:view $APK_BUILD_ID --json > apk-info.json || true
+            APK_URL=$(cat apk-info.json | grep -oP '"artifacts"\s*:\s*\{\s*"buildUrl"\s*:\s*"\K[^"]+' || echo "")
+            if [ ! -z "$APK_URL" ]; then
+              curl -L -o downloads/mutabaka-release.apk "$APK_URL"
+              echo "✅ APK downloaded successfully"
+            fi
+          fi
+          
+          # List downloaded files
+          ls -lh downloads/
+          
+      - name: Upload AAB artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutabaka-aab
+          path: downloads/mutabaka-release.aab
+          if-no-files-found: warn
+          
+      - name: Upload APK artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutabaka-apk
+          path: downloads/mutabaka-release.apk
+          if-no-files-found: warn
           
       - name: Print download links to summary
         if: always()
@@ -94,4 +148,5 @@ jobs:
           echo "- 📱 **APK file** - For direct installation and testing" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ **Build completed successfully!**" >> $GITHUB_STEP_SUMMARY
+
 
