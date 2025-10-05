@@ -7,9 +7,6 @@ jobs:
   build-android:
     runs-on: ubuntu-latest
     env:
-      ANDROID_HOME: ${{ github.workspace }}/android-sdk
-      ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
-      JAVA_HOME: /usr/lib/jvm/temurin-17-jdk-amd64
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
     defaults:
       run:
@@ -25,60 +22,24 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Install Android SDK
-        run: |
-          mkdir -p "$ANDROID_HOME"
-          cd "$ANDROID_HOME"
-          curl -sSLo cmdline-tools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-          mkdir -p cmdline-tools
-          unzip -q cmdline-tools.zip -d cmdline-tools
-          mv cmdline-tools/cmdline-tools cmdline-tools/latest
-          rm cmdline-tools.zip
-          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
-          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
-          yes | cmdline-tools/latest/bin/sdkmanager --licenses
-          cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
-
       - name: Install project dependencies
         run: npm ci
 
       - name: Install EAS CLI
         run: npm install -g eas-cli
 
-      - name: Generate temporary Android keystore
-        run: |
-          KEYSTORE_PATH="android-temp.keystore"
-          keytool -genkeypair \
-            -storetype PKCS12 \
-            -keystore "$KEYSTORE_PATH" \
-            -storepass android \
-            -keypass android \
-            -alias mutabaka-temp-key \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 3650 \
-            -dname "CN=Mutabaka, OU=Dev, O=Mutabaka, L=City, ST=State, C=US"
-          cat <<'EOF' > credentials.json
-          {
-            "android": {
-              "keystore": {
-                "keystorePath": "./android-temp.keystore",
-                "keystorePassword": "android",
-                "keyAlias": "mutabaka-temp-key",
-                "keyPassword": "android"
-              }
-            }
-          }
-          EOF
-
       - name: Verify Expo authentication
         run: eas whoami
+      
+      - name: Setup Android credentials on EAS (one-time)
+        run: |
+          echo "⚠️  IMPORTANT: This step requires Android credentials to be configured on EAS."
+          echo "If this is your first build, run locally once:"
+          echo "  cd mobile && eas build --platform android --profile production"
+          echo "This will generate and upload credentials to EAS servers."
+          echo ""
+          echo "Checking if credentials exist..."
+          eas credentials || echo "Run: eas credentials to manage Android keystore"
 
       - name: Show version info
         run: |
@@ -86,36 +47,27 @@ jobs:
           node -e "console.log('Version:', require('./app.json').expo.version)"
           echo "ℹ️  versionCode will auto-increment via EAS production profile"
 
-      - name: Create dist directory
-        run: mkdir -p dist
-
       - name: Build Android AAB for Production
         run: |
-          echo "Building AAB bundle for Google Play..."
-          eas build --platform android --profile production --local --non-interactive --output ./dist/Mutabaka-release.aab
+          echo "🏗️ Building AAB bundle for Google Play..."
+          eas build --platform android --profile production --non-interactive
 
       - name: Build Android APK for Testing
         run: |
-          echo "Building APK for testing/distribution..."
-          eas build --platform android --profile preview --local --non-interactive --output ./dist/Mutabaka-release.apk
-
-      - name: Show produced files
+          echo "🏗️ Building APK for testing/distribution..."
+          eas build --platform android --profile preview --non-interactive
+          
+      - name: Build completion notice
         run: |
-          echo "PWD: $(pwd)"
-          ls -lah dist/
-          echo "Verifying AAB and APK files..."
-          find dist/ -type f \( -name "*.apk" -o -name "*.aab" \) -ls
+          echo "✅ Builds submitted successfully!"
+          echo ""
+          echo "📥 Download your builds from:"
+          echo "   https://expo.dev/accounts/[your-account]/projects/mutabaka/builds"
+          echo ""
+          echo "📧 You'll receive an email notification when builds are ready."
+          echo ""
+          echo "🎯 Next steps:"
+          echo "   1. Download the .aab file from EAS Dashboard"
+          echo "   2. Upload to Google Play Console"
+          echo "   3. Test the .apk file on real devices"
 
-      - name: Upload AAB artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: mutabaka-aab
-          path: mobile/dist/Mutabaka-release.aab
-          if-no-files-found: error
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: mutabaka-apk
-          path: mobile/dist/Mutabaka-release.apk
-          if-no-files-found: error
