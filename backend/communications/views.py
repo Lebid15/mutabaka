@@ -1005,6 +1005,9 @@ class ConversationViewSet(viewsets.ModelViewSet):
         except Exception:
             pass
         try:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"📤 Attempting to send FCM push for message {msg.id} in conversation {conv.id}")
             sender_display = getattr(request.user, 'display_name', '') or request.user.username
             preview_text = _normalize_bubble_text(msg.body)[:80] if msg.body else (msg.attachment_name or '')[:80]
             send_message_push(
@@ -1018,8 +1021,11 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'kind': msg.type,
                 },
             )
-        except Exception:
-            pass
+            logger.info(f"✅ FCM push sent successfully for message {msg.id}")
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.exception(f"❌ send_message_push failed: {e}")
         try:
             sender_display = getattr(request.user, 'display_name', '') or request.user.username
             preview_text = _normalize_bubble_text(preview_label)[:80] if preview_label else '📎 مرفق'
@@ -1035,8 +1041,10 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'attachment': attachment_payload,
                 },
             )
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.exception(f"❌ send_message_push (attachment) failed: {e}")
         return Response(MessageSerializer(msg, context={'request': request}).data)
 
     def _validate_attachment(self, file_obj):
