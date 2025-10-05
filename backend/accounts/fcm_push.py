@@ -52,7 +52,7 @@ def _initialize_firebase():
         return None
 
 
-def send_fcm_notifications(tokens: List[str], title: str, body: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def send_fcm_notifications(tokens: List[str], title: str, body: str, data: Optional[Dict[str, Any]] = None, badge: Optional[int] = None) -> Dict[str, Any]:
     """
     Send push notifications using Firebase Cloud Messaging API V1
     
@@ -61,6 +61,7 @@ def send_fcm_notifications(tokens: List[str], title: str, body: str, data: Optio
         title: Notification title
         body: Notification body
         data: Optional custom data payload
+        badge: Optional badge count for app icon
     
     Returns:
         Dict with success and failure counts
@@ -108,7 +109,7 @@ def send_fcm_notifications(tokens: List[str], title: str, body: str, data: Optio
                     payload=messaging.APNSPayload(
                         aps=messaging.Aps(
                             sound='default',
-                            badge=1,
+                            badge=badge if badge is not None else 0,
                         ),
                     ),
                 ),
@@ -132,7 +133,7 @@ def send_fcm_notifications(tokens: List[str], title: str, body: str, data: Optio
     return results
 
 
-def send_fcm_multicast(tokens: List[str], title: str, body: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def send_fcm_multicast(tokens: List[str], title: str, body: str, data: Optional[Dict[str, Any]] = None, badge: Optional[int] = None) -> Dict[str, Any]:
     """
     Send push notifications to multiple devices (sends individually)
     
@@ -141,9 +142,10 @@ def send_fcm_multicast(tokens: List[str], title: str, body: str, data: Optional[
         title: Notification title
         body: Notification body
         data: Optional custom data payload
+        badge: Optional badge count for app icon
     
     Returns:
         Dict with success and failure counts
     """
     # Use the individual send method instead
-    return send_fcm_notifications(tokens, title, body, data)
+    return send_fcm_notifications(tokens, title, body, data, badge)

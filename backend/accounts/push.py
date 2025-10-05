@@ -116,27 +116,35 @@ def send_push_messages(messages: Sequence[PushMessage]) -> None:
     # Try Firebase Admin SDK first (recommended for FCM)
     if FCM_AVAILABLE:
         try:
-            tokens = [msg.to for msg in batch]
-            # Use first message as template (they should all have same title/body)
-            first_msg = batch[0]
+            # Send individual FCM notifications (each with different badge/data)
+            logger.info(f"🔥 Sending {len(batch)} notifications via Firebase Admin SDK")
             
-            logger.info(f"🔥 Sending {len(tokens)} notifications via Firebase Admin SDK")
-            results = send_fcm_multicast(
-                tokens=tokens,
-                title=first_msg.title,
-                body=first_msg.body,
-                data=first_msg.data
-            )
+            all_success = 0
+            all_failure = 0
+            all_invalid_tokens = []
             
-            logger.info(f"✅ FCM results: {results['success']} sent, {results['failure']} failed")
+            for msg in batch:
+                result = send_fcm_multicast(
+                    tokens=[msg.to],
+                    title=msg.title,
+                    body=msg.body,
+                    data=msg.data,
+                    badge=msg.badge
+                )
+                all_success += result['success']
+                all_failure += result['failure']
+                if result.get('invalid_tokens'):
+                    all_invalid_tokens.extend(result['invalid_tokens'])
+            
+            logger.info(f"✅ FCM results: {all_success} sent, {all_failure} failed")
             
             # Remove invalid tokens
-            if results.get('invalid_tokens'):
+            if all_invalid_tokens:
                 with transaction.atomic():
                     UserDevice.objects.filter(
-                        push_token__in=results['invalid_tokens']
+                        push_token__in=all_invalid_tokens
                     ).update(push_token="")
-                logger.info(f"🗑️ Removed {len(results['invalid_tokens'])} invalid tokens")
+                logger.info(f"🗑️ Removed {len(all_invalid_tokens)} invalid tokens")
             
             return
         except Exception as e:
