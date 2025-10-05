@@ -75,10 +75,10 @@ INSTALLED_APPS = [
     'ckeditor',
     'channels',
     'rest_framework',
-    'accounts',
-    'finance',
-    'communications',
-    'subscriptions',
+    'accounts',          # First
+    'subscriptions',     # Second (after accounts)
+    'finance',           # Third
+    'communications',    # Fourth
 ]
 
 MIDDLEWARE = [
@@ -176,13 +176,13 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = 'en-us'  # English (LTR)
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Europe/Istanbul'  # Turkey timezone (UTC+3)
 
 USE_I18N = True
 
-USE_TZ = True
+USE_TZ = True  # Keep timezone support enabled
 
 
 # Static files (CSS, JavaScript, Images)
@@ -268,6 +268,14 @@ JAZZMIN_SETTINGS = {
     # Ensure change forms render as tabbed UI (prevents stacked duplicate sections)
     "changeform_format": "horizontal_tabs",
     "changeform_format_overrides": {},
+    # Order apps in sidebar
+    "order_with_respect_to": [
+        "auth",            # Authentication and Authorization (first)
+        "accounts",        # Accounts (second)
+        "subscriptions",   # Subscriptions (third - right after accounts)
+        "finance",         # Finance (fourth)
+        "communications",  # Site Settings & Communications (last)
+    ],
 }
 
 JAZZMIN_UI_TWEAKS = {

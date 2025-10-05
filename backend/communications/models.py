@@ -135,8 +135,8 @@ class LoginPageSetting(models.Model):
 
     class Meta:
         ordering = ['-updated_at', '-id']
-        verbose_name = "إعداد صفحة تسجيل الدخول"
-        verbose_name_plural = "إعدادات صفحة تسجيل الدخول"
+        verbose_name = "Login Page Setting"
+        verbose_name_plural = "Login Page Settings"
 
     def __str__(self):  # pragma: no cover
         return f"LoginPageSetting({self.hero_title[:30]!r})"
@@ -169,8 +169,8 @@ class LoginInstruction(models.Model):
 
     class Meta:
         ordering = ['display_order', 'id']
-        verbose_name = "تعليمات تسجيل الدخول"
-        verbose_name_plural = "تعليمات تسجيل الدخول"
+        verbose_name = "Login Instruction"
+        verbose_name_plural = "Login Instructions"
 
     def __str__(self):  # pragma: no cover
         base = ''
@@ -213,8 +213,8 @@ class PrivacyPolicy(models.Model):
 
     class Meta:
         ordering = ['document_type', 'display_order', '-updated_at']
-        verbose_name = "مستند قانوني"
-        verbose_name_plural = "مستندات قانونية"
+        verbose_name = "Legal Document"
+        verbose_name_plural = "Legal Documents"
 
     def __str__(self):  # pragma: no cover
         label = self.title.strip() if self.title else 'Policy'
@@ -251,8 +251,8 @@ class ContactLink(models.Model):
 
     class Meta:
         ordering = ['display_order', '-updated_at']
-        verbose_name = "رابط تواصل"
-        verbose_name_plural = "روابط تواصل"
+        verbose_name = "Contact Link"
+        verbose_name_plural = "Contact Links"
 
     def __str__(self):  # pragma: no cover
         label = self.label or dict(self.ICON_CHOICES).get(self.icon, self.icon)
