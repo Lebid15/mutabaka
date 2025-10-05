@@ -3647,7 +3647,11 @@ export default function Home() {
                   <img src={contact.avatar} alt={contact.name} className="w-12 h-12 rounded-full border border-chatDivider" />
                   <div className="flex flex-col flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-base font-semibold truncate flex items-center gap-1">{contact.name} {contact.isMuted && <span title="مكتمة">🔕</span>}</span>
+                      <span className="text-base font-semibold truncate flex items-center gap-1">
+                        {pinnedIds.includes(contact.id) && <span className="text-amber-500" title="مثبت">📌</span>}
+                        {contact.name}
+                        {contact.isMuted && <span title="مكتمة">🔕</span>}
+                      </span>
                       <span className="text-[11px] text-gray-400" dir="ltr">{contact.last_message_at ? formatTimeShort(contact.last_message_at) : ''}</span>
                     </div>
                     {(() => {
@@ -3773,7 +3777,11 @@ export default function Home() {
                       <img src={contact.avatar} alt={contact.name} className="w-12 h-12 rounded-full border border-chatDivider" />
                       <div className="flex flex-col flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-base font-semibold truncate flex items-center gap-1">{contact.name} {contact.isMuted && <span title="مكتمة">🔕</span>}</span>
+                          <span className="text-base font-semibold truncate flex items-center gap-1">
+                            {pinnedIds.includes(contact.id) && <span className="text-amber-500" title="مثبت">📌</span>}
+                            {contact.name}
+                            {contact.isMuted && <span title="مكتمة">🔕</span>}
+                          </span>
                           <span className="text-[11px] text-gray-400" dir="ltr">{contact.last_message_at ? formatTimeShort(contact.last_message_at) : ''}</span>
                         </div>
                         {(() => {
