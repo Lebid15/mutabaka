@@ -449,7 +449,7 @@ export default function HomeScreen() {
     // Hide certain menu items for team members
     if (isTeamMember) {
       return allItems.filter(item => 
-        !['profile', 'matches', 'subscriptions', 'team'].includes(item.key)
+        !['profile', 'matches', 'settings', 'subscriptions', 'team'].includes(item.key)
       );
     }
     
