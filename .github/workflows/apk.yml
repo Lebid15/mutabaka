@@ -1,10 +1,10 @@
-name: Build Android APK (local)
+name: Build Android APK & AAB
 
 on:
   workflow_dispatch:
 
 jobs:
-  build-apk:
+  build-android:
     runs-on: ubuntu-latest
     env:
       ANDROID_HOME: ${{ github.workspace }}/android-sdk
@@ -80,22 +80,42 @@ jobs:
       - name: Verify Expo authentication
         run: eas whoami
 
-      - name: Build Android APK locally with EAS
+      - name: Show version info
         run: |
-          # الناتج سيكون ملف واحد اسمه app-release.apk داخل مجلد mobile/
-          eas build --platform android --profile preview --local --non-interactive --output ./app-release.apk
+          echo "📱 Current app.json version:"
+          node -e "console.log('Version:', require('./app.json').expo.version)"
+          echo "ℹ️  versionCode will auto-increment via EAS production profile"
+
+      - name: Create dist directory
+        run: mkdir -p dist
+
+      - name: Build Android AAB for Production
+        run: |
+          echo "Building AAB bundle for Google Play..."
+          eas build --platform android --profile production --local --non-interactive --output ./dist/Mutabaka-release.aab
+
+      - name: Build Android APK for Testing
+        run: |
+          echo "Building APK for testing/distribution..."
+          eas build --platform android --profile preview --local --non-interactive --output ./dist/Mutabaka-release.apk
 
       - name: Show produced files
         run: |
           echo "PWD: $(pwd)"
-          ls -lah .
-          echo "Trying to locate APK/AAB under mobile ..."
-          find . -maxdepth 6 -type f \( -name "*.apk" -o -name "*.aab" \) -print
+          ls -lah dist/
+          echo "Verifying AAB and APK files..."
+          find dist/ -type f \( -name "*.apk" -o -name "*.aab" \) -ls
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutabaka-aab
+          path: mobile/dist/Mutabaka-release.aab
+          if-no-files-found: error
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: mutabaka-apk
-          # ملاحظة: هذا المسار من جذر المستودع،, لأن خطوة الرفع لا تتبع working-directory الافتراضي
-          path: mobile/app-release.apk
+          path: mobile/dist/Mutabaka-release.apk
           if-no-files-found: error
