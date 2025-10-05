@@ -3453,7 +3453,12 @@ export default function Home() {
                           </span>
                           <div className="flex-1 space-y-1">
                             {title && <h4 className="text-base font-semibold">{title}</h4>}
-                            {description && <p className="text-sm leading-6 opacity-80">{description}</p>}
+                            {description && (
+                              <div 
+                                className="text-sm leading-6 opacity-80"
+                                dangerouslySetInnerHTML={{ __html: description }}
+                              />
+                            )}
                           </div>
                         </li>
                       );
