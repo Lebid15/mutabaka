@@ -69,6 +69,17 @@ class MeView(APIView):
             now = timezone.now()
             delta = sub.end_at - now
             remaining_days = max(0, delta.days)
+        
+        # Check if this is a team member login (from JWT token)
+        is_team_member = False
+        try:
+            if hasattr(request, 'auth') and request.auth:
+                token_payload = request.auth
+                if token_payload.get('actor') == 'team_member':
+                    is_team_member = True
+        except Exception:
+            pass
+        
         return Response({
             'id': u.id,
             'username': u.username,
@@ -82,7 +93,7 @@ class MeView(APIView):
             'logo_url': (request.build_absolute_uri(u.logo.url) if getattr(u, 'logo', None) else None),
             'subscription_remaining_days': remaining_days,
             'created_by_id': getattr(u, 'created_by_id', None),
-            'is_team_member': getattr(u, 'created_by_id', None) is not None,
+            'is_team_member': is_team_member,
         })
 
     def patch(self, request, *args, **kwargs):
