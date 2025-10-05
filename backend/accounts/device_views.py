@@ -189,14 +189,14 @@ class DeviceUpdateTokenView(APIView):
             return Response({'detail': 'push_token is required'}, status=status.HTTP_400_BAD_REQUEST)
         
         try:
-            # البحث عن الجهاز
+            # البحث عن الجهاز (الحقل اسمه 'id' وليس 'device_id')
             device = UserDevice.objects.get(
                 user=request.user,
-                device_id=device_id
+                id=device_id  # ✅ الحقل الصحيح
             )
             
             # التحقق من الصلاحيات: يمكن للجهاز تحديث token نفسه فقط
-            if acting and acting.device_id != device_id:
+            if acting and acting.id != device_id:
                 return Response(
                     {'detail': 'يمكنك تحديث token جهازك فقط'}, 
                     status=status.HTTP_403_FORBIDDEN
