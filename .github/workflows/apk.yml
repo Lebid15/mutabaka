@@ -48,26 +48,50 @@ jobs:
           echo "ℹ️  versionCode will auto-increment via EAS production profile"
 
       - name: Build Android AAB for Production
+        id: build-aab
         run: |
           echo "🏗️ Building AAB bundle for Google Play..."
-          eas build --platform android --profile production --non-interactive
-
+          eas build --platform android --profile production --non-interactive --wait --json > build-aab.json
+          cat build-aab.json
+          
       - name: Build Android APK for Testing
+        id: build-apk
         run: |
           echo "🏗️ Building APK for testing/distribution..."
-          eas build --platform android --profile preview --non-interactive
+          eas build --platform android --profile preview --non-interactive --wait --json > build-apk.json
+          cat build-apk.json
           
-      - name: Build completion notice
+      - name: Print download links to summary
+        if: always()
         run: |
-          echo "✅ Builds submitted successfully!"
-          echo ""
-          echo "📥 Download your builds from:"
-          echo "   https://expo.dev/accounts/[your-account]/projects/mutabaka/builds"
-          echo ""
-          echo "📧 You'll receive an email notification when builds are ready."
-          echo ""
-          echo "🎯 Next steps:"
-          echo "   1. Download the .aab file from EAS Dashboard"
-          echo "   2. Upload to Google Play Console"
-          echo "   3. Test the .apk file on real devices"
+          echo "### 📦 Build Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Extract download URLs from build outputs
+          if [ -f build-aab.json ]; then
+            AAB_URL=$(cat build-aab.json | grep -o '"artifacts":{"buildUrl":"[^"]*"' | sed 's/.*"buildUrl":"\([^"]*\)".*/\1/' || echo "")
+            if [ ! -z "$AAB_URL" ]; then
+              echo "### 📥 AAB Download (Production)" >> $GITHUB_STEP_SUMMARY
+              echo "� [Download AAB file]($AAB_URL)" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+          
+          if [ -f build-apk.json ]; then
+            APK_URL=$(cat build-apk.json | grep -o '"artifacts":{"buildUrl":"[^"]*"' | sed 's/.*"buildUrl":"\([^"]*\)".*/\1/' || echo "")
+            if [ ! -z "$APK_URL" ]; then
+              echo "### 📥 APK Download (Preview)" >> $GITHUB_STEP_SUMMARY
+              echo "🔗 [Download APK file]($APK_URL)" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+          
+          echo "### 🌐 EAS Dashboard" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 [View all builds on EAS](https://expo.dev/accounts/mutabaka/projects/mutabaka/builds)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📱 Build Info" >> $GITHUB_STEP_SUMMARY
+          echo "- 📦 **AAB file** - For Google Play Store upload" >> $GITHUB_STEP_SUMMARY
+          echo "- 📱 **APK file** - For direct installation and testing" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Build completed successfully!**" >> $GITHUB_STEP_SUMMARY
 
