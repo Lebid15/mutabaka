@@ -188,7 +188,22 @@ class LoginQrApproveView(APIView):
                 last_seen_at=now,
             )
 
+            # Create refresh token for the user
             refresh = RefreshToken.for_user(request.user)
+            
+            # Check if current user is a team member (from JWT claims)
+            # If so, preserve team member info in the new web token
+            if hasattr(request, 'auth') and request.auth:
+                actor = request.auth.get('actor')
+                team_member_id = request.auth.get('team_member_id')
+                owner_id = request.auth.get('owner_id')
+                
+                if actor == 'team_member' and team_member_id and owner_id:
+                    # Add team member claims to the new token
+                    refresh['actor'] = 'team_member'
+                    refresh['team_member_id'] = team_member_id
+                    refresh['owner_id'] = owner_id
+            
             access = refresh.access_token
 
             session.user = request.user
