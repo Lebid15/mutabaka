@@ -37,9 +37,9 @@ class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
             except User.DoesNotExist:
                 user = None
         if user is None:
-            raise serializers.ValidationError({'detail': 'No active account found'})
+            raise serializers.ValidationError({'detail': 'تأكد من المعلومات وحاول مجدداً'})
         if not user.check_password(password):
-            raise serializers.ValidationError({'detail': 'No active account found'})
+            raise serializers.ValidationError({'detail': 'تأكد من المعلومات وحاول مجدداً'})
         # If user has TOTP enabled, require 6-digit code
         if getattr(user, 'totp_enabled', False):
             otp = (self.initial_data.get('otp') or '').strip()

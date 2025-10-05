@@ -24,12 +24,7 @@ import type { RootStackParamList } from '../navigation';
 import { useThemeMode } from '../theme';
 import { getNotificationSoundEnabled, setNotificationSoundEnabled } from '../lib/preferences';
 import {
-  disableTotp,
-  enableTotp,
   fetchNotificationSoundUrl,
-  fetchTotpStatus,
-  setupTotp,
-  type TotpStatus,
 } from '../services/security';
 import { clearAll, inspectState } from '../lib/pinSession';
 import { fetchPinStatus } from '../services/pin';
@@ -144,11 +139,6 @@ export default function SettingsScreen() {
   const textDirectionStyle = useMemo(() => (isRTL ? styles.textAlignRight : styles.textAlignLeft), [isRTL]);
 
   const [loadingStatus, setLoadingStatus] = useState(true);
-  const [totpStatus, setTotpStatus] = useState<TotpStatus | null>(null);
-  const [totpSecret, setTotpSecret] = useState<string | null>(null);
-  const [otpUri, setOtpUri] = useState<string | null>(null);
-  const [otpInput, setOtpInput] = useState('');
-  const [totpBusy, setTotpBusy] = useState(false);
 
   const [soundEnabled, setSoundEnabledState] = useState(true);
   const [soundUrl, setSoundUrl] = useState<string | null>(null);
@@ -279,23 +269,6 @@ export default function SettingsScreen() {
     pillBorder: isLight ? '#f1c8a4' : '#1f2d35',
   }), [isLight]);
 
-  const loadTotp = useCallback(async () => {
-    try {
-      setLoadingStatus(true);
-      const status = await fetchTotpStatus();
-      setTotpStatus(status);
-      if (status.enabled) {
-        setTotpSecret(null);
-        setOtpUri(null);
-      }
-    } catch (error) {
-      console.warn('[Mutabaka] Failed to load TOTP status', error);
-      Alert.alert('تعذر التحميل', 'فشل تحميل حالة المصادقة الثنائية. حاول لاحقاً.');
-    } finally {
-      setLoadingStatus(false);
-    }
-  }, []);
-
   const refreshPinState = useCallback(async () => {
     try {
       const state = await inspectState();
@@ -365,7 +338,6 @@ export default function SettingsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadTotp();
       refreshPinState();
       loadDevices('initial').catch((error) => {
         console.warn('[Mutabaka] Failed to load devices', error);
@@ -395,24 +367,8 @@ export default function SettingsScreen() {
           devicesPollRef.current = null;
         }
       };
-    }, [loadTotp, refreshPinState, loadDevices]),
+    }, [refreshPinState, loadDevices]),
   );
-
-  const handleSetupTotp = useCallback(async () => {
-    setTotpBusy(true);
-    try {
-      const response = await setupTotp();
-      setTotpSecret(response.secret);
-      setOtpUri(response.otpauth_uri);
-      setOtpInput('');
-      setTotpStatus((prev) => (prev ? { ...prev, has_secret: true } : { enabled: false, has_secret: true }));
-    } catch (error) {
-      console.warn('[Mutabaka] Failed to setup TOTP', error);
-      Alert.alert('تعذر الإنشاء', 'لم نتمكن من إنشاء مفتاح المصادقة.');
-    } finally {
-      setTotpBusy(false);
-    }
-  }, []);
 
   const handleChangePin = useCallback(() => {
     if (!pinState?.enabled) {
@@ -457,62 +413,9 @@ export default function SettingsScreen() {
     );
   }, [navigation, pinBusy, pinState, refreshPinState]);
 
-  const handleEnableTotp = useCallback(async () => {
-    const code = otpInput.trim();
-    if (!/^[0-9]{6}$/.test(code)) {
-      Alert.alert('رمز غير صالح', 'يرجى إدخال رمز مكون من 6 أرقام.');
-      return;
-    }
-    setTotpBusy(true);
-    try {
-      await enableTotp(code);
-      Alert.alert('تم التفعيل', 'تم تفعيل المصادقة الثنائية بنجاح.');
-      setTotpSecret(null);
-      setOtpUri(null);
-      setOtpInput('');
-      await loadTotp();
-    } catch (error) {
-      console.warn('[Mutabaka] Failed to enable TOTP', error);
-      Alert.alert('تعذر التفعيل', 'تحقق من الرمز وحاول مرة أخرى.');
-    } finally {
-      setTotpBusy(false);
-    }
-  }, [loadTotp, otpInput]);
-
-  const handleDisableTotp = useCallback(async () => {
-    const code = otpInput.trim();
-    if (!/^[0-9]{6}$/.test(code)) {
-      Alert.alert('رمز غير صالح', 'يرجى إدخال رمز مكون من 6 أرقام.');
-      return;
-    }
-    setTotpBusy(true);
-    try {
-      await disableTotp(code);
-      Alert.alert('تم الإيقاف', 'تم إلغاء تفعيل المصادقة الثنائية.');
-      setOtpInput('');
-      setTotpSecret(null);
-      setOtpUri(null);
-      await loadTotp();
-    } catch (error) {
-      console.warn('[Mutabaka] Failed to disable TOTP', error);
-      Alert.alert('تعذر الإلغاء', 'تحقق من الرمز وأعد المحاولة.');
-    } finally {
-      setTotpBusy(false);
-    }
-  }, [loadTotp, otpInput]);
-
   const handleCopySecret = useCallback(async () => {
-    if (!totpSecret) {
-      return;
-    }
-    try {
-      await Clipboard.setStringAsync(totpSecret);
-      Alert.alert('تم النسخ', 'تم نسخ المفتاح إلى الحافظة.');
-    } catch (error) {
-      console.warn('[Mutabaka] Failed to copy secret', error);
-      Alert.alert('تعذر النسخ', 'حدث خطأ أثناء النسخ إلى الحافظة.');
-    }
-  }, [totpSecret]);
+    // TOTP feature removed
+  }, []);
 
   const handleToggleSound = useCallback(async () => {
     const next = !soundEnabled;
@@ -1103,135 +1006,6 @@ export default function SettingsScreen() {
 
                 <View style={[styles.card, { backgroundColor: palette.cardBg, borderColor: palette.cardBorder }]}
                 >
-                  <View style={[styles.cardHeader, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}
-                  >
-                    <View style={[styles.cardHeaderText, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}
-                    >
-                      <Text style={[styles.cardTitle, textDirectionStyle, { color: palette.heading }]}>الأمان: المصادقة الثنائية (TOTP)</Text>
-                      <Text style={[styles.cardSubtitle, textDirectionStyle, { color: palette.subText }]}>تعمل مع Google Authenticator أو تطبيقات مشابهة.</Text>
-                      {renderBadge(totpStatus?.enabled ? 'مفعّلة' : 'غير مفعّلة', Boolean(totpStatus?.enabled))}
-                    </View>
-                    <View style={styles.cardActions}>
-                      {!totpStatus?.enabled ? (
-                        <Pressable
-                          style={[styles.primaryButton, { backgroundColor: palette.primaryButtonBg }]}
-                          onPress={handleSetupTotp}
-                          disabled={totpBusy}
-                          accessibilityRole="button"
-                        >
-                          {totpBusy ? (
-                            <ActivityIndicator size="small" color={palette.primaryButtonText} />
-                          ) : (
-                            <Text style={[styles.buttonText, { color: palette.primaryButtonText }]}>إنشاء مفتاح وQR</Text>
-                          )}
-                        </Pressable>
-                      ) : (
-                        <View style={[styles.inlineRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}
-                        >
-                          <TextInput
-                            value={otpInput}
-                            onChangeText={setOtpInput}
-                            placeholder="رمز 6 أرقام"
-                            keyboardType="number-pad"
-                            maxLength={6}
-                            style={[
-                              styles.input,
-                              {
-                                backgroundColor: palette.inputBg,
-                                borderColor: palette.inputBorder,
-                                color: palette.inputText,
-                                textAlign: 'center',
-                              },
-                            ]}
-                            placeholderTextColor={palette.inputPlaceholder}
-                          />
-                          <Pressable
-                            style={[styles.dangerButton, { backgroundColor: palette.dangerButtonBg }]}
-                            onPress={handleDisableTotp}
-                            disabled={totpBusy}
-                            accessibilityRole="button"
-                          >
-                            {totpBusy ? (
-                              <ActivityIndicator size="small" color={palette.dangerButtonText} />
-                            ) : (
-                              <Text style={[styles.buttonText, { color: palette.dangerButtonText }]}>إلغاء التفعيل</Text>
-                            )}
-                          </Pressable>
-                        </View>
-                      )}
-                    </View>
-                  </View>
-
-                  {(otpUri || totpSecret) && !totpStatus?.enabled ? (
-                    <View style={[styles.totpDetails, { borderColor: palette.divider }]}
-                    >
-                      <View style={[styles.qrWrapper, { backgroundColor: palette.panelBg, borderColor: palette.panelBorder }]}
-                      >
-                        {otpUri ? (
-                          <Image
-                            source={{ uri: `https://api.qrserver.com/v1/create-qr-code/?size=${QR_SIZE}x${QR_SIZE}&data=${encodeURIComponent(otpUri)}` }}
-                            style={{ width: QR_SIZE, height: QR_SIZE }}
-                          />
-                        ) : null}
-                      </View>
-                      <View style={styles.totpInfo}>
-                        <Text style={[styles.cardSubtitle, textDirectionStyle, { color: palette.subText }]}>Secret:</Text>
-                        <View style={[styles.secretRow, { flexDirection: isRTL ? 'row-reverse' : 'row', borderColor: palette.pillBorder }]}
-                        >
-                          <Text style={[styles.secretText, textDirectionStyle, { color: palette.heading }]} numberOfLines={2}>{totpSecret}</Text>
-                          <Pressable style={[styles.copyButton, { backgroundColor: palette.ghostButtonBg, borderColor: palette.pillBorder }]}
-                            onPress={handleCopySecret}
-                            accessibilityRole="button"
-                          >
-                            <Text style={[styles.copyText, { color: palette.ghostButtonText }]}>نسخ</Text>
-                          </Pressable>
-                        </View>
-                        <View style={[styles.inlineRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}
-                        >
-                          <TextInput
-                            value={otpInput}
-                            onChangeText={setOtpInput}
-                            placeholder="أدخل رمز 6 أرقام"
-                            keyboardType="number-pad"
-                            maxLength={6}
-                            style={[
-                              styles.input,
-                              {
-                                backgroundColor: palette.inputBg,
-                                borderColor: palette.inputBorder,
-                                color: palette.inputText,
-                                textAlign: 'center',
-                              },
-                            ]}
-                            placeholderTextColor={palette.inputPlaceholder}
-                          />
-                          <Pressable
-                            style={[styles.primaryButton, { backgroundColor: palette.primaryButtonBg }]}
-                            onPress={handleEnableTotp}
-                            disabled={totpBusy}
-                            accessibilityRole="button"
-                          >
-                            {totpBusy ? (
-                              <ActivityIndicator size="small" color={palette.primaryButtonText} />
-                            ) : (
-                              <Text style={[styles.buttonText, { color: palette.primaryButtonText }]}>تفعيل</Text>
-                            )}
-                          </Pressable>
-                        </View>
-                      </View>
-                    </View>
-                  ) : null}
-
-                  {loadingStatus ? (
-                    <View style={styles.loadingRow}>
-                      <ActivityIndicator size="small" color={palette.headerIcon} />
-                      <Text style={[styles.loadingText, textDirectionStyle, { color: palette.subText }]}>جاري التحميل…</Text>
-                    </View>
-                  ) : null}
-                </View>
-
-                <View style={[styles.card, { backgroundColor: palette.cardBg, borderColor: palette.cardBorder }]}
-                >
                   <View style={[styles.cardSimpleRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}
                   >
                     <View style={[styles.cardHeaderText, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}
@@ -1617,44 +1391,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 13,
     minWidth: 120,
-  },
-  totpDetails: {
-    marginTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 12,
-    gap: 12,
-  },
-  qrWrapper: {
-    alignSelf: 'center',
-    borderWidth: 1,
-    borderRadius: 20,
-    padding: 12,
-  },
-  totpInfo: {
-    gap: 12,
-  },
-  secretRow: {
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    alignItems: 'center',
-    gap: 12,
-  },
-  secretText: {
-    flex: 1,
-    fontSize: 13,
-    textAlign: 'right',
-  },
-  copyButton: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  copyText: {
-    fontSize: 12,
-    fontWeight: '600',
   },
   loadingRow: {
     flexDirection: 'row',

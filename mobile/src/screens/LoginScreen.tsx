@@ -284,7 +284,14 @@ export default function LoginScreen() {
         const detail = typeof error.payload === 'object' && error.payload && 'detail' in error.payload
           ? String((error.payload as Record<string, unknown>).detail)
           : null;
-        throw new Error(detail || 'تعذر ربط الجهاز، حاول مرة أخرى.');
+        
+        // ترجمة الرسائل الإنجليزية إلى العربية
+        let errorMessage = detail || 'تعذر ربط الجهاز، حاول مرة أخرى.';
+        if (detail?.toLowerCase().includes('no active account')) {
+          errorMessage = 'تأكد من المعلومات وحاول مجدداً';
+        }
+        
+        throw new Error(errorMessage);
       }
       if (error instanceof Error) {
         throw new Error(error.message || 'تعذر ربط الجهاز، حاول مرة أخرى.');
@@ -338,11 +345,19 @@ export default function LoginScreen() {
           return;
         } catch (fallbackError) {
           if (fallbackError instanceof AuthenticationError) {
-            setErrorMessage(fallbackError.message);
+            // ترجمة رسالة "No active account found"
+            const msg = fallbackError.message.toLowerCase().includes('no active account') 
+              ? 'تأكد من المعلومات وحاول مجدداً' 
+              : fallbackError.message;
+            setErrorMessage(msg);
             return;
           }
           if (fallbackError instanceof Error) {
-            setErrorMessage(fallbackError.message || 'تعذر تسجيل الدخول، حاول مرة أخرى');
+            // ترجمة رسالة "No active account found"
+            const msg = fallbackError.message.toLowerCase().includes('no active account') 
+              ? 'تأكد من المعلومات وحاول مجدداً' 
+              : (fallbackError.message || 'تعذر تسجيل الدخول، حاول مرة أخرى');
+            setErrorMessage(msg);
             return;
           }
           setErrorMessage('تعذر تسجيل الدخول، حاول مرة أخرى');
@@ -351,12 +366,20 @@ export default function LoginScreen() {
       }
 
       if (error instanceof AuthenticationError) {
-        setErrorMessage(error.message);
+        // ترجمة رسالة "No active account found"
+        const msg = error.message.toLowerCase().includes('no active account') 
+          ? 'تأكد من المعلومات وحاول مجدداً' 
+          : error.message;
+        setErrorMessage(msg);
         return;
       }
 
       if (error instanceof Error) {
-        setErrorMessage(error.message || 'تعذر تسجيل الدخول، حاول مرة أخرى');
+        // ترجمة رسالة "No active account found"
+        const msg = error.message.toLowerCase().includes('no active account') 
+          ? 'تأكد من المعلومات وحاول مجدداً' 
+          : (error.message || 'تعذر تسجيل الدخول، حاول مرة أخرى');
+        setErrorMessage(msg);
         return;
       }
 

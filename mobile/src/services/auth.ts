@@ -91,6 +91,14 @@ function normalizeErrorMessage(error: HttpError): { message: string; code?: stri
   }
 
   const message = (() => {
+    // التحقق من الرسالة بغض النظر عن حالة الأحرف
+    const normalizedDetail = detail?.toLowerCase().trim();
+    
+    // فحص الرسالة الإنجليزية أولاً قبل أي شيء
+    if (normalizedDetail?.includes('no active account')) {
+      return 'تأكد من المعلومات وحاول مجدداً';
+    }
+    
     switch (detail) {
       case 'device_pending':
         return 'هذا الجهاز بانتظار موافقة المالك الأساسية.';
@@ -102,14 +110,14 @@ function normalizeErrorMessage(error: HttpError): { message: string; code?: stri
       case 'device_limit_reached':
         return 'تم الوصول إلى الحد الأقصى من الأجهزة النشطة. اطلب من المالك استبدال أحد الأجهزة.';
       case 'No active account found':
-        return 'بيانات الدخول غير صحيحة.';
+        return 'تأكد من المعلومات وحاول مجدداً';
       default:
         if (detail && detail.length > 0) {
           return detail;
         }
     }
     if (error.status === 401) {
-      return 'بيانات الدخول غير صحيحة أو انتهت صلاحيتها.';
+      return 'تأكد من المعلومات وحاول مجدداً';
     }
     if (error.status === 403) {
       return 'لا تملك صلاحية تنفيذ هذا الإجراء.';
