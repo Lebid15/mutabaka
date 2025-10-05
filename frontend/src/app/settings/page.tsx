@@ -11,12 +11,6 @@ export default function SettingsPage() {
   const [enabled, setEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [soundEnabled, setSoundEnabledState] = useState(true);
-  // TOTP
-  const [totpEnabled, setTotpEnabled] = useState(false);
-  const [totpSecret, setTotpSecret] = useState<string|null>(null);
-  const [otpUri, setOtpUri] = useState<string|null>(null);
-  const [otpInput, setOtpInput] = useState('');
-  const [totpBusy, setTotpBusy] = useState(false);
   const { isLight, toggleTheme } = useThemeMode();
 
   const containerClass = isLight
@@ -102,44 +96,6 @@ export default function SettingsPage() {
     } catch { alert('تعذر الإيقاف'); } finally { setBusy(false); }
   };
 
-  // TOTP helpers
-  useEffect(() => {
-    (async () => {
-      try { const s = await apiClient.getTotpStatus(); setTotpEnabled(!!s.enabled); } catch {}
-    })();
-  }, []);
-
-  const setupTotp = async () => {
-    setTotpBusy(true);
-    try {
-      const res = await apiClient.setupTotp();
-      setTotpSecret(res.secret);
-      setOtpUri(res.otpauth_uri);
-    } catch (e:any) {
-      alert(e?.message || 'تعذر إنشاء المفتاح');
-    } finally {
-      setTotpBusy(false);
-    }
-  };
-  const enableTotp = async () => {
-    try {
-      const code = otpInput.trim();
-      if (!/^[0-9]{6}$/.test(code)) { alert('أدخل رمزاً من 6 أرقام'); return; }
-      const res = await apiClient.enableTotp(code);
-      setTotpEnabled(!!res.enabled);
-      if (res.enabled) alert('تم تفعيل المصادقة الثنائية');
-    } catch (e:any) { alert(e?.message || 'تعذر التفعيل'); }
-  };
-  const disableTotp = async () => {
-    try {
-      const code = otpInput.trim();
-      if (!/^[0-9]{6}$/.test(code)) { alert('أدخل رمزاً من 6 أرقام'); return; }
-      const res = await apiClient.disableTotp(code);
-      setTotpEnabled(!!res.enabled);
-      if (!res.enabled) { setTotpSecret(null); setOtpUri(null); alert('تم إلغاء التفعيل'); }
-    } catch (e:any) { alert(e?.message || 'تعذر الإلغاء'); }
-  };
-
   return (
     <div className={containerClass}>
       <div className={panelClass}>
@@ -152,53 +108,6 @@ export default function SettingsPage() {
           <h1 className={pageTitleClass}>الإعدادات</h1>
         </div>
         <div className="space-y-4">
-          <div className={cardClass}>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className={headingColor}>الأمان: المصادقة الثنائية (TOTP)</div>
-                <div className={subTextColor}>تعمل مع Google Authenticator أو تطبيقات مشابهة.</div>
-                {totpEnabled ? (
-                  <div className={badgeActive}>مفعّلة</div>
-                ) : (
-                  <div className={badgeInactive}>غير مفعّلة</div>
-                )}
-              </div>
-              <div className="flex flex-col items-end gap-2 min-w-[220px]">
-                {!totpEnabled && (
-                  <button disabled={totpBusy} onClick={setupTotp} className={pillButton('primary', totpBusy)}>{totpBusy? 'جارٍ…' : 'إنشاء مفتاح وQR'}</button>
-                )}
-                {totpEnabled && (
-                  <div className="flex items-center gap-2">
-                    <input value={otpInput} onChange={e=>setOtpInput(e.target.value)} placeholder="رمز 6 أرقام" className={`w-28 ${inputClass}`} />
-                    <button onClick={disableTotp} className={pillButton('danger')}>إلغاء التفعيل</button>
-                  </div>
-                )}
-              </div>
-            </div>
-            {(otpUri || totpSecret) && (
-              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 items-center">
-                <div className={`rounded-xl p-3 flex items-center justify-center border ${isLight ? 'bg-white shadow-sm border-[#e8c8a6]' : 'bg-white rounded border-white/10'}`}>
-                  {/* Simple QR via external API without sending data; construct local data URL alternative */}
-                  {otpUri && (
-                    <img alt="QR" src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(otpUri)}`} className="w-[180px] h-[180px]" />
-                  )}
-                </div>
-                <div className="flex flex-col gap-2">
-                  <div className={subTextColor}>Secret:</div>
-                  <div className="flex items-center gap-2">
-                    <code className={codeClass}>{totpSecret}</code>
-                    <button onClick={()=>{ if (totpSecret) { navigator.clipboard.writeText(totpSecret); } }} className={copyButtonClass}>نسخ</button>
-                  </div>
-                  {!totpEnabled && (
-                    <div className="flex items-center gap-2">
-                      <input value={otpInput} onChange={e=>setOtpInput(e.target.value)} placeholder="أدخل رمز 6 أرقام" className={`w-40 ${inputClass}`} />
-                      <button onClick={enableTotp} className={pillButton('primary')}>تفعيل</button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
           <div className={cardClass}>
             <div className="flex items-center justify-between">
               <div>

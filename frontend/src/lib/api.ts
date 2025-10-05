@@ -506,36 +506,6 @@ class APIClient {
     return data;
   }
 
-  // TOTP endpoints
-  getTotpStatus(): Promise<{ enabled: boolean; has_secret: boolean }> {
-    return this.authFetch('/api/auth/totp/status').then(async (r: Response) => {
-      const data = await r.json().catch(()=>({}));
-      if (!r.ok) throw new Error(data?.detail || 'فشل تحميل الحالة');
-      return data;
-    });
-  }
-  setupTotp(): Promise<{ secret: string; otpauth_uri: string }> {
-    return this.authFetch('/api/auth/totp/setup', { method: 'POST' }).then(async (r: Response) => {
-      const data = await r.json().catch(()=>({}));
-      if (!r.ok) throw new Error(data?.detail || 'تعذر إنشاء المفتاح');
-      return data;
-    });
-  }
-  enableTotp(otp: string): Promise<{ enabled: boolean }> {
-    return this.authFetch('/api/auth/totp/enable', { method: 'POST', body: JSON.stringify({ otp }) }).then(async (r: Response) => {
-      const data = await r.json().catch(()=>({}));
-      if (!r.ok) throw new Error(data?.detail || 'تعذر التفعيل');
-      return data;
-    });
-  }
-  disableTotp(otp: string): Promise<{ enabled: boolean }> {
-    return this.authFetch('/api/auth/totp/disable', { method: 'POST', body: JSON.stringify({ otp }) }).then(async (r: Response) => {
-      const data = await r.json().catch(()=>({}));
-      if (!r.ok) throw new Error(data?.detail || 'تعذر الإلغاء');
-      return data;
-    });
-  }
-
   async uploadProfilePhoto(file: File): Promise<any> {
     if (!this.access) throw new Error('Not authenticated');
     const form = new FormData();
