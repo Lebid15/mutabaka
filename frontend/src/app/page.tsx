@@ -3061,7 +3061,9 @@ export default function Home() {
         // Fallback: if Pusher is not configured, use WS chat.message to update the thread
   if (payload.type === 'chat.message') {
           const incDisplay = (payload?.senderDisplay || payload?.display_name || '').toString();
-          const isMine = !!(profile?.username && payload?.sender === profile.username && (!incDisplay || !currentSenderDisplay ? true : incDisplay === (currentSenderDisplay || '')));
+          // For team members: check both username match AND display name match
+          // For regular users: only check username match
+          const isMine = !!(profile?.username && payload?.sender === profile.username && incDisplay === (currentSenderDisplay || ''));
           const txt = (payload?.body ?? '').toString();
           const messageIdNum = typeof payload.id === 'number' ? payload.id : null;
           const incomingClientId = typeof payload.client_id === 'string' && payload.client_id ? payload.client_id : null;
