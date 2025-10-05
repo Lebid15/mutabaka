@@ -3455,8 +3455,8 @@ export default function Home() {
                             {idx + 1}
                           </span>
                           <div className="flex-1 space-y-1">
-                            {title && <h4 className="text-sm font-semibold">{title}</h4>}
-                            {description && <p className="text-xs leading-5 opacity-80">{description}</p>}
+                            {title && <h4 className="text-base font-semibold">{title}</h4>}
+                            {description && <p className="text-sm leading-6 opacity-80">{description}</p>}
                           </div>
                         </li>
                       );
@@ -3465,19 +3465,19 @@ export default function Home() {
                     <>
                       <li className={`flex items-center gap-3 rounded-2xl border p-3 ${isLightTheme ? 'border-orange-100 bg-white/70' : 'border-white/10 bg-white/5'}`}>
                         <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl font-semibold text-sm ${isLightTheme ? 'bg-orange-500/15 text-orange-500' : 'bg-emerald-400/15 text-emerald-200'}`}>1</span>
-                        <p className="text-sm">افتح تطبيق مطابقة على هاتفك المحمول</p>
+                        <p className="text-base">افتح تطبيق مطابقة على هاتفك المحمول</p>
                       </li>
                       <li className={`flex items-center gap-3 rounded-2xl border p-3 ${isLightTheme ? 'border-orange-100 bg-white/70' : 'border-white/10 bg-white/5'}`}>
                         <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl font-semibold text-sm ${isLightTheme ? 'bg-orange-500/15 text-orange-500' : 'bg-emerald-400/15 text-emerald-200'}`}>2</span>
-                        <p className="text-sm">اضغط على زر القائمة ثم اختر "ربط الجوال بالمتصفح"</p>
+                        <p className="text-base">اضغط على زر القائمة ثم اختر "ربط الجوال بالمتصفح"</p>
                       </li>
                       <li className={`flex items-center gap-3 rounded-2xl border p-3 ${isLightTheme ? 'border-orange-100 bg-white/70' : 'border-white/10 bg-white/5'}`}>
                         <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl font-semibold text-sm ${isLightTheme ? 'bg-orange-500/15 text-orange-500' : 'bg-emerald-400/15 text-emerald-200'}`}>3</span>
-                        <p className="text-sm">اذهب إلى قسم الكاميرا المضمنة لمسح رمز QR أعلاه</p>
+                        <p className="text-base">اذهب إلى قسم الكاميرا المضمنة لمسح رمز QR أعلاه</p>
                       </li>
                       <li className={`flex items-center gap-3 rounded-2xl border p-3 ${isLightTheme ? 'border-orange-100 bg-white/70' : 'border-white/10 bg-white/5'}`}>
                         <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl font-semibold text-sm ${isLightTheme ? 'bg-orange-500/15 text-orange-500' : 'bg-emerald-400/15 text-emerald-200'}`}>4</span>
-                        <p className="text-sm">وافق على الطلب وسيتم فتح حسابك تلقائياً</p>
+                        <p className="text-base">وافق على الطلب وسيتم فتح حسابك تلقائياً</p>
                       </li>
                     </>
                   )}
