@@ -3499,16 +3499,7 @@ export default function Home() {
 
                 <div className="relative aspect-square w-full rounded-2xl bg-white flex items-center justify-center overflow-hidden">
                   {loginQrDataUrl ? (
-                    <>
-                      <img src={loginQrDataUrl} alt="رمز تسجيل الدخول" className="w-full h-full object-contain p-3" />
-                      {brandingLogo && (
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-xl ${isLightTheme ? 'bg-white/85' : 'bg-white/90'}`}>
-                            <img src={brandingLogo} alt="شعار الرمز" className="w-10 h-10 object-contain" />
-                          </div>
-                        </div>
-                      )}
-                    </>
+                    <img src={loginQrDataUrl} alt="رمز تسجيل الدخول" className="w-full h-full object-contain p-3" />
                   ) : (
                     <div className={`w-full h-full flex flex-col items-center justify-center gap-3 text-center ${isLightTheme ? 'text-gray-500' : 'text-gray-300'}`}>
                       <div className="w-14 h-14 rounded-2xl border-2 border-dashed border-current animate-pulse" />
