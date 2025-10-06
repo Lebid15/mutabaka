@@ -304,6 +304,7 @@ _DEFAULT_CORS = [
     "http://127.0.0.1:3001",
     "http://localhost:3002",
     "http://127.0.0.1:3002",
+    "https://telling-sponsor-administrators-remember.trycloudflare.com",
 ]
 # Allow adding production origins via env (DJANGO_CORS_ALLOWED_ORIGINS)
 _env_cors = _env_list("DJANGO_CORS_ALLOWED_ORIGINS") or _env_list("CORS_ALLOWED_ORIGINS") or []
@@ -318,6 +319,7 @@ CSRF_TRUSTED_ORIGINS = (
         "https://www.mutabaka.com",
         "https://ws.mutabaka.com",
         "https://ws.staging.mutabaka.com",
+        "https://telling-sponsor-administrators-remember.trycloudflare.com",
     ]
 )
 CORS_ALLOW_CREDENTIALS = True
