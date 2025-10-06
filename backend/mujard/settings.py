@@ -79,6 +79,7 @@ INSTALLED_APPS = [
     'subscriptions',     # Second (after accounts)
     'finance',           # Third
     'communications',    # Fourth
+    'stats',             # Statistics and Reports
 ]
 
 MIDDLEWARE = [

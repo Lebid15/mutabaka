@@ -8,7 +8,6 @@ from ckeditor.widgets import CKEditorWidget
 from .models import (
     ContactRelation,
     Conversation,
-    ConversationInbox,
     Message,
     Transaction,
     PushSubscription,
@@ -73,10 +72,6 @@ class ConversationAdmin(admin.ModelAdmin):
         formset.save_m2m()
 
 
-class QuickReplyForm(forms.Form):
-    body = forms.CharField(label="Message", widget=forms.Textarea(attrs={"rows": 3}), required=True)
-
-
 class PrivacyPolicyAdminForm(forms.ModelForm):
     content = forms.CharField(
         label="المحتوى",
@@ -129,71 +124,6 @@ class LoginPageSettingAdminForm(forms.ModelForm):
     class Meta:
         model = LoginPageSetting
         fields = "__all__"
-
-
-@admin.register(ConversationInbox)
-class ConversationInboxAdmin(admin.ModelAdmin):
-    """Dedicated admin inbox for staff:
-    - Lists only conversations where the current user participates (user_a or user_b)
-    - Shows latest preview/time and the other username
-    - Provides a quick link to open the full conversation page
-    """
-    list_display = ("id", "other_party", "last_message_preview", "last_activity_at", "open")
-    search_fields = ("user_a__username", "user_b__username")
-    list_select_related = ("user_a", "user_b")
-    ordering = ("-last_activity_at",)
-    actions = ["reply_quick"]
-
-    def get_queryset(self, request: HttpRequest):
-        qs = super().get_queryset(request)
-        # Limit to conversations where current staff user is either user_a or user_b
-        return qs.filter(models.Q(user_a=request.user) | models.Q(user_b=request.user))
-
-    def other_party(self, obj):
-        request = getattr(self, "_request", None)
-        # Fallback: pick the other user relative to request.user if available
-        if request and hasattr(request, "user"):
-            me = request.user
-            other = obj.user_b if obj.user_a_id == me.id else obj.user_a
-        else:
-            other = obj.user_b or obj.user_a
-        return getattr(other, "username", str(other))
-    other_party.short_description = "User"
-
-    def open(self, obj):
-        url = reverse("admin:communications_conversation_change", args=[obj.id])
-        return format_html('<a class="button" href="{}">Open</a>', url)
-    open.short_description = "Open"
-
-    def changelist_view(self, request, extra_context=None):
-        # store request on self so other_party can access current user
-        self._request = request
-        return super().changelist_view(request, extra_context)
-
-    @admin.action(description="Reply (quick)")
-    def reply_quick(self, request, queryset):
-        # Minimal quick-reply: for each selected conversation, create a message with the same body
-        form = None
-        if "apply" in request.POST:
-            form = QuickReplyForm(request.POST)
-            if form.is_valid():
-                body = form.cleaned_data["body"].strip()
-                if body:
-                    count = 0
-                    for conv in queryset:
-                        Message.objects.create(conversation=conv, sender=request.user, type="text", body=body)
-                        count += 1
-                    self.message_user(request, f"تم إرسال الرد إلى {count} محادثة")
-                    return
-        if not form:
-            form = QuickReplyForm()
-        from django.shortcuts import render
-        return render(request, "admin/communications/quick_reply.html", context={
-            "conversations": queryset,
-            "form": form,
-            "title": "Reply to selected conversations",
-            "opts": self.model._meta,
-        })
 
 @admin.register(Message)
 class MessageAdmin(admin.ModelAdmin):
@@ -319,6 +249,5 @@ class ConversationMemberAdmin(admin.ModelAdmin):
             if obj.member_team_id:
                 return getattr(obj.member_team, 'username', obj.member_team_id)
         except Exception:
-            pass
-        return "-"
+            return "N/A"
     member_display.short_description = "Member"

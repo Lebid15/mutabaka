@@ -1,0 +1,81 @@
+{% extends "admin/base_site.html" %}
+
+{% block title %}إحصائيات المالية{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    .stats-container {
+        padding: 20px;
+        max-width: 1200px;
+    }
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+    }
+    .stat-card {
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .stat-card h2 {
+        margin: 0 0 15px 0;
+        color: #417690;
+        font-size: 18px;
+    }
+    .stat-value {
+        font-size: 36px;
+        font-weight: bold;
+        color: #333;
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">الرئيسية</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label='stats' %}">الإحصائيات</a>
+    &rsaquo; إحصائيات المالية
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="stats-container">
+    <h1>💰 إحصائيات المالية</h1>
+    
+    <div class="stats-grid">
+        <div class="stat-card">
+            <h2>إجمالي المعاملات</h2>
+            <div class="stat-value">{{ stats.total_transactions }}</div>
+        </div>
+        
+        <div class="stat-card">
+            <h2>معاملات (لنا)</h2>
+            <div class="stat-value">{{ stats.transactions_lna }}</div>
+        </div>
+        
+        <div class="stat-card">
+            <h2>معاملات (لكم)</h2>
+            <div class="stat-value">{{ stats.transactions_lkom }}</div>
+        </div>
+        
+        <div class="stat-card">
+            <h2>إجمالي المحافظ</h2>
+            <div class="stat-value">{{ stats.total_wallets }}</div>
+        </div>
+        
+        <div class="stat-card">
+            <h2>العملات المتاحة</h2>
+            <div class="stat-value">{{ stats.total_currencies }}</div>
+        </div>
+        
+        <div class="stat-card">
+            <h2>العملات النشطة</h2>
+            <div class="stat-value">{{ stats.active_currencies }}</div>
+        </div>
+    </div>
+</div>
+{% endblock %}

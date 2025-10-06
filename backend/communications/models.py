@@ -762,37 +762,6 @@ class ConversationSettlement(models.Model):
     def __str__(self):  # pragma: no cover
         return f"Settlement(conv={self.conversation_id}, at={self.settled_at.isoformat()})"
 
-# ---- Admin-facing proxy models (no DB changes) ----
-class ConversationInbox(Conversation):
-    class Meta:
-        proxy = True
-        verbose_name = "Admin inbox"
-        verbose_name_plural = "Admin inbox"
-
-    def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
-        # After saving transaction, send a web push similar to text message
-        try:
-            from .views import send_web_push_to_user
-            conv = self.conversation
-            actor = self.from_user
-            recipient = conv.user_b if actor.id == conv.user_a_id else conv.user_a
-            display = getattr(actor, 'display_name', '') or actor.username
-            preview = f"معاملة: {'لنا' if self.direction=='lna' else 'لكم'} {self.amount} {self.currency.symbol or self.currency.code}"
-            payload = {
-                "type": "message",
-                "conversationId": conv.id,
-                "senderDisplay": display,
-                "preview": preview[:60],
-                "avatar": None,
-                "clickUrl": f"/conversation/{conv.id}",
-                "title": display,
-                "body": preview[:60],
-            }
-            send_web_push_to_user(recipient, payload)
-        except Exception:
-            pass
-
 
 class PushSubscription(models.Model):
     """Web Push subscription per browser/device.
@@ -893,3 +862,4 @@ def get_conversation_viewer_ids(conv: Conversation) -> list[int]:
     except Exception:
         # Fallback to participants only on any error
         return [conv.user_a_id, conv.user_b_id]
+
