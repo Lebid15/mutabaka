@@ -9,9 +9,13 @@ node_modules/
 .gitmodules
 .github/
 
-# Native folders - EAS ينشئها تلقائياً
-android/
-ios/
+# Native build outputs only - NOT the android folder itself!
+android/app/build/
+android/build/
+android/.gradle/
+android/app/.cxx/
+ios/build/
+ios/Pods/
 web-build/
 
 # Expo cache and temporary files
