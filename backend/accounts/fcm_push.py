@@ -89,6 +89,8 @@ def send_fcm_notifications(tokens: List[str], title: str, body: str, data: Optio
         for key, value in data.items():
             string_data[key] = str(value)
     
+    conversation_id = string_data.get('conversation_id', 'default')
+    
     # Send notifications
     for token in tokens:
         try:
@@ -107,6 +109,7 @@ def send_fcm_notifications(tokens: List[str], title: str, body: str, data: Optio
                         priority='high',
                         notification_count=badge if badge is not None else 0,
                         channel_id='mutabaka-messages-v2',
+                        tag=f'conversation_{conversation_id}',
                     ),
                 ),
                 apns=messaging.APNSConfig(

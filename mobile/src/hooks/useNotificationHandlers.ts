@@ -32,15 +32,18 @@ export function useNotificationHandlers() {
       return;
     }
 
+    let pendingConversationId: string | null = null;
+
     // معالج الإشعارات الواردة (عندما يكون التطبيق مفتوح)
     const handleNotificationReceived = (notification: Notifications.Notification) => {
-      console.log('[App] Notification received:', notification.request.content.title);
+      console.log('[App] 📨 Notification received:', notification.request.content.title);
       
       // تحديث badge count إذا كان موجوداً في data
       const data = notification.request.content.data;
       if (data && typeof data === 'object' && 'unread_count' in data) {
         const unreadCount = Number(data.unread_count);
         if (!isNaN(unreadCount) && unreadCount >= 0) {
+          console.log('[App] 🔢 Updating badge to:', unreadCount);
           setAppBadgeCount(unreadCount).catch((error: unknown) => {
             console.error('[App] Failed to update badge count:', error);
           });
@@ -50,24 +53,42 @@ export function useNotificationHandlers() {
 
     // معالج الضغط على الإشعار
     const handleNotificationTapped = (response: Notifications.NotificationResponse) => {
-      console.log('[App] Notification tapped:', response.notification.request.content.title);
+      console.log('[App] 🔔 Notification tapped:', response.notification.request.content.title);
       
       const data = response.notification.request.content.data;
       
       if (!data || typeof data !== 'object') {
-        console.warn('[App] No data in notification');
+        console.warn('[App] ⚠️ No data in notification');
         return;
       }
 
       // التنقل للمحادثة إذا كان الإشعار من رسالة
       if ('type' in data && data.type === 'message' && 'conversation_id' in data) {
-        const conversationId = Number(data.conversation_id);
+        const conversationId = String(data.conversation_id);
         
-        if (!isNaN(conversationId) && conversationId > 0 && navigation) {
-          console.log('[App] Navigating to conversation:', conversationId);
+        if (conversationId && conversationId !== '0' && navigation) {
+          console.log('[App] 🧭 Navigation requested for conversation:', conversationId);
           
-          // التنقل للمحادثة (Chat screen expects string conversationId)
-          navigation.navigate('Chat', { conversationId: String(conversationId) });
+          try {
+            navigation.navigate('Chat', { conversationId });
+            console.log('[App] ✅ Navigation successful');
+          } catch (error) {
+            console.warn('[App] ⚠️ Navigation failed, will retry after delay:', error);
+            pendingConversationId = conversationId;
+            
+            setTimeout(() => {
+              if (pendingConversationId && navigation) {
+                try {
+                  console.log('[App] 🔄 Retrying navigation to conversation:', pendingConversationId);
+                  navigation.navigate('Chat', { conversationId: pendingConversationId });
+                  console.log('[App] ✅ Retry successful');
+                  pendingConversationId = null;
+                } catch (retryError) {
+                  console.error('[App] ❌ Retry failed:', retryError);
+                }
+              }
+            }, 2000);
+          }
         }
       }
     };
@@ -79,18 +100,23 @@ export function useNotificationHandlers() {
     );
 
     // التحقق من آخر إشعار تم الضغط عليه (عند فتح التطبيق)
-    getLastNotificationResponse()
-      .then((lastResponse) => {
-        if (lastResponse) {
-          console.log('[App] Last notification response found');
-          handleNotificationTapped(lastResponse);
-        }
-      })
-      .catch((error) => {
-        console.error('[App] Error getting last notification response:', error);
-      });
+    const timeoutId = setTimeout(() => {
+      getLastNotificationResponse()
+        .then((lastResponse) => {
+          if (lastResponse) {
+            console.log('[App] 📱 Last notification response found, handling...');
+            handleNotificationTapped(lastResponse);
+          }
+        })
+        .catch((error) => {
+          console.error('[App] ❌ Error getting last notification response:', error);
+        });
+    }, 1000);
 
     // إلغاء التسجيل عند unmount
-    return cleanup;
+    return () => {
+      clearTimeout(timeoutId);
+      cleanup();
+    };
   }, [navigation]);
 }
