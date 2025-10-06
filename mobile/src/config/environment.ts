@@ -6,7 +6,9 @@ interface EnvironmentConfig {
   tenantHost: string;
 }
 
-const DEFAULT_ENV: EnvironmentName = 'production';
+const FALLBACK_ENV: EnvironmentName = 'production';
+const RUNTIME_DEFAULT_ENV: EnvironmentName =
+  process.env.NODE_ENV === 'production' ? FALLBACK_ENV : 'development';
 
 function normalizeUrl(value: string | undefined | null): string | undefined {
   if (!value) {
@@ -23,17 +25,18 @@ const PRESET_CONFIGS: Record<EnvironmentName, EnvironmentConfig> = {
   },
   staging: {
     apiBaseUrl: 'https://staging.mutabaka.com/api',
-    websocketBaseUrl: 'wss://staging.mutabaka.com/ws',
+    websocketBaseUrl: 'wss://ws.staging.mutabaka.com/ws',
     tenantHost: 'staging.mutabaka.com',
   },
   production: {
     apiBaseUrl: 'https://mutabaka.com/api',
-    websocketBaseUrl: 'wss://mutabaka.com/ws',
+    websocketBaseUrl: 'wss://ws.mutabaka.com/ws',
     tenantHost: 'mutabaka.com',
   },
 };
 
-const ENVIRONMENT_NAME = (process.env.EXPO_PUBLIC_APP_ENV as EnvironmentName) || DEFAULT_ENV;
+const ENVIRONMENT_NAME =
+  (process.env.EXPO_PUBLIC_APP_ENV as EnvironmentName) || RUNTIME_DEFAULT_ENV;
 
 const OVERRIDES: Partial<EnvironmentConfig> = {
   apiBaseUrl: normalizeUrl(process.env.EXPO_PUBLIC_API_BASE_URL),
@@ -41,7 +44,7 @@ const OVERRIDES: Partial<EnvironmentConfig> = {
   tenantHost: process.env.EXPO_PUBLIC_TENANT_HOST?.trim(),
 };
 
-const FALLBACK_CONFIG: EnvironmentConfig = PRESET_CONFIGS[DEFAULT_ENV];
+const FALLBACK_CONFIG: EnvironmentConfig = PRESET_CONFIGS[FALLBACK_ENV];
 
 function resolveConfig(): EnvironmentConfig {
   const base = PRESET_CONFIGS[ENVIRONMENT_NAME] || FALLBACK_CONFIG;

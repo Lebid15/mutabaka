@@ -49,7 +49,14 @@ _DEFAULT_HOSTS = ["127.0.0.1", "localhost", "testserver", "10.0.2.2"]
 _env_allowed = _env_list("DJANGO_ALLOWED_HOSTS") or _env_list("ALLOWED_HOSTS")
 # Default to local + our domains and server IP if not provided. In DEBUG, always allow 10.0.2.2 for Android emulator.
 ALLOWED_HOSTS = _env_allowed or (
-    _DEFAULT_HOSTS + ["mutabaka.com", "www.mutabaka.com", "91.98.95.210"]
+    _DEFAULT_HOSTS
+    + [
+        "mutabaka.com",
+        "www.mutabaka.com",
+        "ws.mutabaka.com",
+        "ws.staging.mutabaka.com",
+        "91.98.95.210",
+    ]
 )
 # In development, allow all hosts to simplify emulator/device testing (10.0.2.2, LAN IPs, etc.).
 if DEBUG and not os.getenv("STRICT_DEBUG_HOSTS"):
@@ -309,6 +316,8 @@ CSRF_TRUSTED_ORIGINS = (
     or [
         "https://mutabaka.com",
         "https://www.mutabaka.com",
+        "https://ws.mutabaka.com",
+        "https://ws.staging.mutabaka.com",
     ]
 )
 CORS_ALLOW_CREDENTIALS = True

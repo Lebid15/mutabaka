@@ -1,8 +1,22 @@
 import json
+from pathlib import Path
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.contrib.auth.models import AnonymousUser
+from django.conf import settings
 from .group_registry import add_channel, remove_channel, get_count
 from django.db import models
+
+
+def _debug_log(message: str) -> None:
+    if not getattr(settings, 'DEBUG', False):
+        return
+    try:
+        log_path = Path(settings.BASE_DIR) / 'ws_debug.log'
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open('a', encoding='utf-8') as handle:
+            handle.write(message + "\n")
+    except Exception:
+        pass
 
 
 class InboxConsumer(AsyncWebsocketConsumer):
@@ -15,6 +29,7 @@ class InboxConsumer(AsyncWebsocketConsumer):
         self.group_name = f"user_{self.user_id}"  # Ensure group name is set correctly
         try:
             print(f"[WS] inbox connect user={self.user_id} join group={self.group_name}")
+            _debug_log(f"connect user={self.user_id} group={self.group_name}")
         except Exception:
             pass
         await self.channel_layer.group_add(self.group_name, self.channel_name)
@@ -67,6 +82,7 @@ class InboxConsumer(AsyncWebsocketConsumer):
         try:
             cnt = add_channel(self.group_name, self.channel_name)
             print(f"[WS] inbox connected user={self.user_id} join group={self.group_name} subscribers={cnt}")
+            _debug_log(f"connected user={self.user_id} group={self.group_name} subscribers={cnt}")
         except Exception:
             pass
 
@@ -76,6 +92,7 @@ class InboxConsumer(AsyncWebsocketConsumer):
         try:
             cnt = remove_channel(self.group_name, self.channel_name)
             print(f"[WS] inbox disconnect user={getattr(self, 'user_id', None)} code={code} subscribers={cnt}")
+            _debug_log(f"disconnect user={getattr(self, 'user_id', None)} code={code} subscribers={cnt}")
         except Exception:
             pass
 
@@ -91,6 +108,7 @@ class InboxConsumer(AsyncWebsocketConsumer):
         if t == 'ping':
             try:
                 print(f"[WS] inbox ping from user={self.user_id}")
+                _debug_log(f"ping user={self.user_id}")
             except Exception:
                 pass
             await self.send(text_data=json.dumps({'type': 'pong'}))

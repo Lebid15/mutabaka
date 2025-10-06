@@ -13,6 +13,7 @@ import { initializeAppBadge, refreshAppBadge, setAppBadgeCount } from './src/lib
 import { getExpoPushToken, checkPermissionStatus } from './src/lib/pushNotifications';
 import { updateCurrentDevicePushToken } from './src/services/devices';
 import { getAccessToken } from './src/lib/authStorage';
+import { inboxSocketManager } from './src/lib/inboxSocketManager';
 import messaging from '@react-native-firebase/messaging';
 
 // معالج الإشعارات في الخلفية (FCM Background Handler)
@@ -192,11 +193,19 @@ function useNotificationBadgeBridge() {
       }
     });
 
+    inboxSocketManager.setForeground(AppState.currentState === 'active');
+    if (AppState.currentState === 'active') {
+      inboxSocketManager.ensureConnection('foreground');
+    }
+
     const appStateSubscription = AppState.addEventListener('change', (status: AppStateStatus) => {
-      if (status === 'active') {
+      const isActive = status === 'active';
+      inboxSocketManager.setForeground(isActive);
+      if (isActive) {
         refreshAppBadge();
         // فحص وتحديث Token عند العودة للتطبيق
         checkAndUpdatePushToken();
+        inboxSocketManager.ensureConnection('foreground');
       }
     });
 
@@ -205,6 +214,7 @@ function useNotificationBadgeBridge() {
       responseSubscription.remove();
       appStateSubscription.remove();
       unsubscribeFCM(); // إلغاء الاشتراك في FCM
+      inboxSocketManager.setForeground(false);
     };
   }, []);
 }
@@ -229,6 +239,9 @@ function AppContainer() {
 export default function App() {
   const rtlLayout: ViewStyle = { flex: 1, direction: 'rtl' };
   useNotificationBadgeBridge();
+  useEffect(() => {
+    inboxSocketManager.ensureConnection();
+  }, []);
 
   return (
     <GestureHandlerRootView style={rtlLayout}>

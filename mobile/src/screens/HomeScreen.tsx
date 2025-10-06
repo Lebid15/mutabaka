@@ -15,7 +15,7 @@ import { inspectState } from '../lib/pinSession';
 import { HttpError } from '../lib/httpClient';
 import { emitConversationPreviewUpdate, subscribeToConversationPreviewUpdates } from '../lib/conversationEvents';
 import { setAppBadgeCount } from '../lib/appBadge';
-import { createWebSocket } from '../lib/wsClient';
+import { inboxSocketManager } from '../lib/inboxSocketManager';
 import {
   clearConversation,
   createConversationByUsername,
@@ -299,7 +299,6 @@ export default function HomeScreen() {
   const [pinnedConversationIds, setPinnedConversationIds] = useState<number[]>([]);
   const [conversationMenu, setConversationMenu] = useState<{ id: number; title: string; subtitle: string; isMuted: boolean; isPinned: boolean } | null>(null);
   const [conversationActionState, setConversationActionState] = useState<{ id: number; action: 'pin' | 'unpin' | 'mute' | 'unmute' | 'clear' | 'delete' } | null>(null);
-  const inboxSocketRef = useRef<WebSocket | null>(null);
   const isLight = mode === 'light';
   const webAppBaseUrl = useMemo(() => environment.apiBaseUrl.replace(/\/api\/?$/, ''), []);
   const remoteConversationsRef = useRef<ConversationRecord[]>(remoteConversations);
@@ -585,6 +584,19 @@ export default function HomeScreen() {
     }, [loadConversations]),
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      inboxSocketManager.ensureConnection();
+      return undefined;
+    }, []),
+  );
+
+  useEffect(() => {
+    if (currentUser?.id) {
+      inboxSocketManager.ensureConnection();
+    }
+  }, [currentUser?.id]);
+
   useEffect(() => {
     if (!throttleUntil) {
       return;
@@ -725,232 +737,7 @@ export default function HomeScreen() {
 
     return unsubscribe;
   }, [loadConversations]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-    let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
-    const currentUserId = currentUser?.id;
-
-    const cleanupSocket = () => {
-      const existing = inboxSocketRef.current;
-      if (existing) {
-        existing.onopen = null;
-        existing.onmessage = null;
-        existing.onclose = null;
-        existing.onerror = null;
-        try {
-          existing.close();
-        } catch (error) {
-          console.warn('[Mutabaka] Failed to close inbox socket', error);
-        }
-        inboxSocketRef.current = null;
-      }
-      if (heartbeatInterval) {
-        clearInterval(heartbeatInterval);
-        heartbeatInterval = null;
-      }
-    };
-
-    const scheduleReconnect = (delay = 3000) => {
-      if (cancelled) {
-        return;
-      }
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-      }
-      reconnectTimeout = setTimeout(() => {
-        reconnectTimeout = null;
-        connect();
-      }, delay);
-    };
-
-    const connect = async () => {
-      console.log('[Mutabaka] 🔌 connect() called', {
-        cancelled,
-        hasUser: !!currentUser,
-        currentSocketState: inboxSocketRef.current?.readyState,
-      });
-      
-      if (cancelled || !currentUser) {
-        console.log('[Mutabaka] 🚫 Skipping inbox connect - cancelled or no user');
-        return;
-      }
-      
-      // Don't reconnect if we already have a live connection
-      if (inboxSocketRef.current?.readyState === WebSocket.OPEN) {
-        console.log('[Mutabaka] ✅ Inbox socket already connected, skipping reconnect');
-        return;
-      }
-      
-      // Clean up any existing connection first
-      console.log('[Mutabaka] 🧹 Cleaning up existing socket before reconnect');
-      cleanupSocket();
-      
-      try {
-        const token = await getAccessToken();
-        console.log('[Mutabaka] 🔑 Got access token for inbox:', {
-          hasToken: !!token,
-          tokenLength: token?.length || 0,
-          tokenPreview: token ? `${token.substring(0, 20)}...` : 'null',
-        });
-        if (cancelled) {
-          return;
-        }
-        if (!token) {
-          console.error('[Mutabaka] ❌ No access token available for inbox WebSocket!');
-          scheduleReconnect(5000);
-          return;
-        }
-        const base = `${environment.websocketBaseUrl.replace(/\/+$/, '')}/inbox/`;
-        const socket = createWebSocket(base, {
-          token,
-          query: {
-            tenant: environment.tenantHost,
-            tenant_host: environment.tenantHost,
-          },
-        });
-        inboxSocketRef.current = socket;
-
-        socket.onopen = () => {
-          if (cancelled) {
-            return;
-          }
-          console.log('[Mutabaka] ✅ Inbox socket opened - Starting heartbeat');
-          if (heartbeatInterval) {
-            clearInterval(heartbeatInterval);
-          }
-          // Send heartbeat every 20 seconds to keep connection alive
-          heartbeatInterval = setInterval(() => {
-            try {
-              console.log('[Mutabaka] 💓 Sending heartbeat ping...');
-              socket.send(JSON.stringify({ type: 'ping' }));
-              console.log('[Mutabaka] ✅ Heartbeat sent successfully');
-            } catch (error) {
-              console.warn('[Mutabaka] ❌ Inbox socket heartbeat failed', error);
-            }
-          }, 20000);
-          console.log('[Mutabaka] 🎯 Heartbeat interval set to 20 seconds');
-        };
-
-        socket.onmessage = (event) => {
-          console.log('[Mutabaka] 📩 Inbox WebSocket message received!');
-          
-          if (!event.data) {
-            console.warn('[Mutabaka] ⚠️ Empty message data');
-            return;
-          }
-          
-          try {
-            const data = JSON.parse(event.data);
-            console.log('[Mutabaka] 📦 Parsed inbox message:', {
-              type: data?.type,
-              conversationId: data?.conversation_id ?? data?.conversationId,
-              unreadCount: data?.unread_count ?? data?.unreadCount ?? data?.unread,
-              preview: data?.last_message_preview ?? data?.lastMessagePreview ?? data?.preview,
-            });
-            
-            if (data?.type === 'pong') {
-              // Server heartbeat response - connection is alive
-              console.log('[Mutabaka] 💚 Received pong from server');
-              return;
-            }
-            
-            if (data?.type === 'inbox.hello') {
-              // Server welcome message
-              console.log('[Mutabaka] 👋 Received inbox.hello from server');
-              return;
-            }
-            
-            if (data?.type === 'inbox.update') {
-              const conversationId = Number(data.conversation_id ?? data.conversationId);
-              if (!Number.isFinite(conversationId)) {
-                console.warn('[Mutabaka] ⚠️ Invalid conversation ID:', data.conversation_id ?? data.conversationId);
-                return;
-              }
-              const rawUnread = data.unread_count ?? data.unreadCount ?? data.unread;
-              const hasUnreadValue = rawUnread !== undefined && rawUnread !== null;
-              
-              console.log('[Mutabaka] ✅ Emitting conversation update:', {
-                conversationId,
-                unreadCount: hasUnreadValue ? normalizeUnreadCount(rawUnread) : undefined,
-                hasPreview: !!(data.last_message_preview ?? data.lastMessagePreview ?? data.preview),
-              });
-              
-              emitConversationPreviewUpdate({
-                id: conversationId,
-                lastMessageAt: data.last_message_at ?? data.lastMessageAt,
-                lastActivityAt: data.last_activity_at ?? data.lastActivityAt ?? data.last_message_at ?? data.lastMessageAt,
-                lastMessagePreview: data.last_message_preview ?? data.lastMessagePreview ?? data.preview,
-                unreadCount: hasUnreadValue ? normalizeUnreadCount(rawUnread) : undefined,
-              });
-            } else {
-              console.warn('[Mutabaka] ⚠️ Unknown message type:', data?.type);
-            }
-          } catch (error) {
-            console.warn('[Mutabaka] Failed to parse inbox message', error);
-          }
-        };
-
-        socket.onerror = (error: any) => {
-          console.error('[Mutabaka] ❌ Inbox socket ERROR event:', {
-            type: error.type,
-            message: error.message || 'Unknown error',
-            timestamp: new Date().toISOString(),
-          });
-          try {
-            socket.close();
-          } catch (closeError) {
-            console.warn('[Mutabaka] Failed to close socket after error', closeError);
-          }
-        };
-
-        socket.onclose = (event) => {
-          console.warn('[Mutabaka] 🔴 Inbox socket CLOSED:', {
-            code: event.code,
-            reason: event.reason,
-            wasClean: event.wasClean,
-            timestamp: new Date().toISOString(),
-          });
-          if (heartbeatInterval) {
-            console.log('[Mutabaka] 🛑 Stopping heartbeat interval');
-            clearInterval(heartbeatInterval);
-            heartbeatInterval = null;
-          }
-          if (!cancelled) {
-            // Only reconnect if it's not an authentication error (4001)
-            if (event.code === 4001) {
-              console.error('[Mutabaka] ❌ Authentication failed, not reconnecting');
-              return;
-            }
-            console.log('[Mutabaka] 🔄 Scheduling reconnect in 3 seconds...');
-            scheduleReconnect();
-          } else {
-            console.log('[Mutabaka] ⏹️ Component unmounted, not reconnecting');
-          }
-        };
-      } catch (error) {
-        console.warn('[Mutabaka] Failed to open inbox socket', error);
-        scheduleReconnect();
-      }
-    };
-
-    // Only connect if we don't have an active connection or user ID changed
-    if (currentUserId && inboxSocketRef.current?.readyState !== WebSocket.OPEN) {
-      connect();
-    } else if (!currentUserId) {
-      // User logged out, clean up
-      cleanupSocket();
-    }
-
-    return () => {
-      cancelled = true;
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-      }
-      cleanupSocket();
-    };
-  }, [currentUser?.id]); // Only depend on user ID, not the whole object
+  
 
   const handleMenuSelect = useCallback(async (action: MenuAction) => {
     setIsMenuOpen(false);

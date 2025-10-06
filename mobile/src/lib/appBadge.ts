@@ -68,7 +68,6 @@ async function ensurePermissions(): Promise<boolean> {
           allowAlert: false,
           allowBadge: true,
           allowSound: true,
-          allowAnnouncements: false,
           allowCriticalAlerts: false,
           allowDisplayInCarPlay: false,
           provideAppNotificationSettings: false,

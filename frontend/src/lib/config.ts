@@ -23,9 +23,19 @@ const API_PROTO = process.env.NEXT_PUBLIC_API_PROTO || devFallback?.proto || inf
 const API_HOST = process.env.NEXT_PUBLIC_API_HOST || devFallback?.host || inferred?.host || '127.0.0.1';
 const API_PORT = process.env.NEXT_PUBLIC_API_PORT || devFallback?.port || inferred?.port || (API_PROTO === 'https' ? '443' : '80');
 const WS_PROTO = process.env.NEXT_PUBLIC_WS_PROTO || devFallback?.wsProto || inferred?.wsProto || (API_PROTO === 'https' ? 'wss' : 'ws');
+const WS_HOST = process.env.NEXT_PUBLIC_WS_HOST || API_HOST;
+const WS_PORT = process.env.NEXT_PUBLIC_WS_PORT || API_PORT;
+const WS_BASE_OVERRIDE = process.env.NEXT_PUBLIC_WS_BASE?.trim().replace(/\/*$/, '');
 
-export const API_BASE = `${API_PROTO}://${API_HOST}:${API_PORT}`.replace(/:\d+$/,(m)=> (m===':80' && API_PROTO==='http') || (m===':443' && API_PROTO==='https') ? '' : m);
-export const WS_BASE = `${WS_PROTO}://${API_HOST}:${API_PORT}`;
+function stripDefaultPort(url: string, proto: string) {
+  if ((proto === 'http' || proto === 'ws') && url.endsWith(':80')) return url.slice(0, -3);
+  if ((proto === 'https' || proto === 'wss') && url.endsWith(':443')) return url.slice(0, -4);
+  return url;
+}
+
+export const API_BASE = stripDefaultPort(`${API_PROTO}://${API_HOST}:${API_PORT}`, API_PROTO);
+const computedWsBase = stripDefaultPort(`${WS_PROTO}://${WS_HOST}:${WS_PORT}`, WS_PROTO);
+export const WS_BASE = (WS_BASE_OVERRIDE && WS_BASE_OVERRIDE.length > 0 ? WS_BASE_OVERRIDE : computedWsBase).replace(/\/*$/, '');
 
 export const WS_PATH_CONVERSATION = (id:number) => `/ws/conversations/${id}/`;
 export const WS_PATH_INBOX = `/ws/inbox/`;
