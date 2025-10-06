@@ -26,13 +26,28 @@ jobs:
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
+          
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
 
       - name: Install dependencies
         run: npm install
         working-directory: ${{ env.EAS_BUILD_WORKINGDIR }}
 
-      - name: Build AAB for Production
-        run: eas build --platform android --profile production --non-interactive --output ./mutabaka.aab
+      - name: Build and Download AAB
+        id: build_aab
+        run: |
+          BUILD_JSON=$(eas build --platform android --profile production --non-interactive --wait --json)
+          echo "Build details: $BUILD_JSON"
+          BUILD_URL=$(echo "$BUILD_JSON" | jq -r '.artifacts.buildUrl')
+          
+          if [ -z "$BUILD_URL" ] || [ "$BUILD_URL" == "null" ]; then
+            echo "::error::Failed to get AAB build URL from EAS."
+            exit 1
+          fi
+          
+          echo "Downloading AAB from $BUILD_URL"
+          wget -O mutabaka.aab "$BUILD_URL"
         working-directory: ${{ env.EAS_BUILD_WORKINGDIR }}
 
       - name: Upload AAB Artifact
@@ -42,8 +57,20 @@ jobs:
           path: mobile/mutabaka.aab
           retention-days: 7
 
-      - name: Build APK for Preview
-        run: eas build --platform android --profile preview --non-interactive --output ./mutabaka.apk
+      - name: Build and Download APK
+        id: build_apk
+        run: |
+          BUILD_JSON=$(eas build --platform android --profile preview --non-interactive --wait --json)
+          echo "Build details: $BUILD_JSON"
+          BUILD_URL=$(echo "$BUILD_JSON" | jq -r '.artifacts.buildUrl')
+
+          if [ -z "$BUILD_URL" ] || [ "$BUILD_URL" == "null" ]; then
+            echo "::error::Failed to get APK build URL from EAS."
+            exit 1
+          fi
+
+          echo "Downloading APK from $BUILD_URL"
+          wget -O mutabaka.apk "$BUILD_URL"
         working-directory: ${{ env.EAS_BUILD_WORKINGDIR }}
 
       - name: Upload APK Artifact
@@ -52,7 +79,6 @@ jobs:
           name: mutabaka-apk
           path: mobile/mutabaka.apk
           retention-days: 7
-
           
       - name: Upload AAB artifact
         if: always()
