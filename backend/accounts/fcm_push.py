@@ -105,6 +105,8 @@ def send_fcm_notifications(tokens: List[str], title: str, body: str, data: Optio
                     notification=messaging.AndroidNotification(
                         sound='default',
                         priority='high',
+                        notification_count=badge if badge is not None else 0,
+                        channel_id='mutabaka-messages-v2',
                     ),
                 ),
                 apns=messaging.APNSConfig(

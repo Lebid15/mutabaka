@@ -15,13 +15,16 @@ let isInitialized = false;
 
 // تكوين كيفية عرض الإشعارات
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
+  handleNotification: async (notification) => {
+    console.log('[PushNotifications] 📬 Handling notification:', notification.request.content.title);
+    return {
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    };
+  },
 });
 
 /**
@@ -67,16 +70,19 @@ async function requestPermissions(): Promise<boolean> {
 
     // على Android، نحتاج إنشاء notification channel
     if (Platform.OS === 'android') {
+      console.log('[PushNotifications] 📢 Creating Android notification channel');
       await Notifications.setNotificationChannelAsync('mutabaka-messages-v2', {
         name: 'رسائل مُتابَكة',
-        importance: Notifications.AndroidImportance.HIGH,
+        importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#FF231F7C',
         sound: 'default',
         enableVibrate: true,
         enableLights: true,
         showBadge: true,
+        bypassDnd: false,
       });
+      console.log('[PushNotifications] ✅ Android notification channel created');
     }
 
     return true;

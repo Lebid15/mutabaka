@@ -72,13 +72,16 @@ class InboxSocketManager {
 
   setForeground(isForeground: boolean): void {
     if (this.isForeground === isForeground) {
+      this.log(`⚠️ setForeground called with same state: ${isForeground}`);
       return;
     }
     this.isForeground = isForeground;
     this.log(isForeground ? '🌞 App foregrounded, resuming connection' : '🌙 App backgrounded, suspending connection');
     if (isForeground) {
+      this.log('📡 Ensuring connection after foreground transition');
       this.ensureConnection('foreground');
     } else {
+      this.log('🔌 Disconnecting due to background transition');
       this.disconnect('backgrounded');
     }
   }
@@ -141,9 +144,11 @@ class InboxSocketManager {
   private attachSocketHandlers(socket: WebSocket): void {
     socket.onopen = () => {
       if (this.socket !== socket) {
+        this.log('⚠️ Received onopen for stale socket, ignoring');
         return;
       }
-      this.log('✅ Inbox socket opened');
+      this.log('✅ Inbox socket CONNECTED successfully');
+      this.log(`📊 Connection state: isForeground=${this.isForeground}, shouldRun=${this.shouldRun}`);
       this.notifyState('open');
       this.startHeartbeat(socket);
       this.reconnectAttempts = 0;
@@ -215,18 +220,19 @@ class InboxSocketManager {
         this.socket = null;
       }
       this.notifyState('closing');
-      this.log('🔴 Inbox socket closed', {
+      this.log('🔴 Inbox socket CLOSED', {
         code: event.code,
         reason: event.reason,
         wasClean: event.wasClean,
       });
+      this.log(`📊 Current state: shouldRun=${this.shouldRun}, isForeground=${this.isForeground}`);
 
       if (!this.shouldRun) {
         this.log('🛑 Session not available, skipping reconnect');
         return;
       }
       if (!this.isForeground) {
-        this.log('🛌 App backgrounded, skip reconnect until foregrounded');
+        this.log('🛌 App backgrounded, will reconnect when app returns to foreground');
         return;
       }
       if (event.code === 4001) {
@@ -234,6 +240,7 @@ class InboxSocketManager {
         return;
       }
 
+      this.log('🔄 Socket closed while in foreground, will attempt reconnection');
       this.scheduleReconnect('reconnect');
     };
   }
