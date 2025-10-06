@@ -797,18 +797,37 @@ export default function HomeScreen() {
         };
 
         socket.onmessage = (event) => {
+          console.log('[Mutabaka] 📩 Inbox WebSocket message received!');
+          
           if (!event.data) {
+            console.warn('[Mutabaka] ⚠️ Empty message data');
             return;
           }
+          
           try {
             const data = JSON.parse(event.data);
+            console.log('[Mutabaka] 📦 Parsed inbox message:', {
+              type: data?.type,
+              conversationId: data?.conversation_id ?? data?.conversationId,
+              unreadCount: data?.unread_count ?? data?.unreadCount ?? data?.unread,
+              preview: data?.last_message_preview ?? data?.lastMessagePreview ?? data?.preview,
+            });
+            
             if (data?.type === 'inbox.update') {
               const conversationId = Number(data.conversation_id ?? data.conversationId);
               if (!Number.isFinite(conversationId)) {
+                console.warn('[Mutabaka] ⚠️ Invalid conversation ID:', data.conversation_id ?? data.conversationId);
                 return;
               }
               const rawUnread = data.unread_count ?? data.unreadCount ?? data.unread;
               const hasUnreadValue = rawUnread !== undefined && rawUnread !== null;
+              
+              console.log('[Mutabaka] ✅ Emitting conversation update:', {
+                conversationId,
+                unreadCount: hasUnreadValue ? normalizeUnreadCount(rawUnread) : undefined,
+                hasPreview: !!(data.last_message_preview ?? data.lastMessagePreview ?? data.preview),
+              });
+              
               emitConversationPreviewUpdate({
                 id: conversationId,
                 lastMessageAt: data.last_message_at ?? data.lastMessageAt,
@@ -816,6 +835,8 @@ export default function HomeScreen() {
                 lastMessagePreview: data.last_message_preview ?? data.lastMessagePreview ?? data.preview,
                 unreadCount: hasUnreadValue ? normalizeUnreadCount(rawUnread) : undefined,
               });
+            } else {
+              console.warn('[Mutabaka] ⚠️ Unknown message type:', data?.type);
             }
           } catch (error) {
             console.warn('[Mutabaka] Failed to parse inbox message', error);

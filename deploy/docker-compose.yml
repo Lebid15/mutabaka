@@ -29,6 +29,7 @@ services:
       - ${SERVER_PATH}/media:/app/media
       - ${SERVER_PATH}/static:/app/static
       - ${SERVER_PATH}/data:/app/data
+      - ${SERVER_PATH}/firebase-service-account.json:/app/firebase-service-account.json:ro
     expose:
       - "8000"
     depends_on:
