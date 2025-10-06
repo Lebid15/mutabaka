@@ -577,7 +577,11 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      console.log('[Mutabaka] 🏠 HomeScreen FOCUSED - Loading conversations...');
       loadConversations();
+      return () => {
+        console.log('[Mutabaka] 👋 HomeScreen UNFOCUSED');
+      };
     }, [loadConversations]),
   );
 
@@ -726,6 +730,7 @@ export default function HomeScreen() {
     let cancelled = false;
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
     let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+    const currentUserId = currentUser?.id;
 
     const cleanupSocket = () => {
       const existing = inboxSocketRef.current;
@@ -761,12 +766,40 @@ export default function HomeScreen() {
     };
 
     const connect = async () => {
+      console.log('[Mutabaka] 🔌 connect() called', {
+        cancelled,
+        hasUser: !!currentUser,
+        currentSocketState: inboxSocketRef.current?.readyState,
+      });
+      
       if (cancelled || !currentUser) {
+        console.log('[Mutabaka] 🚫 Skipping inbox connect - cancelled or no user');
         return;
       }
+      
+      // Don't reconnect if we already have a live connection
+      if (inboxSocketRef.current?.readyState === WebSocket.OPEN) {
+        console.log('[Mutabaka] ✅ Inbox socket already connected, skipping reconnect');
+        return;
+      }
+      
+      // Clean up any existing connection first
+      console.log('[Mutabaka] 🧹 Cleaning up existing socket before reconnect');
+      cleanupSocket();
+      
       try {
         const token = await getAccessToken();
+        console.log('[Mutabaka] 🔑 Got access token for inbox:', {
+          hasToken: !!token,
+          tokenLength: token?.length || 0,
+          tokenPreview: token ? `${token.substring(0, 20)}...` : 'null',
+        });
         if (cancelled) {
+          return;
+        }
+        if (!token) {
+          console.error('[Mutabaka] ❌ No access token available for inbox WebSocket!');
+          scheduleReconnect(5000);
           return;
         }
         const base = `${environment.websocketBaseUrl.replace(/\/+$/, '')}/inbox/`;
@@ -783,17 +816,21 @@ export default function HomeScreen() {
           if (cancelled) {
             return;
           }
-          console.log('[Mutabaka] Inbox socket opened');
+          console.log('[Mutabaka] ✅ Inbox socket opened - Starting heartbeat');
           if (heartbeatInterval) {
             clearInterval(heartbeatInterval);
           }
+          // Send heartbeat every 20 seconds to keep connection alive
           heartbeatInterval = setInterval(() => {
             try {
+              console.log('[Mutabaka] 💓 Sending heartbeat ping...');
               socket.send(JSON.stringify({ type: 'ping' }));
+              console.log('[Mutabaka] ✅ Heartbeat sent successfully');
             } catch (error) {
-              console.warn('[Mutabaka] Inbox socket heartbeat failed', error);
+              console.warn('[Mutabaka] ❌ Inbox socket heartbeat failed', error);
             }
-          }, 45000);
+          }, 20000);
+          console.log('[Mutabaka] 🎯 Heartbeat interval set to 20 seconds');
         };
 
         socket.onmessage = (event) => {
@@ -812,6 +849,18 @@ export default function HomeScreen() {
               unreadCount: data?.unread_count ?? data?.unreadCount ?? data?.unread,
               preview: data?.last_message_preview ?? data?.lastMessagePreview ?? data?.preview,
             });
+            
+            if (data?.type === 'pong') {
+              // Server heartbeat response - connection is alive
+              console.log('[Mutabaka] 💚 Received pong from server');
+              return;
+            }
+            
+            if (data?.type === 'inbox.hello') {
+              // Server welcome message
+              console.log('[Mutabaka] 👋 Received inbox.hello from server');
+              return;
+            }
             
             if (data?.type === 'inbox.update') {
               const conversationId = Number(data.conversation_id ?? data.conversationId);
@@ -843,21 +892,41 @@ export default function HomeScreen() {
           }
         };
 
-        socket.onerror = (error) => {
-          console.warn('[Mutabaka] Inbox socket error event', error);
+        socket.onerror = (error: any) => {
+          console.error('[Mutabaka] ❌ Inbox socket ERROR event:', {
+            type: error.type,
+            message: error.message || 'Unknown error',
+            timestamp: new Date().toISOString(),
+          });
           try {
             socket.close();
-          } catch {}
+          } catch (closeError) {
+            console.warn('[Mutabaka] Failed to close socket after error', closeError);
+          }
         };
 
         socket.onclose = (event) => {
-          console.warn('[Mutabaka] Inbox socket closed', { code: event.code, reason: event.reason });
+          console.warn('[Mutabaka] 🔴 Inbox socket CLOSED:', {
+            code: event.code,
+            reason: event.reason,
+            wasClean: event.wasClean,
+            timestamp: new Date().toISOString(),
+          });
           if (heartbeatInterval) {
+            console.log('[Mutabaka] 🛑 Stopping heartbeat interval');
             clearInterval(heartbeatInterval);
             heartbeatInterval = null;
           }
           if (!cancelled) {
+            // Only reconnect if it's not an authentication error (4001)
+            if (event.code === 4001) {
+              console.error('[Mutabaka] ❌ Authentication failed, not reconnecting');
+              return;
+            }
+            console.log('[Mutabaka] 🔄 Scheduling reconnect in 3 seconds...');
             scheduleReconnect();
+          } else {
+            console.log('[Mutabaka] ⏹️ Component unmounted, not reconnecting');
           }
         };
       } catch (error) {
@@ -866,8 +935,12 @@ export default function HomeScreen() {
       }
     };
 
-    if (currentUser) {
+    // Only connect if we don't have an active connection or user ID changed
+    if (currentUserId && inboxSocketRef.current?.readyState !== WebSocket.OPEN) {
       connect();
+    } else if (!currentUserId) {
+      // User logged out, clean up
+      cleanupSocket();
     }
 
     return () => {
@@ -877,7 +950,7 @@ export default function HomeScreen() {
       }
       cleanupSocket();
     };
-  }, [currentUser]);
+  }, [currentUser?.id]); // Only depend on user ID, not the whole object
 
   const handleMenuSelect = useCallback(async (action: MenuAction) => {
     setIsMenuOpen(false);

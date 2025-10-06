@@ -48,7 +48,14 @@ export function createWebSocket(baseUrl: string, options?: CreateWebSocketOption
     finalUrl: finalUrl.substring(0, 100) + '...',
     platform: Platform.OS,
     hasToken: !!token,
+    tokenLength: token?.length || 0,
   });
+
+  // Log FULL URL for debugging (only first 20 chars of token for security)
+  const urlForDebug = token 
+    ? finalUrl.replace(token, `${token.substring(0, 20)}...REDACTED`)
+    : finalUrl;
+  console.log('[WebSocket] 🔍 FULL URL (token redacted):', urlForDebug);
 
   if (Platform.OS === 'web') {
     return protocols ? new WebSocket(finalUrl, protocols) : new WebSocket(finalUrl);
@@ -76,6 +83,7 @@ export function createWebSocket(baseUrl: string, options?: CreateWebSocketOption
   // Add event listeners to debug connection issues
   ws.addEventListener('open', () => {
     console.log('[WebSocket] ✅ Connection OPENED successfully!', finalUrl.substring(0, 80));
+    console.log('[WebSocket] 📊 ReadyState after open:', ws.readyState);
   });
 
   ws.addEventListener('error', (event: any) => {
@@ -83,6 +91,8 @@ export function createWebSocket(baseUrl: string, options?: CreateWebSocketOption
       type: event.type,
       message: event.message,
       url: finalUrl.substring(0, 80),
+      readyState: ws.readyState,
+      timestamp: new Date().toISOString(),
     });
   });
 
@@ -92,8 +102,25 @@ export function createWebSocket(baseUrl: string, options?: CreateWebSocketOption
       reason: event.reason,
       wasClean: event.wasClean,
       url: finalUrl.substring(0, 80),
+      timestamp: new Date().toISOString(),
     });
   });
+
+  // Monitor message sending
+  const originalSend = ws.send.bind(ws);
+  ws.send = function(data: any) {
+    console.log('[WebSocket] 📤 Sending message:', {
+      data: typeof data === 'string' ? data.substring(0, 100) : 'binary',
+      readyState: ws.readyState,
+      timestamp: new Date().toISOString(),
+    });
+    try {
+      return originalSend(data);
+    } catch (error) {
+      console.error('[WebSocket] ❌ Send failed:', error);
+      throw error;
+    }
+  };
 
   return ws;
 }
