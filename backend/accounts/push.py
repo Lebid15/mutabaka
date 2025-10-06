@@ -113,7 +113,10 @@ def _handle_expo_response(batch: Sequence[PushMessage], response_json: Dict[str,
 def send_push_messages(messages: Sequence[PushMessage]) -> None:
     batch = [msg for msg in messages if msg.to]
     if not batch:
+        logger.info("⚠️ No messages to send (empty batch)")
         return
+    
+    logger.info(f"🔥 send_push_messages called with {len(batch)} messages, FCM_AVAILABLE={FCM_AVAILABLE}")
     
     # Try Firebase Admin SDK first (recommended for FCM)
     if FCM_AVAILABLE:

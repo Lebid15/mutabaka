@@ -121,7 +121,9 @@ def send_message_push(
                     )
                 )
         if push_batch:
+            logger.info(f"🔥 Calling send_push_messages with {len(push_batch)} messages")
             send_push_messages(push_batch)
+            logger.info(f"✅ send_push_messages completed")
     except Exception:
         logger.exception(
             "send_message_push_failed",
