@@ -67,7 +67,7 @@ async function requestPermissions(): Promise<boolean> {
 
     // على Android، نحتاج إنشاء notification channel
     if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('mutabaka-messages', {
+      await Notifications.setNotificationChannelAsync('mutabaka-messages-v2', {
         name: 'رسائل مُتابَكة',
         importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
