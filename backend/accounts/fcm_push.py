@@ -66,7 +66,9 @@ def send_fcm_notifications(tokens: List[str], title: str, body: str, data: Optio
     Returns:
         Dict with success and failure counts
     """
+    logger.info(f"🔥 send_fcm_notifications called with {len(tokens) if tokens else 0} tokens")
     if not tokens:
+        logger.warning("⚠️ No tokens provided to send_fcm_notifications")
         return {'success': 0, 'failure': 0, 'errors': []}
     
     # Initialize Firebase if needed
@@ -147,5 +149,7 @@ def send_fcm_multicast(tokens: List[str], title: str, body: str, data: Optional[
     Returns:
         Dict with success and failure counts
     """
+    logger.info(f"🔥 send_fcm_multicast called with {len(tokens) if tokens else 0} tokens, badge={badge}")
+    
     # Use the individual send method instead
     return send_fcm_notifications(tokens, title, body, data, badge)

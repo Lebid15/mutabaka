@@ -10,15 +10,17 @@ from django.db import transaction
 
 from .models import UserDevice
 
+logger = logging.getLogger(__name__)
+
 # Try to import Firebase Admin SDK (optional, falls back to Expo API)
 try:
     from .fcm_push import send_fcm_multicast
     FCM_AVAILABLE = True
-except ImportError:
+    logger.info("✅ Firebase Admin SDK imported successfully - FCM_AVAILABLE=True")
+except ImportError as e:
     FCM_AVAILABLE = False
     send_fcm_multicast = None
-
-logger = logging.getLogger(__name__)
+    logger.error(f"❌ Failed to import Firebase Admin SDK: {e} - FCM_AVAILABLE=False")
 
 EXPO_PUSH_URL = getattr(settings, "EXPO_PUSH_URL", "https://exp.host/--/api/v2/push/send")
 INVALID_EXPO_ERRORS = {
