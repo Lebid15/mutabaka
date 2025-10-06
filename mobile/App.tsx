@@ -153,18 +153,30 @@ function useNotificationBadgeBridge() {
 
     // معالج الإشعارات الواردة من FCM (Foreground)
     const unsubscribeFCM = messaging().onMessage(async (remoteMessage) => {
-      console.log('[FCM] Foreground message received:', remoteMessage);
+      console.log('[FCM] 📨 Foreground message received');
+      console.log('[FCM] Title:', remoteMessage.notification?.title);
+      console.log('[FCM] Body:', remoteMessage.notification?.body);
+      console.log('[FCM] Data:', JSON.stringify(remoteMessage.data));
       
       // عرض الإشعار محلياً باستخدام expo-notifications
       if (remoteMessage.notification) {
+        const badge = remoteMessage.data?.unread_count;
+        const badgeCount = badge !== undefined ? sanitizeBadgeCandidate(badge) : undefined;
+        
+        console.log('[FCM] 🔔 Scheduling local notification with badge:', badgeCount);
+        
         await Notifications.scheduleNotificationAsync({
           content: {
             title: remoteMessage.notification.title || 'إشعار جديد',
             body: remoteMessage.notification.body || '',
             data: remoteMessage.data || {},
+            badge: badgeCount !== null && badgeCount !== undefined ? badgeCount : undefined,
+            sound: 'default',
           },
-          trigger: null, // فوراً
+          trigger: null,
         });
+        
+        console.log('[FCM] ✅ Local notification scheduled');
       }
       
       // تحديث Badge
@@ -172,6 +184,7 @@ function useNotificationBadgeBridge() {
       if (badge !== undefined) {
         const count = sanitizeBadgeCandidate(badge);
         if (count !== null) {
+          console.log('[FCM] 🔢 Updating badge count to:', count);
           void setAppBadgeCount(count);
         }
       }

@@ -13,6 +13,12 @@
       "android": {
         "buildType": "apk",
         "withoutCredentials": false
+      },
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "development",
+        "EXPO_PUBLIC_API_BASE_URL": "https://telling-sponsor-administrators-remember.trycloudflare.com/api",
+        "EXPO_PUBLIC_WS_BASE_URL": "wss://telling-sponsor-administrators-remember.trycloudflare.com/ws",
+        "EXPO_PUBLIC_TENANT_HOST": "telling-sponsor-administrators-remember.trycloudflare.com"
       }
     },
     "production": {

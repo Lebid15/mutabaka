@@ -3,13 +3,18 @@ Test sending push notification using Expo's push notification tool
 """
 import requests
 
-# Your device's push token
-PUSH_TOKEN = "ExponentPushToken[3Mbdk6NAXHzhbC9MN-6bHj]"
+PUSH_TOKEN = None  # DO NOT hardcode tokens here
 
 # Expo push notification endpoint
 url = "https://exp.host/--/api/v2/push/send"
 
 # Notification payload
+if PUSH_TOKEN is None:
+    print("❌ ERROR: No push token configured!")
+    print("This script is deprecated. Use send_test_push.py instead:")
+    print("  python send_test_push.py <username>")
+    exit(1)
+
 payload = {
     "to": PUSH_TOKEN,
     "title": "🔔 اختبار الإشعارات",

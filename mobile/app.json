@@ -2,6 +2,7 @@
   "expo": {
     "name": "مطابقة",
     "slug": "mobile",
+    "owner": "mutabaka",
     "scheme": "mutabaka",
     "version": "1.0.0",
     "orientation": "portrait",
