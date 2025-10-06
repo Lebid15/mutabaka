@@ -1026,25 +1026,6 @@ class ConversationViewSet(viewsets.ModelViewSet):
             import logging
             logger = logging.getLogger(__name__)
             logger.exception(f"❌ send_message_push failed: {e}")
-        try:
-            sender_display = getattr(request.user, 'display_name', '') or request.user.username
-            preview_text = _normalize_bubble_text(preview_label)[:80] if preview_label else '📎 مرفق'
-            send_message_push(
-                conv,
-                msg,
-                title=sender_display,
-                body=preview_text,
-                data={
-                    'sender_display': sender_display,
-                    'preview': preview_text,
-                    'kind': msg.type,
-                    'attachment': attachment_payload,
-                },
-            )
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.exception(f"❌ send_message_push (attachment) failed: {e}")
         return Response(MessageSerializer(msg, context={'request': request}).data)
 
     def _validate_attachment(self, file_obj):
@@ -1304,6 +1285,30 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     pass
         except Exception:
             pass
+        # FCM Push notification
+        try:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"📤 Attempting to send FCM push for attachment message {msg.id} in conversation {conv.id}")
+            sender_display = getattr(request.user, 'display_name', '') or request.user.username
+            preview_text = _normalize_bubble_text(preview_label)[:80] if preview_label else '📎 مرفق'
+            send_message_push(
+                conv,
+                msg,
+                title=sender_display,
+                body=preview_text,
+                data={
+                    'sender_display': sender_display,
+                    'preview': preview_text,
+                    'kind': msg.type,
+                    'attachment': attachment_payload,
+                },
+            )
+            logger.info(f"✅ FCM push sent successfully for attachment message {msg.id}")
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.exception(f"❌ send_message_push (attachment) failed: {e}")
         return Response(MessageSerializer(msg, context={'request': request}).data)
 
     @action(detail=True, methods=['post'])
