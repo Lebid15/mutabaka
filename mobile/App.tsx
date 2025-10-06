@@ -107,20 +107,19 @@ function useNotificationBadgeBridge() {
 
     const checkAndUpdatePushToken = async () => {
       try {
+        // التحقق من وجود access token (المستخدم مسجل دخول)
+        const accessToken = await getAccessToken();
+        if (!accessToken) {
+          console.log('[App] ⚠️ User not logged in, skipping token update');
+          return;
+        }
+        
         // التحقق من حالة الأذونات
         const currentPermission = await checkPermissionStatus();
         
-        // إذا كانت الأذونات مفعّلة الآن ولم تكن من قبل
-        if (currentPermission === 'granted' && lastPermissionCheckRef.current !== 'granted') {
+        // تحديث Token إذا كانت الأذونات مفعّلة
+        if (currentPermission === 'granted') {
           console.log('[App] 🔔 Notifications enabled, updating push token...');
-          
-          // التحقق من وجود access token (المستخدم مسجل دخول)
-          const accessToken = await getAccessToken();
-          if (!accessToken) {
-            console.log('[App] ⚠️ User not logged in, skipping token update');
-            lastPermissionCheckRef.current = currentPermission;
-            return;
-          }
           
           // الحصول على Push Token
           const pushToken = await getExpoPushToken();
@@ -138,6 +137,8 @@ function useNotificationBadgeBridge() {
           } else {
             console.warn('[App] ⚠️ Push token is null');
           }
+        } else {
+          console.log('[App] ⚠️ Notifications not enabled, skipping token update');
         }
         
         lastPermissionCheckRef.current = currentPermission;
