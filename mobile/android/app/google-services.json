@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "855289554031",
+    "project_id": "mutabaka-94ff1",
+    "storage_bucket": "mutabaka-94ff1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:855289554031:android:aa7e9056e87282fdc1d99a",
+        "android_client_info": {
+          "package_name": "com.lebid.mutabaka"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCkQeu4SMgvnBC6CTmjKP3c__BxDQxHcj0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
