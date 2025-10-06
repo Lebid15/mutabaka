@@ -4,9 +4,12 @@ from django.db.models import Q
 from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
 from django.utils.crypto import constant_time_compare
+from django.core.exceptions import ValidationError
+from django.conf import settings
 import hashlib
 import secrets
 import uuid
+import os
 
 
 def _generate_device_id() -> str:
@@ -233,3 +236,59 @@ class WebLoginSession(models.Model):
 
     def __str__(self) -> str:  # pragma: no cover - debug helper
         return f"LoginSession({self.id})[{self.status}]"
+
+
+def validate_png_only(file):
+    """Validator to ensure only PNG images are uploaded"""
+    if not file:
+        return
+    ext = os.path.splitext(file.name)[1].lower()
+    if ext != '.png':
+        raise ValidationError('فقط ملفات PNG مسموح بها (Only PNG files are allowed)')
+
+
+class SiteSettings(models.Model):
+    """Global site settings - singleton pattern"""
+    notification_icon = models.ImageField(
+        upload_to='notification_icons/',
+        blank=True,
+        null=True,
+        validators=[validate_png_only],
+        help_text='أيقونة الإشعارات (PNG فقط) - تظهر في شريط الحالة بجانب البطارية'
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'إعدادات الموقع'
+        verbose_name_plural = 'إعدادات الموقع'
+
+    def save(self, *args, **kwargs):
+        # Enforce singleton pattern
+        self.pk = 1
+        super().save(*args, **kwargs)
+        # Clear cache after saving
+        self._clear_cache()
+
+    @classmethod
+    def load(cls):
+        """Get or create the singleton instance"""
+        obj, created = cls.objects.get_or_create(pk=1)
+        return obj
+
+    @staticmethod
+    def _clear_cache():
+        """Clear the cached instance in site_settings module"""
+        try:
+            from .site_settings import clear_site_settings_cache
+            clear_site_settings_cache()
+        except ImportError:
+            pass
+
+    def get_notification_icon_url(self):
+        """Get the full URL for the notification icon"""
+        if self.notification_icon:
+            return f"{settings.MEDIA_URL}{self.notification_icon.name}"
+        return None
+
+    def __str__(self):
+        return 'إعدادات الموقع'

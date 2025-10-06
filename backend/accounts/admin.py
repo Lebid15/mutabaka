@@ -3,7 +3,8 @@ from django.contrib.auth.admin import UserAdmin
 from django.utils.translation import gettext_lazy as _
 from django.db import models
 from django.urls import reverse
-from .models import CustomUser, UserSecurityAudit, UserDevice, WebLoginSession
+from django.utils.html import format_html
+from .models import CustomUser, UserSecurityAudit, UserDevice, WebLoginSession, SiteSettings
 from .forms import CustomUserChangeForm, CustomUserCreationForm
 
 @admin.register(CustomUser)
@@ -250,4 +251,40 @@ class WebLoginSessionAdmin(admin.ModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None):  # pragma: no cover - sessions are read-only
+        return False
+
+
+@admin.register(SiteSettings)
+class SiteSettingsAdmin(admin.ModelAdmin):
+    """Admin interface for site-wide settings"""
+    
+    fieldsets = (
+        (_('إعدادات الإشعارات'), {
+            'fields': ('notification_icon', 'notification_icon_preview')
+        }),
+        (_('معلومات التحديث'), {
+            'fields': ('updated_at',),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    readonly_fields = ('notification_icon_preview', 'updated_at')
+    
+    def notification_icon_preview(self, obj):
+        """Display thumbnail preview of the notification icon"""
+        if obj and obj.notification_icon:
+            return format_html(
+                '<img src="{}" style="max-width: 200px; max-height: 200px; border: 1px solid #ddd; padding: 5px;" />',
+                obj.notification_icon.url
+            )
+        return format_html('<span style="color: #999;">لا توجد أيقونة</span>')
+    
+    notification_icon_preview.short_description = 'معاينة الأيقونة'
+    
+    def has_add_permission(self, request):
+        # Singleton - only one instance allowed
+        return not SiteSettings.objects.exists()
+    
+    def has_delete_permission(self, request, obj=None):
+        # Don't allow deletion of the settings object
         return False
