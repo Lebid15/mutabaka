@@ -166,7 +166,7 @@ const normalizeNumberString = (raw: string) => {
   return s.trim();
 };
 
-const DEFAULT_BRANDING_LOGO = '/frontend/public/icons/mlogo.jpg';
+const DEFAULT_BRANDING_LOGO = '/icons/mlogo.jpg';
 const EMOJI_PALETTE = ['😀','😂','😍','👍','🙏','🎉','💰','📌','❤️','😢','😎','🤔','✅','❌','🔥','🌟','🥰','😮','💡','📈','🤥','🌎'];
 const EMOJI_CLUSTER_REGEX = /^[\p{Extended_Pictographic}\u200d\uFE0F]+$/u;
 
