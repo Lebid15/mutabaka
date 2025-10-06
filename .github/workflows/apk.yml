@@ -40,8 +40,8 @@ jobs:
           BUILD_JSON=$(eas build --platform android --profile production --non-interactive --wait --json)
           echo "Build details: $BUILD_JSON"
           echo "$BUILD_JSON" | jq '.' > ../build-aab.json
-          BUILD_URL=$(echo "$BUILD_JSON" | jq -r '.artifacts.buildUrl')
-          BUILD_PAGE_URL=$(echo "$BUILD_JSON" | jq -r '.buildDetailsPageUrl // empty')
+          BUILD_URL=$(echo "$BUILD_JSON" | jq -r 'if type=="array" then (.[0].artifacts.buildUrl // .[0].artifacts.applicationArchiveUrl // empty) else (.artifacts.buildUrl // .artifacts.applicationArchiveUrl // empty) end')
+          BUILD_PAGE_URL=$(echo "$BUILD_JSON" | jq -r 'if type=="array" then (.[0].buildDetailsPageUrl // empty) else (.buildDetailsPageUrl // empty) end')
           
           if [ -z "$BUILD_URL" ] || [ "$BUILD_URL" == "null" ]; then
             echo "::error::Failed to get AAB build URL from EAS."
@@ -69,8 +69,8 @@ jobs:
           BUILD_JSON=$(eas build --platform android --profile preview --non-interactive --wait --json)
           echo "Build details: $BUILD_JSON"
           echo "$BUILD_JSON" | jq '.' > ../build-apk.json
-          BUILD_URL=$(echo "$BUILD_JSON" | jq -r '.artifacts.buildUrl')
-          BUILD_PAGE_URL=$(echo "$BUILD_JSON" | jq -r '.buildDetailsPageUrl // empty')
+          BUILD_URL=$(echo "$BUILD_JSON" | jq -r 'if type=="array" then (.[0].artifacts.buildUrl // .[0].artifacts.applicationArchiveUrl // empty) else (.artifacts.buildUrl // .artifacts.applicationArchiveUrl // empty) end')
+          BUILD_PAGE_URL=$(echo "$BUILD_JSON" | jq -r 'if type=="array" then (.[0].buildDetailsPageUrl // empty) else (.buildDetailsPageUrl // empty) end')
 
           if [ -z "$BUILD_URL" ] || [ "$BUILD_URL" == "null" ]; then
             echo "::error::Failed to get APK build URL from EAS."
