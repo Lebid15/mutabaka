@@ -12,6 +12,9 @@ import firebase_admin
 from firebase_admin import credentials, messaging
 from django.conf import settings
 
+# Import notification icon helper
+from accounts.site_settings import get_notification_icon_url
+
 logger = logging.getLogger(__name__)
 
 # Initialize Firebase Admin SDK
@@ -91,9 +94,25 @@ def send_fcm_notifications(tokens: List[str], title: str, body: str, data: Optio
     
     conversation_id = string_data.get('conversation_id', 'default')
     
+    # Get notification icon from settings (if uploaded)
+    notification_icon = get_notification_icon_url()
+    
     # Send notifications
     for token in tokens:
         try:
+            # Build Android notification config with icon
+            android_notification = messaging.AndroidNotification(
+                sound='default',
+                priority='high',
+                notification_count=badge if badge is not None else 0,
+                channel_id='mutabaka-messages-v2',
+                tag=f'conversation_{conversation_id}',
+            )
+            
+            # Add icon if available
+            if notification_icon:
+                android_notification.icon = notification_icon
+            
             # Create notification message
             message = messaging.Message(
                 notification=messaging.Notification(
@@ -104,13 +123,7 @@ def send_fcm_notifications(tokens: List[str], title: str, body: str, data: Optio
                 token=token,
                 android=messaging.AndroidConfig(
                     priority='high',
-                    notification=messaging.AndroidNotification(
-                        sound='default',
-                        priority='high',
-                        notification_count=badge if badge is not None else 0,
-                        channel_id='mutabaka-messages-v2',
-                        tag=f'conversation_{conversation_id}',
-                    ),
+                    notification=android_notification,
                 ),
                 apns=messaging.APNSConfig(
                     payload=messaging.APNSPayload(
