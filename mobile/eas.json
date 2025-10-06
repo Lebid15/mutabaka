@@ -15,16 +15,24 @@
         "withoutCredentials": false
       },
       "env": {
-        "EXPO_PUBLIC_APP_ENV": "development",
-        "EXPO_PUBLIC_API_BASE_URL": "https://telling-sponsor-administrators-remember.trycloudflare.com/api",
-        "EXPO_PUBLIC_WS_BASE_URL": "wss://telling-sponsor-administrators-remember.trycloudflare.com/ws",
-        "EXPO_PUBLIC_TENANT_HOST": "telling-sponsor-administrators-remember.trycloudflare.com"
+        "EXPO_PUBLIC_APP_ENV": "production",
+        "EXPO_PUBLIC_API_BASE_URL": "https://mutabaka.com/api",
+        "EXPO_PUBLIC_WS_BASE_URL": "wss://mutabaka.com/ws",
+        "EXPO_PUBLIC_TENANT_HOST": "mutabaka.com"
       }
     },
     "production": {
       "autoIncrement": true,
+      "distribution": "internal",
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "apk",
+        "withoutCredentials": false
+      },
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "production",
+        "EXPO_PUBLIC_API_BASE_URL": "https://mutabaka.com/api",
+        "EXPO_PUBLIC_WS_BASE_URL": "wss://mutabaka.com/ws",
+        "EXPO_PUBLIC_TENANT_HOST": "mutabaka.com"
       }
     }
   },
