@@ -3432,7 +3432,7 @@ export default function Home() {
                     <img 
                       src={brandingLogo} 
                       alt="icon" 
-                      className="w-6 h-6 object-contain"
+                      className="w-10 h-10 object-contain bg-transparent"
                       onError={(e) => {
                         const target = e.currentTarget as HTMLImageElement;
                         target.style.display = 'none';
