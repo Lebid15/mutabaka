@@ -27,8 +27,8 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
           
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Install utilities
+        run: sudo apt-get update && sudo apt-get install -y jq wget
 
       - name: Install dependencies
         run: npm install
@@ -39,7 +39,9 @@ jobs:
         run: |
           BUILD_JSON=$(eas build --platform android --profile production --non-interactive --wait --json)
           echo "Build details: $BUILD_JSON"
+          echo "$BUILD_JSON" | jq '.' > ../build-aab.json
           BUILD_URL=$(echo "$BUILD_JSON" | jq -r '.artifacts.buildUrl')
+          BUILD_PAGE_URL=$(echo "$BUILD_JSON" | jq -r '.buildDetailsPageUrl // empty')
           
           if [ -z "$BUILD_URL" ] || [ "$BUILD_URL" == "null" ]; then
             echo "::error::Failed to get AAB build URL from EAS."
@@ -48,6 +50,10 @@ jobs:
           
           echo "Downloading AAB from $BUILD_URL"
           wget -O mutabaka.aab "$BUILD_URL"
+          echo "build_url=$BUILD_URL" >> "$GITHUB_OUTPUT"
+          if [ -n "$BUILD_PAGE_URL" ] && [ "$BUILD_PAGE_URL" != "null" ]; then
+            echo "build_page_url=$BUILD_PAGE_URL" >> "$GITHUB_OUTPUT"
+          fi
         working-directory: ${{ env.EAS_BUILD_WORKINGDIR }}
 
       - name: Upload AAB Artifact
@@ -62,7 +68,9 @@ jobs:
         run: |
           BUILD_JSON=$(eas build --platform android --profile preview --non-interactive --wait --json)
           echo "Build details: $BUILD_JSON"
+          echo "$BUILD_JSON" | jq '.' > ../build-apk.json
           BUILD_URL=$(echo "$BUILD_JSON" | jq -r '.artifacts.buildUrl')
+          BUILD_PAGE_URL=$(echo "$BUILD_JSON" | jq -r '.buildDetailsPageUrl // empty')
 
           if [ -z "$BUILD_URL" ] || [ "$BUILD_URL" == "null" ]; then
             echo "::error::Failed to get APK build URL from EAS."
@@ -71,6 +79,10 @@ jobs:
 
           echo "Downloading APK from $BUILD_URL"
           wget -O mutabaka.apk "$BUILD_URL"
+          echo "build_url=$BUILD_URL" >> "$GITHUB_OUTPUT"
+          if [ -n "$BUILD_PAGE_URL" ] && [ "$BUILD_PAGE_URL" != "null" ]; then
+            echo "build_page_url=$BUILD_PAGE_URL" >> "$GITHUB_OUTPUT"
+          fi
         working-directory: ${{ env.EAS_BUILD_WORKINGDIR }}
 
       - name: Upload APK Artifact
@@ -80,45 +92,33 @@ jobs:
           path: mobile/mutabaka.apk
           retention-days: 7
           
-      - name: Upload AAB artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: mutabaka-aab
-          path: downloads/mutabaka-release.aab
-          if-no-files-found: warn
-          
-      - name: Upload APK artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: mutabaka-apk
-          path: downloads/mutabaka-release.apk
-          if-no-files-found: warn
-          
       - name: Print download links to summary
         if: always()
         run: |
           echo "### 📦 Build Status" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Extract download URLs from build outputs
-          if [ -f build-aab.json ]; then
-            AAB_URL=$(cat build-aab.json | grep -o '"artifacts":{"buildUrl":"[^"]*"' | sed 's/.*"buildUrl":"\([^"]*\)".*/\1/' || echo "")
-            if [ ! -z "$AAB_URL" ]; then
-              echo "### 📥 AAB Download (Production)" >> $GITHUB_STEP_SUMMARY
-              echo "� [Download AAB file]($AAB_URL)" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
+          AAB_URL="${{ steps.build_aab.outputs.build_url }}"
+          AAB_PAGE_URL="${{ steps.build_aab.outputs.build_page_url }}"
+          APK_URL="${{ steps.build_apk.outputs.build_url }}"
+          APK_PAGE_URL="${{ steps.build_apk.outputs.build_page_url }}"
+
+          if [ ! -z "$AAB_URL" ]; then
+            echo "### 📥 AAB Download (Production)" >> $GITHUB_STEP_SUMMARY
+            echo "🔗 [Download AAB file]($AAB_URL)" >> $GITHUB_STEP_SUMMARY
+            if [ ! -z "$AAB_PAGE_URL" ]; then
+              echo "🔍 [View build details]($AAB_PAGE_URL)" >> $GITHUB_STEP_SUMMARY
             fi
+            echo "" >> $GITHUB_STEP_SUMMARY
           fi
-          
-          if [ -f build-apk.json ]; then
-            APK_URL=$(cat build-apk.json | grep -o '"artifacts":{"buildUrl":"[^"]*"' | sed 's/.*"buildUrl":"\([^"]*\)".*/\1/' || echo "")
-            if [ ! -z "$APK_URL" ]; then
-              echo "### 📥 APK Download (Preview)" >> $GITHUB_STEP_SUMMARY
-              echo "🔗 [Download APK file]($APK_URL)" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ ! -z "$APK_URL" ]; then
+            echo "### 📥 APK Download (Preview)" >> $GITHUB_STEP_SUMMARY
+            echo "🔗 [Download APK file]($APK_URL)" >> $GITHUB_STEP_SUMMARY
+            if [ ! -z "$APK_PAGE_URL" ]; then
+              echo "🔍 [View build details]($APK_PAGE_URL)" >> $GITHUB_STEP_SUMMARY
             fi
+            echo "" >> $GITHUB_STEP_SUMMARY
           fi
           
           echo "### 🌐 EAS Dashboard" >> $GITHUB_STEP_SUMMARY
