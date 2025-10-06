@@ -81,24 +81,45 @@ def send_message_push(
     data: Dict[str, Any] | None = None,
 ) -> None:
     if not conversation or not message:
+        logger.warning("⚠️ No conversation or message provided")
         return
     try:
-        target_user_ids = [uid for uid in get_conversation_viewer_ids(conversation) if uid and uid != message.sender_id]
+        all_viewers = get_conversation_viewer_ids(conversation)
+        logger.info(f"📋 All conversation viewers: {all_viewers}")
+        
+        target_user_ids = [uid for uid in all_viewers if uid and uid != message.sender_id]
+        logger.info(f"🎯 Target users (excluding sender {message.sender_id}): {target_user_ids}")
+        
         if not target_user_ids:
+            logger.warning("⚠️ No target users found")
             return
+            
         tokens_by_user = get_active_device_tokens(target_user_ids)
+        logger.info(f"🔑 Tokens by user: {dict((k, f'{len(v)} tokens') for k, v in tokens_by_user.items())}")
+        
         if not tokens_by_user:
+            logger.warning("⚠️ No device tokens found for target users")
             return
+            
         muted_ids = _muted_user_ids(conversation.id, tokens_by_user.keys())
+        logger.info(f"🔇 Muted user IDs: {muted_ids}")
+        
         unread_cache: Dict[int, int] = {}
         push_batch: List[PushMessage] = []
         for user_id, tokens in tokens_by_user.items():
-            if user_id in muted_ids or not tokens:
+            if user_id in muted_ids:
+                logger.info(f"⏭️ Skipping muted user {user_id}")
+                continue
+            if not tokens:
+                logger.info(f"⏭️ Skipping user {user_id} - no tokens")
                 continue
             unread = unread_cache.get(user_id)
             if unread is None:
                 unread = _total_unread_for_user(user_id)
                 unread_cache[user_id] = unread
+            
+            logger.info(f"📊 User {user_id}: unread={unread}, tokens={len(tokens)}")
+            
             payload: Dict[str, Any] = {
                 "type": "message",
                 "conversation_id": conversation.id,
@@ -110,7 +131,9 @@ def send_message_push(
                 payload.update(data)
             normalized = _normalize_value(payload)
             badge_value = int(unread) if unread and unread > 0 else 0
+            
             for token in tokens:
+                logger.info(f"➕ Adding push message for user {user_id}, token={token[:20]}..., badge={badge_value}")
                 push_batch.append(
                     PushMessage(
                         to=token,
@@ -120,10 +143,15 @@ def send_message_push(
                         badge=badge_value,
                     )
                 )
+        
+        logger.info(f"📦 Total push_batch size: {len(push_batch)}")
+        
         if push_batch:
             logger.info(f"🔥 Calling send_push_messages with {len(push_batch)} messages")
             send_push_messages(push_batch)
             logger.info(f"✅ send_push_messages completed")
+        else:
+            logger.warning("⚠️ push_batch is EMPTY - no messages to send!")
     except Exception:
         logger.exception(
             "send_message_push_failed",
