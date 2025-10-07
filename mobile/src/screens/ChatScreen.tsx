@@ -1038,7 +1038,7 @@ export default function ChatScreen() {
   const [note, setNote] = useState('');
   const [noteModalVisible, setNoteModalVisible] = useState(false);
   const [emojiPickerVisible, setEmojiPickerVisible] = useState(false);
-  const [customEmojis, setCustomEmojis] = useState<string[]>([]);
+  const [customEmojis, setCustomEmojis] = useState<string[]>(EMOJI_PALETTE);
   const [membersModalVisible, setMembersModalVisible] = useState(false);
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersBusy, setMembersBusy] = useState(false);
@@ -1096,14 +1096,21 @@ export default function ChatScreen() {
     (async () => {
       try {
         const response = await fetch(`${environment.apiBaseUrl}/custom-emojis`);
-        if (!response.ok) throw new Error('Failed to fetch emojis');
+        if (!response.ok) {
+          console.warn('[Emoji] Failed to fetch custom emojis, using defaults');
+          return;
+        }
         const data = await response.json();
         if (cancelled) return;
         const emojis = data.map((item: any) => item.emoji);
-        setCustomEmojis(emojis.length > 0 ? emojis : EMOJI_PALETTE);
-      } catch (_err) {
-        if (cancelled) return;
-        setCustomEmojis(EMOJI_PALETTE); // استخدام الافتراضي عند الفشل
+        if (emojis.length > 0) {
+          setCustomEmojis(emojis);
+          console.log('[Emoji] Loaded', emojis.length, 'custom emojis');
+        } else {
+          console.warn('[Emoji] API returned empty array, using defaults');
+        }
+      } catch (err) {
+        console.warn('[Emoji] Error fetching custom emojis, using defaults:', err);
       }
     })();
     return () => {
@@ -4399,7 +4406,7 @@ export default function ChatScreen() {
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
-              {(customEmojis.length > 0 ? customEmojis : EMOJI_PALETTE).map((emoji) => (
+              {customEmojis.map((emoji) => (
                 <Pressable
                   key={emoji}
                   style={styles.emojiButton}

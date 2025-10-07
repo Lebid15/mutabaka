@@ -1025,7 +1025,7 @@ export default function Home() {
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const [showOnlyTransactions, setShowOnlyTransactions] = useState(false);
   const [emojiPanelOpen, setEmojiPanelOpen] = useState(false);
-  const [customEmojis, setCustomEmojis] = useState<string[]>([]);
+  const [customEmojis, setCustomEmojis] = useState<string[]>(EMOJI_PALETTE);
   const emojiPanelRef = useRef<HTMLDivElement|null>(null);
   const emojiButtonRef = useRef<HTMLButtonElement|null>(null);
   const [topToolsMenuOpen, setTopToolsMenuOpen] = useState(false);
@@ -1131,14 +1131,21 @@ export default function Home() {
     (async () => {
       try {
         const response = await fetch(`${apiClient.baseUrl}/custom-emojis`);
-        if (!response.ok) throw new Error('Failed to fetch emojis');
+        if (!response.ok) {
+          console.warn('[Emoji] Failed to fetch custom emojis, using defaults');
+          return;
+        }
         const data = await response.json();
         if (cancelled) return;
         const emojis = data.map((item: any) => item.emoji);
-        setCustomEmojis(emojis.length > 0 ? emojis : EMOJI_PALETTE);
-      } catch (_err) {
-        if (cancelled) return;
-        setCustomEmojis(EMOJI_PALETTE); // استخدام الافتراضي عند الفشل
+        if (emojis.length > 0) {
+          setCustomEmojis(emojis);
+          console.log('[Emoji] Loaded', emojis.length, 'custom emojis');
+        } else {
+          console.warn('[Emoji] API returned empty array, using defaults');
+        }
+      } catch (err) {
+        console.warn('[Emoji] Error fetching custom emojis, using defaults:', err);
       }
     })();
     return () => {
@@ -4509,7 +4516,7 @@ export default function Home() {
                     >
                       <div className="text-[10px] text-gray-400 mb-2">اختر رمزاً لإضافته</div>
                       <div className="grid grid-cols-6 gap-1">
-                        {(customEmojis.length > 0 ? customEmojis : EMOJI_PALETTE).map(emoji => (
+                        {customEmojis.map(emoji => (
                           <button
                             key={emoji}
                             onClick={()=> appendEmoji(emoji)}
