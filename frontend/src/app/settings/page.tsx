@@ -4,7 +4,6 @@ import { apiClient } from '@/lib/api';
 import { VAPID_PUBLIC_KEY } from '@/lib/config';
 import { isSoundEnabled, setSoundEnabled, attachPrimingListeners, setRuntimeSoundUrl, tryPlayMessageSound } from '@/lib/sound';
 import { useThemeMode } from '../theme-context';
-import InstallAppButton from './install-app-button';
 
 export default function SettingsPage() {
   const [supported, setSupported] = useState(false);
@@ -121,15 +120,6 @@ export default function SettingsPage() {
               >
                 {isLight ? 'تفعيل الوضع الداكن' : 'تفعيل الوضع الفاتح'}
               </button>
-            </div>
-          </div>
-          <div className={cardClass}>
-            <div className="flex flex-col gap-3">
-              <div>
-                <div className={headingColor}>تثبيت التطبيق</div>
-                <div className={subTextColor}>أضف التطبيق إلى شاشتك الرئيسية لتجربة تشبه التطبيقات الأصلية.</div>
-              </div>
-              <InstallAppButton />
             </div>
           </div>
           <div className={cardClass}>
