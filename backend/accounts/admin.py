@@ -190,16 +190,20 @@ class UserSecurityAuditAdmin(admin.ModelAdmin):
 
 @admin.register(UserDevice)
 class UserDeviceAdmin(admin.ModelAdmin):
-    list_display = ("id_short", "user", "device_info", "status", "is_web", "created_at", "last_seen_at")
+    list_display = ("id_short", "user", "device_info", "status", "is_web", "fingerprint_short", "created_at", "last_seen_at")
     list_filter = ("status", "platform", "is_web", "created_at")
-    search_fields = ("user__username", "label", "id", "app_version")
-    readonly_fields = ("id", "created_at", "last_seen_at", "pending_expires_at", "pending_token")
+    search_fields = ("user__username", "label", "id", "app_version", "device_fingerprint")
+    readonly_fields = ("id", "created_at", "last_seen_at", "pending_expires_at", "pending_token", "device_fingerprint", "stored_device_id")
     autocomplete_fields = ("user",)
     ordering = ("-created_at",)
     
     fieldsets = (
         (_("Device Info"), {
             "fields": ("user", "label", "platform", "app_version", "status", "is_web", "push_token")
+        }),
+        (_("Device Fingerprint"), {
+            "fields": ("device_fingerprint", "stored_device_id"),
+            "classes": ("collapse",)
         }),
         (_("Timestamps"), {
             "fields": ("created_at", "last_seen_at", "pending_token", "pending_expires_at")
@@ -210,6 +214,13 @@ class UserDeviceAdmin(admin.ModelAdmin):
         """Show first 8 chars of device ID"""
         return obj.id[:8] if obj.id else "-"
     id_short.short_description = "Device ID"
+    
+    def fingerprint_short(self, obj):
+        """Show first 8 chars of fingerprint"""
+        if obj.device_fingerprint:
+            return obj.device_fingerprint[:8] + "..."
+        return "-"
+    fingerprint_short.short_description = "Fingerprint"
     
     def device_info(self, obj):
         """Combine label and platform for better display"""
@@ -230,8 +241,8 @@ class UserDeviceAdmin(admin.ModelAdmin):
 
 @admin.register(WebLoginSession)
 class WebLoginSessionAdmin(admin.ModelAdmin):
-    list_display = ("id", "status", "user", "created_at", "expires_at", "approved_at", "consumed_at")
-    search_fields = ("id", "user__username")
+    list_display = ("id_short", "status", "user", "fingerprint_short", "created_at", "expires_at", "approved_at", "consumed_at")
+    search_fields = ("id", "user__username", "device_fingerprint")
     list_filter = ("status", "created_at")
     readonly_fields = (
         "id",
@@ -245,7 +256,38 @@ class WebLoginSessionAdmin(admin.ModelAdmin):
         "consumed_at",
         "access_token",
         "refresh_token",
+        "device_fingerprint",
+        "stored_device_id",
     )
+    
+    fieldsets = (
+        (None, {
+            "fields": ("id", "status", "user", "created_at", "expires_at")
+        }),
+        ("Device Fingerprint", {
+            "fields": ("device_fingerprint", "stored_device_id"),
+            "classes": ("collapse",)
+        }),
+        ("Approval Info", {
+            "fields": ("approved_at", "approved_device", "approval_ip", "consumed_at")
+        }),
+        ("Tokens", {
+            "fields": ("access_token", "refresh_token"),
+            "classes": ("collapse",)
+        }),
+    )
+    
+    def id_short(self, obj):
+        """Show first 8 chars of session ID"""
+        return str(obj.id)[:8] if obj.id else "-"
+    id_short.short_description = "Session ID"
+    
+    def fingerprint_short(self, obj):
+        """Show first 8 chars of fingerprint"""
+        if obj.device_fingerprint:
+            return obj.device_fingerprint[:8] + "..."
+        return "-"
+    fingerprint_short.short_description = "Fingerprint"
 
     def has_add_permission(self, request):  # pragma: no cover - sessions are system managed
         return False
