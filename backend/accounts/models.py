@@ -133,6 +133,8 @@ class UserDevice(models.Model):
     app_version = models.CharField(max_length=40, blank=True)
     push_token = models.CharField(max_length=256, blank=True)
     is_web = models.BooleanField(default=False, help_text="Whether this device represents a linked web/browser session")
+    device_fingerprint = models.CharField(max_length=128, blank=True, null=True, db_index=True, help_text='Hardware fingerprint - identifies physical device across browsers')
+    stored_device_id = models.CharField(max_length=128, blank=True, null=True, help_text='Device ID from localStorage (secondary identifier)')
     created_at = models.DateTimeField(auto_now_add=True)
     last_seen_at = models.DateTimeField(null=True, blank=True)
     pending_token = models.CharField(max_length=96, blank=True)
@@ -203,6 +205,8 @@ class WebLoginSession(models.Model):
     consumed_at = models.DateTimeField(null=True, blank=True)
     access_token = models.TextField(blank=True)
     refresh_token = models.TextField(blank=True)
+    device_fingerprint = models.CharField(max_length=128, blank=True, null=True, help_text='Hardware fingerprint from browser')
+    stored_device_id = models.CharField(max_length=128, blank=True, null=True, help_text='Device ID from localStorage (if available)')
 
     class Meta:
         ordering = ('-created_at',)

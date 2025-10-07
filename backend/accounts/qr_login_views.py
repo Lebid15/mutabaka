@@ -60,7 +60,26 @@ class LoginQrCreateView(APIView):
         })
 
     def post(self, request):
-        return self.get(request)
+        # Extract device fingerprint from request
+        device_fingerprint = request.data.get('device_fingerprint', '')
+        stored_device_id = request.data.get('stored_device_id', '')
+        
+        ttl_seconds = int(getattr(settings, 'WEB_LOGIN_QR_TTL_SECONDS', 90) or 90)
+        session, token = WebLoginSession.create_new(ttl_seconds)
+        
+        # Store device fingerprint in session
+        if device_fingerprint:
+            session.device_fingerprint = device_fingerprint[:128]  # Limit length
+        if stored_device_id:
+            session.stored_device_id = stored_device_id[:128]
+        session.save(update_fields=['device_fingerprint', 'stored_device_id'])
+        
+        payload = _build_payload(session, token)
+        return Response({
+            'request_id': str(session.id),
+            'payload': payload,
+            'expires_in': ttl_seconds,
+        })
 
 
 class LoginQrStatusView(APIView):
@@ -162,31 +181,64 @@ class LoginQrApproveView(APIView):
                 session.mark_expired(save=True)
                 return Response({'detail': 'expired'}, status=status.HTTP_410_GONE)
 
-            # Check web device limit
-            web_limit = getattr(settings, 'USER_WEB_DEVICE_MAX_ACTIVE', 5)
-            active_web_count = count_active_web_devices(request.user)
+            # Extract device fingerprint from session
+            device_fingerprint = session.device_fingerprint
+            stored_device_id = session.stored_device_id
+            existing_device = None
             
-            if active_web_count >= web_limit:
-                return Response({
-                    'detail': 'web_device_limit_reached',
-                    'message': f'الحد الأقصى {web_limit} متصفحات. يرجى إلغاء متصفح قديم أولاً.',
-                    'limit': web_limit,
-                    'current': active_web_count
-                }, status=status.HTTP_409_CONFLICT)
+            # Try to find existing device with same fingerprint (same physical device)
+            if device_fingerprint:
+                existing_device = UserDevice.objects.filter(
+                    user=request.user,
+                    platform='web',
+                    is_web=True,
+                    device_fingerprint=device_fingerprint
+                ).first()
+                
+                if existing_device:
+                    print(f"🔄 [Device Reuse] Found existing device {existing_device.id} for user {request.user.username} with fingerprint {device_fingerprint[:16]}...")
+            
+            # If device found, reuse it (update it instead of creating new)
+            if existing_device:
+                device = existing_device
+                device.status = UserDevice.Status.ACTIVE
+                device.last_seen_at = timezone.now()
+                device.label = _sanitize_label(request.data.get('label') or request.data.get('device_label'))
+                device.app_version = request.META.get('HTTP_USER_AGENT', '')[:40]
+                if stored_device_id:
+                    device.stored_device_id = stored_device_id[:128]
+                device.save()
+                print(f"✅ [Device Reuse] Reactivated device {device.id} - No new device created")
+            else:
+                # New physical device - check limit before creating
+                web_limit = getattr(settings, 'USER_WEB_DEVICE_MAX_ACTIVE', 5)
+                active_web_count = count_active_web_devices(request.user)
+                
+                if active_web_count >= web_limit:
+                    return Response({
+                        'detail': 'web_device_limit_reached',
+                        'message': f'الحد الأقصى {web_limit} أجهزة. يرجى إلغاء جهاز قديم أولاً.',
+                        'limit': web_limit,
+                        'current': active_web_count
+                    }, status=status.HTTP_409_CONFLICT)
 
-            now = timezone.now()
-            label = _sanitize_label(request.data.get('label') or request.data.get('device_label'))
-            user_agent = request.META.get('HTTP_USER_AGENT', '')
-            device = UserDevice.objects.create(
-                user=request.user,
-                status=UserDevice.Status.ACTIVE,
-                label=label,
-                platform='web',
-                app_version=user_agent[:40],
-                push_token='',
-                is_web=True,
-                last_seen_at=now,
-            )
+                # Create new device
+                now = timezone.now()
+                label = _sanitize_label(request.data.get('label') or request.data.get('device_label'))
+                user_agent = request.META.get('HTTP_USER_AGENT', '')
+                device = UserDevice.objects.create(
+                    user=request.user,
+                    status=UserDevice.Status.ACTIVE,
+                    label=label,
+                    platform='web',
+                    app_version=user_agent[:40],
+                    push_token='',
+                    is_web=True,
+                    device_fingerprint=device_fingerprint[:128] if device_fingerprint else '',
+                    stored_device_id=stored_device_id[:128] if stored_device_id else '',
+                    last_seen_at=now,
+                )
+                print(f"🆕 [Device Reuse] Created NEW device {device.id} for user {request.user.username} with fingerprint {device_fingerprint[:16] if device_fingerprint else 'none'}...")
 
             # Create refresh token for the user
             refresh = RefreshToken.for_user(request.user)

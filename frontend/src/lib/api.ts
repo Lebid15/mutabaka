@@ -865,7 +865,27 @@ class APIClient {
     });
 
     try {
-      const res = await fetch(`${this.baseUrl}/api/auth/login-qr/create`);
+      // Import device fingerprint generator
+      const { getDeviceFingerprint, getStoredDeviceId } = await import('./deviceFingerprint');
+      
+      // Generate device fingerprint
+      const deviceFingerprint = await getDeviceFingerprint();
+      const storedDeviceId = getStoredDeviceId();
+      
+      // Send POST request with device fingerprint
+      const res = await fetch(`${this.baseUrl}/api/auth/login-qr/create`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          device_fingerprint: deviceFingerprint,
+          stored_device_id: storedDeviceId,
+          user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+          platform: 'web',
+        }),
+      });
+      
       if (!res.ok) {
         return fallback();
       }
