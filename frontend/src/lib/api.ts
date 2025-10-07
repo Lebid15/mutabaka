@@ -873,11 +873,15 @@ class APIClient {
       const storedDeviceId = getStoredDeviceId();
       
       // Send POST request with device fingerprint
-      const res = await fetch(`${this.baseUrl}/api/auth/login-qr/create`, {
+      // Add timestamp to prevent caching
+      const res = await fetch(`${this.baseUrl}/api/auth/login-qr/create?_t=${Date.now()}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
         },
+        cache: 'no-store',
         body: JSON.stringify({
           device_fingerprint: deviceFingerprint,
           stored_device_id: storedDeviceId,

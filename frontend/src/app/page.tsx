@@ -671,6 +671,19 @@ function SidebarHeaderAddContact({ onAdded, existingUsernames, currentUsername, 
 
   const logout = () => {
     try { localStorage.removeItem('auth_tokens_v1'); } catch (_err) {}
+    // Reset auth state
+    setIsAuthed(false);
+    setAuthStatus('anon');
+    setProfile(null);
+    // Clear QR to force regeneration
+    setLoginQrDataUrl('');
+    setQrExpiryAt(null);
+    setQrRequestId(null);
+    // ✅ Clear global QR request ID
+    if (typeof window !== 'undefined') {
+      delete (window as any).__qr_request_id;
+    }
+    // Reload page
     window.location.href = '/';
   };
 
