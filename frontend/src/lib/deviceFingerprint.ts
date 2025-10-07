@@ -151,20 +151,18 @@ export async function getDeviceFingerprint(): Promise<string> {
     // Hash the combined fingerprint
     const fingerprint = await hashSHA256(combined);
     
-    // Log for debugging (remove in production if needed)
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🔍 Device Fingerprint Components:', {
-        screenInfo,
-        cpuCores,
-        deviceMemory,
-        gpuInfo: gpuInfo.slice(0, 50) + '...',
-        canvasFP,
-        platform,
-        timezone,
-        language,
-        fingerprint: fingerprint.slice(0, 16) + '...',
-      });
-    }
+    // Always log for debugging (even in production)
+    console.log('🔍 Device Fingerprint Generated:', {
+      screenInfo,
+      cpuCores,
+      deviceMemory,
+      gpuInfo: gpuInfo.slice(0, 50) + '...',
+      canvasFP,
+      platform,
+      timezone,
+      language,
+      fingerprint: fingerprint.slice(0, 16) + '...',
+    });
     
     return fingerprint;
   } catch (err) {

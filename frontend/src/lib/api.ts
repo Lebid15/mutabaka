@@ -872,6 +872,12 @@ class APIClient {
       const deviceFingerprint = await getDeviceFingerprint();
       const storedDeviceId = getStoredDeviceId();
       
+      // Debug log
+      console.log('📤 Sending QR request with fingerprint:', {
+        fingerprint: deviceFingerprint.slice(0, 16) + '...',
+        storedDeviceId: storedDeviceId ? storedDeviceId.slice(0, 16) + '...' : 'null',
+      });
+      
       // Send POST request with device fingerprint
       // Add timestamp to prevent caching
       const res = await fetch(`${this.baseUrl}/api/auth/login-qr/create?_t=${Date.now()}`, {
