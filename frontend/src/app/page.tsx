@@ -1025,6 +1025,7 @@ export default function Home() {
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const [showOnlyTransactions, setShowOnlyTransactions] = useState(false);
   const [emojiPanelOpen, setEmojiPanelOpen] = useState(false);
+  const [customEmojis, setCustomEmojis] = useState<string[]>([]);
   const emojiPanelRef = useRef<HTMLDivElement|null>(null);
   const emojiButtonRef = useRef<HTMLButtonElement|null>(null);
   const [topToolsMenuOpen, setTopToolsMenuOpen] = useState(false);
@@ -1123,6 +1124,28 @@ export default function Home() {
       cancelled = true;
     };
   }, [mapContactLinks]);
+
+  // جلب الإيموجي المخصصة من API
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch(`${apiClient.baseUrl}/custom-emojis`);
+        if (!response.ok) throw new Error('Failed to fetch emojis');
+        const data = await response.json();
+        if (cancelled) return;
+        const emojis = data.map((item: any) => item.emoji);
+        setCustomEmojis(emojis.length > 0 ? emojis : EMOJI_PALETTE);
+      } catch (_err) {
+        if (cancelled) return;
+        setCustomEmojis(EMOJI_PALETTE); // استخدام الافتراضي عند الفشل
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Decode JWT access payload
   const getJwtPayload = useCallback((): any | null => {
     try {
@@ -4486,7 +4509,7 @@ export default function Home() {
                     >
                       <div className="text-[10px] text-gray-400 mb-2">اختر رمزاً لإضافته</div>
                       <div className="grid grid-cols-6 gap-1">
-                        {EMOJI_PALETTE.map(emoji => (
+                        {(customEmojis.length > 0 ? customEmojis : EMOJI_PALETTE).map(emoji => (
                           <button
                             key={emoji}
                             onClick={()=> appendEmoji(emoji)}

@@ -258,6 +258,37 @@ class ContactLink(models.Model):
         label = self.label or dict(self.ICON_CHOICES).get(self.icon, self.icon)
         return f"{label} ({self.value})"
 
+
+class CustomEmoji(models.Model):
+    """Custom emoji characters configurable from admin panel for chat use."""
+
+    emoji = models.CharField(
+        max_length=10,
+        help_text="رمز الإيموجي (مثال: 😀 أو 🎉)",
+        verbose_name="الإيموجي"
+    )
+    display_order = models.PositiveIntegerField(
+        default=0,
+        help_text="ترتيب العرض (الأصغر يظهر أولاً)",
+        verbose_name="الترتيب"
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="مفعل؟",
+        help_text="إظهار هذا الإيموجي للمستخدمين"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['display_order', 'id']
+        verbose_name = "Custom Emoji"
+        verbose_name_plural = "Custom Emojis"
+
+    def __str__(self):  # pragma: no cover
+        return f"{self.emoji} (order: {self.display_order})"
+
+
 class ContactRelation(models.Model):
     STATUS_CHOICES = [
         ("pending", "Pending"),

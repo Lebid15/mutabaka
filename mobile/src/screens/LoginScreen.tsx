@@ -686,7 +686,7 @@ export default function LoginScreen() {
                       {brandingLogoUrl ? (
                         <Image source={{ uri: brandingLogoUrl }} style={styles.logoImage} resizeMode="contain" />
                       ) : (
-                        <SvgXml xml={logoDefault} width={150} height={150} />
+                        <SvgXml xml={logoDefault} width={120} height={120} />
                       )}
                     </View>
 
@@ -712,16 +712,16 @@ export default function LoginScreen() {
                       <View className="gap-4">
                         {useTeamLogin ? (
                           <>
-                            {renderInput(ownerUsername, setOwnerUsername, 'اسم مستخدم المالك', 'user', { autoCapitalize: 'none' })}
-                            {renderInput(teamUsername, setTeamUsername, 'اسم مستخدم عضو الفريق', 'users', { autoCapitalize: 'none' })}
+                            {renderInput(ownerUsername, setOwnerUsername, '', 'user', { autoCapitalize: 'none' })}
+                            {renderInput(teamUsername, setTeamUsername, '', 'users', { autoCapitalize: 'none' })}
                           </>
                         ) : (
-                          renderInput(identifier, setIdentifier, 'example@mutabaka.com', 'user', {
+                          renderInput(identifier, setIdentifier, '', 'user', {
                             keyboardType: 'email-address',
                             autoCapitalize: 'none',
                           })
                         )}
-                        {renderInput(password, setPassword, '••••••••', 'lock', { secureTextEntry: true, autoCapitalize: 'none' })}
+                        {renderInput(password, setPassword, '', 'lock', { secureTextEntry: true, autoCapitalize: 'none' })}
                       </View>
                     </View>
 
@@ -888,8 +888,8 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   logoImage: {
-    width: 150,
-    height: 150,
+    width: 120,
+    height: 120,
   },
   pageSurface: {
     flex: 1,

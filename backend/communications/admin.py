@@ -17,6 +17,7 @@ from .models import (
     LoginInstruction,
     PrivacyPolicy,
     ContactLink,
+    CustomEmoji,
     TeamMember,
     ConversationMember,
 )
@@ -231,6 +232,24 @@ class ContactLinkAdmin(admin.ModelAdmin):
     def display_label(self, obj):
         return obj.label or dict(obj.ICON_CHOICES).get(obj.icon, obj.icon)
     display_label.short_description = "التسمية"
+
+
+@admin.register(CustomEmoji)
+class CustomEmojiAdmin(admin.ModelAdmin):
+    list_display = ("emoji_display", "display_order", "is_active", "created_at")
+    list_editable = ("display_order", "is_active")
+    list_filter = ("is_active",)
+    ordering = ("display_order", "id")
+    fieldsets = (
+        ("إعدادات الإيموجي", {
+            "fields": ("emoji", "display_order", "is_active"),
+        }),
+    )
+
+    def emoji_display(self, obj):
+        return obj.emoji
+    emoji_display.short_description = "الإيموجي"
+
 
 @admin.register(TeamMember)
 class TeamMemberAdmin(admin.ModelAdmin):

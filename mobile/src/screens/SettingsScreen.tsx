@@ -976,14 +976,6 @@ export default function SettingsScreen() {
                         <Text style={[styles.pinMetaText, textDirectionStyle, { color: palette.subText }]}>
                           ✅ الإشعارات مفعّلة. ستصلك إشعارات بالرسائل والتحديثات الجديدة.
                         </Text>
-                        <Pressable
-                          style={[styles.ghostButton, { backgroundColor: palette.ghostButtonBg, marginTop: 8 }]}
-                          onPress={handleEnableNotifications}
-                          accessibilityRole="button"
-                        >
-                          <FeatherIcon name="refresh-cw" size={14} color={palette.ghostButtonText} style={{ marginLeft: 6 }} />
-                          <Text style={[styles.buttonText, { color: palette.ghostButtonText, fontSize: 13 }]}>تحديث Token</Text>
-                        </Pressable>
                       </View>
                     ) : !checkingNotifications && notificationPermission === 'denied' ? (
                       <View style={[styles.pinMetaRow, { borderColor: palette.divider }]}>

@@ -1038,6 +1038,7 @@ export default function ChatScreen() {
   const [note, setNote] = useState('');
   const [noteModalVisible, setNoteModalVisible] = useState(false);
   const [emojiPickerVisible, setEmojiPickerVisible] = useState(false);
+  const [customEmojis, setCustomEmojis] = useState<string[]>([]);
   const [membersModalVisible, setMembersModalVisible] = useState(false);
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersBusy, setMembersBusy] = useState(false);
@@ -1088,6 +1089,27 @@ export default function ChatScreen() {
   const myMessageIdsRef = useRef<Set<number>>(new Set());
   const isAtBottomRef = useRef(true);
   const deleteResolutionRef = useRef<'none' | 'approved' | 'declined'>('none');
+
+  // جلب الإيموجي المخصصة من API
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch(`${environment.apiBaseUrl}/custom-emojis`);
+        if (!response.ok) throw new Error('Failed to fetch emojis');
+        const data = await response.json();
+        if (cancelled) return;
+        const emojis = data.map((item: any) => item.emoji);
+        setCustomEmojis(emojis.length > 0 ? emojis : EMOJI_PALETTE);
+      } catch (_err) {
+        if (cancelled) return;
+        setCustomEmojis(EMOJI_PALETTE); // استخدام الافتراضي عند الفشل
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -4377,7 +4399,7 @@ export default function ChatScreen() {
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
-              {EMOJI_PALETTE.map((emoji) => (
+              {(customEmojis.length > 0 ? customEmojis : EMOJI_PALETTE).map((emoji) => (
                 <Pressable
                   key={emoji}
                   style={styles.emojiButton}

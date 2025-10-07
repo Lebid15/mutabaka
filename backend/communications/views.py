@@ -22,6 +22,7 @@ from .models import (
     LoginPageSetting,
     PrivacyPolicy,
     ContactLink,
+    CustomEmoji,
     get_conversation_viewer_ids,
 )
 from .push import send_message_push
@@ -31,6 +32,7 @@ from .serializers import (
     TeamMemberSerializer,
     ConversationMemberSerializer,
     ContactLinkSerializer,
+    CustomEmojiSerializer,
     PrivacyPolicySerializer,
     LoginPageSettingSerializer,
 )
@@ -1940,6 +1942,15 @@ class ContactLinkListView(APIView):
     def get(self, request):
         qs = ContactLink.objects.filter(is_active=True).order_by('display_order', '-updated_at')
         serializer = ContactLinkSerializer(qs, many=True, context={'request': request})
+        return Response(serializer.data)
+
+
+class CustomEmojiListView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        qs = CustomEmoji.objects.filter(is_active=True).order_by('display_order', 'id')
+        serializer = CustomEmojiSerializer(qs, many=True)
         return Response(serializer.data)
 
 

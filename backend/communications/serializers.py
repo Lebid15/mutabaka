@@ -12,6 +12,7 @@ from .models import (
     ConversationMember,
     ConversationReadMarker,
     ContactLink,
+    CustomEmoji,
     PrivacyPolicy,
     ConversationSettlement,
     LoginPageSetting,
@@ -100,6 +101,12 @@ class ContactLinkSerializer(serializers.ModelSerializer):
             return obj.get_icon_display()
         except Exception:
             return obj.icon
+
+
+class CustomEmojiSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomEmoji
+        fields = ["id", "emoji", "display_order"]
 
 
 class PrivacyPolicySerializer(serializers.ModelSerializer):

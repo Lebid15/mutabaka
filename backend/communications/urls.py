@@ -4,7 +4,8 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     UserSearchViewSet, ContactRelationViewSet, ConversationViewSet,
     MessageViewSet, TransactionViewSet, PushSubscribeView, PushUnsubscribeView,
-    NotificationSoundView, BrandingView, LoginPageView, ContactLinkListView, PrivacyPolicyView,
+    NotificationSoundView, BrandingView, LoginPageView, ContactLinkListView, 
+    CustomEmojiListView, PrivacyPolicyView,
     TermsOfUseView,
     EnsureAdminConversationView, TeamMemberViewSet, TeamLoginView
 )
@@ -29,6 +30,7 @@ urlpatterns = [
     path('branding', BrandingView.as_view(), name='branding'),
     path('login-page', LoginPageView.as_view(), name='login_page'),
     path('contact-links', ContactLinkListView.as_view(), name='contact_links'),
+    path('custom-emojis', CustomEmojiListView.as_view(), name='custom_emojis'),
     path('privacy-policy', PrivacyPolicyView.as_view(), name='privacy_policy'),
     path('terms-of-use', TermsOfUseView.as_view(), name='terms_of_use'),
     path('ensure_admin_conversation', EnsureAdminConversationView.as_view(), name='ensure_admin_conversation'),
