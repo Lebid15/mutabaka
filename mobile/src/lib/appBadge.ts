@@ -181,9 +181,11 @@ export async function setAppBadgeCount(count: number): Promise<void> {
     return;
   }
   const sanitized = sanitizeBadgeCount(count);
-  if (sanitized === lastKnownCount) {
-    return;
-  }
+  
+  // Always apply badge updates (removed duplicate check to fix badge increment issue)
+  // Previous code: if (sanitized === lastKnownCount) { return; }
+  // This was preventing badge from updating when backend sent same value due to race condition
+  
   lastKnownCount = sanitized;
   await ensureInitialized();
   await applyBadge(sanitized);

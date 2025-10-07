@@ -132,6 +132,8 @@ def send_message_push(
             normalized = _normalize_value(payload)
             badge_value = int(unread) if unread and unread > 0 else 0
             
+            logger.info(f"🔢 [PUSH] Preparing push for user {user_id}: badge_value={badge_value}, unread_count={unread}")
+            
             for token in tokens:
                 logger.info(f"➕ Adding push message for user {user_id}, token={token[:20]}..., badge={badge_value}")
                 push_batch.append(

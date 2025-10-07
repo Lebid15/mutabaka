@@ -9,7 +9,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppState, type AppStateStatus, I18nManager, Platform, type ViewStyle } from 'react-native';
 import RootNavigator from './src/navigation';
 import { ThemeProvider, useThemeMode } from './src/theme';
-import { initializeAppBadge, refreshAppBadge, setAppBadgeCount } from './src/lib/appBadge';
+import { initializeAppBadge, refreshAppBadge, setAppBadgeCount, getLastBadgeCount } from './src/lib/appBadge';
 import { getExpoPushToken, checkPermissionStatus } from './src/lib/pushNotifications';
 import { updateCurrentDevicePushToken } from './src/services/devices';
 import { getAccessToken } from './src/lib/authStorage';
@@ -163,7 +163,11 @@ function useNotificationBadgeBridge() {
         const badge = remoteMessage.data?.unread_count;
         const badgeCount = badge !== undefined ? sanitizeBadgeCandidate(badge) : undefined;
         
-        console.log('[FCM] 🔔 Scheduling local notification with badge:', badgeCount);
+        console.log('[FCM] � Badge from push:', badge);
+        console.log('[FCM] 🔢 Sanitized badge:', badgeCount);
+        console.log('[FCM] 📊 Current lastKnownCount:', getLastBadgeCount());
+        
+        console.log('[FCM] �🔔 Scheduling local notification with badge:', badgeCount);
         
         await Notifications.scheduleNotificationAsync({
           content: {
@@ -184,8 +188,9 @@ function useNotificationBadgeBridge() {
       if (badge !== undefined) {
         const count = sanitizeBadgeCandidate(badge);
         if (count !== null) {
-          console.log('[FCM] 🔢 Updating badge count to:', count);
+          console.log('[FCM] 🔢 Updating badge count from', getLastBadgeCount(), 'to:', count);
           void setAppBadgeCount(count);
+          console.log('[FCM] ✅ Badge count updated, new value:', getLastBadgeCount());
         }
       }
     });

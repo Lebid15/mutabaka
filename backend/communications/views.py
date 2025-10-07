@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError
 import mimetypes
 from django.core.files.storage import default_storage
 from django.db.models import Q
-from django.db import models as dj_models
+from django.db import models as dj_models, transaction
 from django.contrib.auth import get_user_model
 import re
 from .models import (
@@ -916,9 +916,15 @@ class ConversationViewSet(viewsets.ModelViewSet):
                 except Exception:
                     pass
                 # notify all viewers' inboxes (except sender)
+                from .push import _total_unread_for_user
                 for uid in get_conversation_viewer_ids(conv):
                     if uid == request.user.id:
                         continue
+                    # Calculate real unread count for this user
+                    user_unread = _total_unread_for_user(uid)
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"📨 [WS] Sending inbox.update to user {uid}: unread_count={user_unread}")
                     async_to_sync(channel_layer.group_send)(f"user_{uid}", {
                         'type': 'broadcast.message',
                         'data': {
@@ -926,7 +932,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                             'conversation_id': conv.id,
                             'last_message_preview': msg.body[:80],
                             'last_message_at': msg.created_at.isoformat(),
-                            'unread_count': 1,
+                            'unread_count': user_unread,
                         }
                     })
         except Exception:
@@ -1004,28 +1010,38 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     pass
         except Exception:
             pass
+        # Use transaction.on_commit to ensure push is sent AFTER DB commit
+        # This prevents race condition where unread count is calculated before message is committed
         try:
             import logging
             logger = logging.getLogger(__name__)
-            logger.info(f"📤 Attempting to send FCM push for message {msg.id} in conversation {conv.id}")
+            logger.info(f"📤 Scheduling FCM push for message {msg.id} in conversation {conv.id}")
             sender_display = getattr(request.user, 'display_name', '') or request.user.username
             preview_text = _normalize_bubble_text(msg.body)[:80] if msg.body else (msg.attachment_name or '')[:80]
-            send_message_push(
-                conv,
-                msg,
-                title=sender_display,
-                body=preview_text,
-                data={
-                    'sender_display': sender_display,
-                    'preview': preview_text,
-                    'kind': msg.type,
-                },
-            )
-            logger.info(f"✅ FCM push sent successfully for message {msg.id}")
+            
+            def send_push_after_commit():
+                try:
+                    logger.info(f"🚀 [PUSH] Sending FCM push for message {msg.id} (after commit)")
+                    send_message_push(
+                        conv,
+                        msg,
+                        title=sender_display,
+                        body=preview_text,
+                        data={
+                            'sender_display': sender_display,
+                            'preview': preview_text,
+                            'kind': msg.type,
+                        },
+                    )
+                    logger.info(f"✅ [PUSH] FCM push sent successfully for message {msg.id}")
+                except Exception as push_error:
+                    logger.exception(f"❌ [PUSH] send_message_push failed: {push_error}")
+            
+            transaction.on_commit(send_push_after_commit)
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.exception(f"❌ send_message_push failed: {e}")
+            logger.exception(f"❌ Failed to schedule push: {e}")
         return Response(MessageSerializer(msg, context={'request': request}).data)
 
     def _validate_attachment(self, file_obj):
@@ -1198,9 +1214,14 @@ class ConversationViewSet(viewsets.ModelViewSet):
                         async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'delivery_status': 1, 'status':'delivered'}})
                 except Exception:
                     pass
+                from .push import _total_unread_for_user
                 for uid in get_conversation_viewer_ids(conv):
                     if uid == request.user.id:
                         continue
+                    user_unread = _total_unread_for_user(uid)
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"📨 [WS] Sending inbox.update to user {uid}: unread_count={user_unread}")
                     async_to_sync(channel_layer.group_send)(f"user_{uid}", {
                         'type': 'broadcast.message',
                         'data': {
@@ -1208,7 +1229,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                             'conversation_id': conv.id,
                             'last_message_preview': preview_label[:80],
                             'last_message_at': msg.created_at.isoformat(),
-                            'unread_count': 1,
+                            'unread_count': user_unread,
                         }
                     })
         except Exception:
@@ -1591,9 +1612,14 @@ class ConversationViewSet(viewsets.ModelViewSet):
                         'seq': sys_msg.id,
                     }
                     async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': payload})
+                    from .push import _total_unread_for_user
                     for uid in get_conversation_viewer_ids(conv):
                         if uid == request.user.id:
                             continue
+                        user_unread = _total_unread_for_user(uid)
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.info(f"📨 [WS] Sending inbox.update (add_member) to user {uid}: unread_count={user_unread}")
                         async_to_sync(channel_layer.group_send)(f"user_{uid}", {
                             'type': 'broadcast.message',
                             'data': {
@@ -1601,7 +1627,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                                 'conversation_id': conv.id,
                                 'last_message_preview': sys_msg.body[:80],
                                 'last_message_at': sys_msg.created_at.isoformat(),
-                                'unread_count': 1,
+                                'unread_count': user_unread,
                             }
                         })
             except Exception:
@@ -1680,9 +1706,14 @@ class ConversationViewSet(viewsets.ModelViewSet):
                         'seq': sys_msg.id,
                     }
                     async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': payload})
+                    from .push import _total_unread_for_user
                     for uid in get_conversation_viewer_ids(conv):
                         if uid == request.user.id:
                             continue
+                        user_unread = _total_unread_for_user(uid)
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.info(f"📨 [WS] Sending inbox.update (remove_member) to user {uid}: unread_count={user_unread}")
                         async_to_sync(channel_layer.group_send)(f"user_{uid}", {
                             'type': 'broadcast.message',
                             'data': {
@@ -1690,7 +1721,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                                 'conversation_id': conv.id,
                                 'last_message_preview': sys_msg.body[:80],
                                 'last_message_at': sys_msg.created_at.isoformat(),
-                                'unread_count': 1,
+                                'unread_count': user_unread,
                             }
                         })
             except Exception:
