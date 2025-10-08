@@ -34,10 +34,14 @@ jobs:
         run: npm install
         working-directory: ${{ env.EAS_BUILD_WORKINGDIR }}
 
+      - name: Install latest EAS CLI
+        run: npm install -g eas-cli
+
       - name: Build and Download AAB
         id: build_aab
         run: |
-          BUILD_JSON=$(eas build --platform android --profile production --type app-bundle --non-interactive --wait --json)
+          BUILD_JSON=$(eas build --platform android --profile production --non-interactive --wait --json)
+
           echo "Build details: $BUILD_JSON"
           echo "$BUILD_JSON" | jq '.' > ../build-aab.json
           BUILD_URL=$(echo "$BUILD_JSON" | jq -r 'if type=="array" then (.[0].artifacts.buildUrl // .[0].artifacts.applicationArchiveUrl // empty) else (.artifacts.buildUrl // .artifacts.applicationArchiveUrl // empty) end')
