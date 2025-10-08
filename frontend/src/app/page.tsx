@@ -842,6 +842,22 @@ export default function Home() {
       .filter((entry): entry is ContactLinkView => Boolean(entry));
   }, []);
 
+  const loadProfile = useCallback(async () => {
+    try {
+      const me = await apiClient.getProfile().catch(() => null);
+      if (me) {
+        setProfile(me);
+        setIsAuthed(true);
+        setAuthStatus('authed');
+        return me;
+      }
+    } catch (_err) {}
+    setProfile(null);
+    setIsAuthed(false);
+    setAuthStatus('anon');
+    return null;
+  }, []);
+
   const refreshLoginQr = useCallback(async () => {
     if (isAuthed) return;
     setQrRefreshing(true);
@@ -944,6 +960,24 @@ export default function Home() {
     return () => window.clearTimeout(tid);
   }, [qrExpiryAt, isAuthed, refreshLoginQr]);
 
+  // Helper function for QR login success
+  const handleQrLoginSuccess = useCallback(async (access: string, refresh: string, _user?: any) => {
+    // Save tokens directly to apiClient
+    apiClient.access = access;
+    apiClient.refresh = refresh;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('auth_tokens_v1', JSON.stringify({ access, refresh }));
+    }
+    setAuthStatus('checking');
+    await loadProfile();
+    setLoginQrDataUrl('');
+    setQrExpiryAt(null);
+    setQrRequestId(null);
+    if (typeof window !== 'undefined') {
+      delete (window as any).__qr_request_id;
+    }
+  }, [loadProfile]);
+
   // Poll QR status for auto-login
   useEffect(() => {
     if (isAuthed || !qrExpiryAt) return;
@@ -985,24 +1019,6 @@ export default function Home() {
       clearInterval(interval);
     };
   }, [isAuthed, qrExpiryAt, apiClient, refreshLoginQr, qrRequestId, handleQrLoginSuccess]);
-
-  // Helper function for QR login success
-  const handleQrLoginSuccess = useCallback(async (access: string, refresh: string, _user?: any) => {
-    // Save tokens directly to apiClient
-    apiClient.access = access;
-    apiClient.refresh = refresh;
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('auth_tokens_v1', JSON.stringify({ access, refresh }));
-    }
-    setAuthStatus('checking');
-    await loadProfile();
-    setLoginQrDataUrl('');
-    setQrExpiryAt(null);
-    setQrRequestId(null);
-    if (typeof window !== 'undefined') {
-      delete (window as any).__qr_request_id;
-    }
-  }, [loadProfile]);
 
   // Contacts & conversations
   const [contacts, setContacts] = useState<any[]>([]);
@@ -1870,22 +1886,6 @@ export default function Home() {
   const [amountYours, setAmountYours] = useState('');
   const [txLoading, setTxLoading] = useState(false);
   const [pendingCurrencies, setPendingCurrencies] = useState<Set<string>>(new Set());
-
-  const loadProfile = useCallback(async () => {
-    try {
-      const me = await apiClient.getProfile().catch(() => null);
-      if (me) {
-        setProfile(me);
-        setIsAuthed(true);
-        setAuthStatus('authed');
-        return me;
-      }
-    } catch (_err) {}
-    setProfile(null);
-    setIsAuthed(false);
-    setAuthStatus('anon');
-    return null;
-  }, []);
 
   // Initial auth check and audio priming
   useEffect(() => {
