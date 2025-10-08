@@ -893,9 +893,17 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     recipient_id = conv.user_b_id if request.user.id == conv.user_a_id else conv.user_a_id
                     inbox_group = f"user_{recipient_id}"
                     recipient_online = get_count(inbox_group) > 0
+                    recipient_in_conv = get_count(group) > 1
                     from django.utils import timezone
-                    if recipient_online:
-                        # Upgrade to DELIVERED (1) if below
+                    if recipient_in_conv:
+                        # Upgrade to READ (2) if recipient is actively viewing the conversation
+                        read_now = timezone.now()
+                        Message.objects.filter(id=msg.id).update(delivery_status=dj_models.Case(
+                            dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)), default=dj_models.F('delivery_status')
+                        ), read_at=read_now, delivered_at=read_now)
+                        async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'delivery_status': 2, 'status':'read', 'read_at': read_now.isoformat()}})
+                    elif recipient_online:
+                        # Upgrade to DELIVERED (1) if recipient is online but not in conversation
                         Message.objects.filter(id=msg.id).update(delivery_status=dj_models.Case(
                             dj_models.When(delivery_status__lt=1, then=dj_models.Value(1)), default=dj_models.F('delivery_status')
                         ), delivered_at=timezone.now())
