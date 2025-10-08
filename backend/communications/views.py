@@ -851,6 +851,42 @@ class ConversationViewSet(viewsets.ModelViewSet):
                         sender_display = getattr(request.user, 'display_name', '') or request.user.username
                 except Exception:
                     sender_display = getattr(request.user, 'display_name', '') or request.user.username
+                initial_delivery_status = 1
+                initial_status = 'delivered'
+                initial_read_at = None
+                try:
+                    from .group_registry import get_count
+                    recipient_id = conv.user_b_id if request.user.id == conv.user_a_id else conv.user_a_id
+                    inbox_group = f"user_{recipient_id}"
+                    recipient_online = get_count(inbox_group) > 0
+                    recipient_in_conv = get_count(group) > 1
+                    from django.utils import timezone
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    
+                    if recipient_in_conv:
+                        # Upgrade to READ (2) before any broadcast - recipient is actively viewing
+                        read_now = timezone.now()
+                        Message.objects.filter(id=msg.id).update(delivery_status=dj_models.Case(
+                            dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)), 
+                            default=dj_models.F('delivery_status')
+                        ), read_at=read_now, delivered_at=read_now)
+                        initial_delivery_status = 2
+                        initial_status = 'read'
+                        initial_read_at = read_now.isoformat()
+                        logger.info(f"📨 [VIEWS] Message {msg.id} set to READ before broadcast: recipient {recipient_id} is in conversation")
+                    elif recipient_online:
+                        # Upgrade to DELIVERED (1) before broadcast - recipient is online but not in conv
+                        Message.objects.filter(id=msg.id).update(delivery_status=dj_models.Case(
+                            dj_models.When(delivery_status__lt=1, then=dj_models.Value(1)), 
+                            default=dj_models.F('delivery_status')
+                        ), delivered_at=timezone.now())
+                        logger.info(f"📨 [VIEWS] Message {msg.id} set to DELIVERED before broadcast: recipient {recipient_id} is online")
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.exception(f"❌ [VIEWS] Failed to check recipient status for message {msg.id}: {e}")
+                
                 payload = {
                     'type': 'chat.message',
                     'id': msg.id,
@@ -862,14 +898,23 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     'created_at': msg.created_at.isoformat(),
                     'kind': 'text',
                     'seq': msg.id,
-                    'status': 'delivered',
-                    'delivery_status': 1,
+                    'status': initial_status,
+                    'delivery_status': initial_delivery_status,
                     'client_id': msg.client_id,
                 }
+                if initial_read_at:
+                    payload['read_at'] = initial_read_at
                 async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': payload})
-                # Emit explicit numeric status=1 for clients listening for status events
                 try:
-                    async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': { 'type': 'message.status', 'id': msg.id, 'delivery_status': 1, 'status': 'delivered' }})
+                    status_data = {
+                        'type': 'message.status',
+                        'id': msg.id,
+                        'delivery_status': initial_delivery_status,
+                        'status': initial_status
+                    }
+                    if initial_read_at:
+                        status_data['read_at'] = initial_read_at
+                    async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': status_data})
                 except Exception:
                     pass
                 # Broadcast read updates from this sender's perspective for any prior inbound messages
@@ -885,29 +930,6 @@ class ConversationViewSet(viewsets.ModelViewSet):
                             'type': 'broadcast.message',
                             'data': { 'type': 'chat.read', 'reader': request.user.username, 'last_read_id': int(max(ids_read)) }
                         })
-                except Exception:
-                    pass
-                # Try to set delivery status based on connectivity
-                try:
-                    from .group_registry import get_count
-                    recipient_id = conv.user_b_id if request.user.id == conv.user_a_id else conv.user_a_id
-                    inbox_group = f"user_{recipient_id}"
-                    recipient_online = get_count(inbox_group) > 0
-                    recipient_in_conv = get_count(group) > 1
-                    from django.utils import timezone
-                    if recipient_in_conv:
-                        # Upgrade to READ (2) if recipient is actively viewing the conversation
-                        read_now = timezone.now()
-                        Message.objects.filter(id=msg.id).update(delivery_status=dj_models.Case(
-                            dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)), default=dj_models.F('delivery_status')
-                        ), read_at=read_now, delivered_at=read_now)
-                        async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'delivery_status': 2, 'status':'read', 'read_at': read_now.isoformat()}})
-                    elif recipient_online:
-                        # Upgrade to DELIVERED (1) if recipient is online but not in conversation
-                        Message.objects.filter(id=msg.id).update(delivery_status=dj_models.Case(
-                            dj_models.When(delivery_status__lt=1, then=dj_models.Value(1)), default=dj_models.F('delivery_status')
-                        ), delivered_at=timezone.now())
-                        async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'delivery_status': 1, 'status':'delivered'}})
                 except Exception:
                     pass
                 # notify all viewers' inboxes (except sender)
