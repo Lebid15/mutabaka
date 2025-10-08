@@ -721,15 +721,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
             # Fallback 1 (always compute): max id of my messages with read_at
             fallback1 = Message.objects.filter(conversation_id=conv.id, sender_id=viewer_id, read_at__isnull=False).order_by('-id').values_list('id', flat=True).first()
             fallback1_val = int(fallback1) if fallback1 else 0
-            # Fallback 2 (always compute): if other has sent newer messages, treat my prior messages as seen
-            latest_other_msg_id = Message.objects.filter(conversation_id=conv.id, sender_id=other_id).order_by('-id').values_list('id', flat=True).first()
-            fallback2_val = 0
-            if latest_other_msg_id:
-                latest_my_before = Message.objects.filter(conversation_id=conv.id, sender_id=viewer_id, id__lte=latest_other_msg_id).order_by('-id').values_list('id', flat=True).first()
-                if latest_my_before:
-                    fallback2_val = int(latest_my_before)
-            # Effective last read is max of all signals
-            effective = max(marker_val, fallback1_val, fallback2_val)
+            # Effective last read is max of marker and fallback1 only
+            effective = max(marker_val, fallback1_val)
             other_last_read_id = effective
             # Reconciliation ALWAYS:
             # حتى إذا لم يتقدم marker (marker_val) الآن، نضمن أن جميع رسائلي حتى 'effective' تمت ترقيتها إلى READ (2)
@@ -894,22 +887,14 @@ class ConversationViewSet(viewsets.ModelViewSet):
                         })
                 except Exception:
                     pass
-                # Try to set delivery/read status based on connectivity
+                # Try to set delivery status based on connectivity
                 try:
                     from .group_registry import get_count
                     recipient_id = conv.user_b_id if request.user.id == conv.user_a_id else conv.user_a_id
                     inbox_group = f"user_{recipient_id}"
                     recipient_online = get_count(inbox_group) > 0
-                    recipient_in_conv = get_count(group) > 1
                     from django.utils import timezone
-                    if recipient_in_conv:
-                        # Upgrade to READ (2) monotonic
-                        read_now = timezone.now()
-                        Message.objects.filter(id=msg.id).update(delivery_status=dj_models.Case(
-                            dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)), default=dj_models.F('delivery_status')
-                        ), read_at=read_now, delivered_at=read_now)
-                        async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'delivery_status': 2, 'status':'read', 'read_at': read_now.isoformat()}})
-                    elif recipient_online:
+                    if recipient_online:
                         # Upgrade to DELIVERED (1) if below
                         Message.objects.filter(id=msg.id).update(delivery_status=dj_models.Case(
                             dj_models.When(delivery_status__lt=1, then=dj_models.Value(1)), default=dj_models.F('delivery_status')
