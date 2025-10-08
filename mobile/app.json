@@ -4,7 +4,7 @@
     "slug": "mobile",
     "owner": "mutabaka",
     "scheme": "mutabaka",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/iosimage.png",
     "userInterfaceStyle": "light",
@@ -19,6 +19,7 @@
       "icon": "./assets/iosimage.png"
     },
     "android": {
+      "versionCode": 27,
       "icon": "./assets/iosimage.png",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
