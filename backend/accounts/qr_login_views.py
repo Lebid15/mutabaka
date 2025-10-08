@@ -25,6 +25,15 @@ def _sanitize_label(value: str | None) -> str:
     return trimmed[:120]
 
 
+def _normalize_identifier(value: str | None) -> str:
+    if not value:
+        return ''
+    trimmed = value.strip()
+    if not trimmed:
+        return ''
+    return trimmed[:128]
+
+
 def _extract_payload_components(raw: str | None) -> tuple[str | None, str | None]:
     if not raw:
         return None, None
@@ -61,18 +70,22 @@ class LoginQrCreateView(APIView):
 
     def post(self, request):
         # Extract device fingerprint from request
-        device_fingerprint = request.data.get('device_fingerprint', '')
-        stored_device_id = request.data.get('stored_device_id', '')
+        device_fingerprint = _normalize_identifier(request.data.get('device_fingerprint'))
+        stored_device_id = _normalize_identifier(request.data.get('stored_device_id'))
         
         ttl_seconds = int(getattr(settings, 'WEB_LOGIN_QR_TTL_SECONDS', 90) or 90)
         session, token = WebLoginSession.create_new(ttl_seconds)
         
         # Store device fingerprint in session
+        update_fields: list[str] = []
         if device_fingerprint:
-            session.device_fingerprint = device_fingerprint[:128]  # Limit length
+            session.device_fingerprint = device_fingerprint
+            update_fields.append('device_fingerprint')
         if stored_device_id:
-            session.stored_device_id = stored_device_id[:128]
-        session.save(update_fields=['device_fingerprint', 'stored_device_id'])
+            session.stored_device_id = stored_device_id
+            update_fields.append('stored_device_id')
+        if update_fields:
+            session.save(update_fields=update_fields)
         
         payload = _build_payload(session, token)
         return Response({
@@ -136,6 +149,41 @@ class LoginQrStatusView(APIView):
 
         return Response({'status': 'pending'}, status=status.HTTP_202_ACCEPTED)
 
+    def post(self, request, request_id: str):
+        device_fingerprint = _normalize_identifier(request.data.get('device_fingerprint'))
+        stored_device_id = _normalize_identifier(request.data.get('stored_device_id'))
+
+        if not device_fingerprint and not stored_device_id:
+            return Response({'detail': 'identifier_required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            session = WebLoginSession.objects.get(id=request_id)
+        except WebLoginSession.DoesNotExist:
+            return Response({'detail': 'session_not_found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if session.status == WebLoginSession.Status.CONSUMED:
+            return Response({'detail': 'already_consumed'}, status=status.HTTP_409_CONFLICT)
+
+        if session.status == WebLoginSession.Status.APPROVED:
+            return Response({'detail': 'already_approved'}, status=status.HTTP_409_CONFLICT)
+
+        if session.status == WebLoginSession.Status.EXPIRED or (session.status == WebLoginSession.Status.PENDING and session.is_expired):
+            session.mark_expired(save=True)
+            return Response({'detail': 'expired'}, status=status.HTTP_410_GONE)
+
+        update_fields: list[str] = []
+        if device_fingerprint:
+            session.device_fingerprint = device_fingerprint
+            update_fields.append('device_fingerprint')
+        if stored_device_id:
+            session.stored_device_id = stored_device_id
+            update_fields.append('stored_device_id')
+
+        if not update_fields:
+            return Response({'detail': 'identifier_required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session.save(update_fields=update_fields)
+        return Response({'detail': 'updated'})
 
 class LoginQrApproveView(APIView):
     permission_classes = [IsAuthenticated, ActiveDeviceRequired]
@@ -181,11 +229,21 @@ class LoginQrApproveView(APIView):
                 session.mark_expired(save=True)
                 return Response({'detail': 'expired'}, status=status.HTTP_410_GONE)
 
-            # Extract device fingerprint from session
-            device_fingerprint = session.device_fingerprint
-            stored_device_id = session.stored_device_id
+            # Extract device fingerprint from session and incoming request payload
+            device_fingerprint = _normalize_identifier(session.device_fingerprint)
+            stored_device_id = _normalize_identifier(session.stored_device_id)
+
+            incoming_fingerprint = _normalize_identifier(request.data.get('device_fingerprint'))
+            incoming_stored_id = _normalize_identifier(request.data.get('stored_device_id'))
+
+            if incoming_fingerprint:
+                device_fingerprint = incoming_fingerprint
+            if incoming_stored_id:
+                stored_device_id = incoming_stored_id
+
             existing_device = None
-            
+            now = timezone.now()
+
             # Try to find existing device with same fingerprint (same physical device)
             if device_fingerprint:
                 existing_device = UserDevice.objects.filter(
@@ -194,20 +252,40 @@ class LoginQrApproveView(APIView):
                     is_web=True,
                     device_fingerprint=device_fingerprint
                 ).first()
-                
+
                 if existing_device:
                     print(f"🔄 [Device Reuse] Found existing device {existing_device.id} for user {request.user.username} with fingerprint {device_fingerprint[:16]}...")
-            
+
+            # Fallback to stored_device_id when available
+            if not existing_device and stored_device_id:
+                existing_device = UserDevice.objects.filter(
+                    user=request.user,
+                    platform='web',
+                    is_web=True,
+                    stored_device_id=stored_device_id
+                ).first()
+
+                if existing_device:
+                    print(f"🔄 [Device Reuse] Found existing device {existing_device.id} via stored_id for user {request.user.username}...")
+
             # If device found, reuse it (update it instead of creating new)
             if existing_device:
                 device = existing_device
                 device.status = UserDevice.Status.ACTIVE
-                device.last_seen_at = timezone.now()
+                device.last_seen_at = now
                 device.label = _sanitize_label(request.data.get('label') or request.data.get('device_label'))
                 device.app_version = request.META.get('HTTP_USER_AGENT', '')[:40]
-                if stored_device_id:
-                    device.stored_device_id = stored_device_id[:128]
-                device.save()
+                update_fields = ['status', 'last_seen_at', 'label', 'app_version']
+
+                if device_fingerprint and device.device_fingerprint != device_fingerprint:
+                    device.device_fingerprint = device_fingerprint
+                    update_fields.append('device_fingerprint')
+
+                if stored_device_id and device.stored_device_id != stored_device_id:
+                    device.stored_device_id = stored_device_id
+                    update_fields.append('stored_device_id')
+
+                device.save(update_fields=update_fields)
                 print(f"✅ [Device Reuse] Reactivated device {device.id} - No new device created")
             else:
                 # New physical device - check limit before creating
@@ -223,7 +301,6 @@ class LoginQrApproveView(APIView):
                     }, status=status.HTTP_409_CONFLICT)
 
                 # Create new device
-                now = timezone.now()
                 label = _sanitize_label(request.data.get('label') or request.data.get('device_label'))
                 user_agent = request.META.get('HTTP_USER_AGENT', '')
                 device = UserDevice.objects.create(
@@ -234,8 +311,8 @@ class LoginQrApproveView(APIView):
                     app_version=user_agent[:40],
                     push_token='',
                     is_web=True,
-                    device_fingerprint=device_fingerprint[:128] if device_fingerprint else '',
-                    stored_device_id=stored_device_id[:128] if stored_device_id else '',
+                    device_fingerprint=device_fingerprint,
+                    stored_device_id=stored_device_id,
                     last_seen_at=now,
                 )
                 print(f"🆕 [Device Reuse] Created NEW device {device.id} for user {request.user.username} with fingerprint {device_fingerprint[:16] if device_fingerprint else 'none'}...")
@@ -265,8 +342,11 @@ class LoginQrApproveView(APIView):
             session.approval_ip = request.META.get('REMOTE_ADDR')
             session.access_token = str(access)
             session.refresh_token = str(refresh)
+            session.device_fingerprint = device_fingerprint
+            session.stored_device_id = stored_device_id
             session.save(update_fields=[
-                'user', 'status', 'approved_at', 'approved_device', 'approval_ip', 'access_token', 'refresh_token'
+                'user', 'status', 'approved_at', 'approved_device', 'approval_ip', 'access_token', 'refresh_token',
+                'device_fingerprint', 'stored_device_id'
             ])
 
         return Response({

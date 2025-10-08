@@ -179,3 +179,161 @@ class WebLoginFlowTests(APITestCase):
         self.assertIn('message', reject_resp.json())
         self.assertEqual(reject_resp.json()['limit'], 5)
         self.assertEqual(reject_resp.json()['current'], 5)
+
+    def test_reuses_existing_browser_when_fingerprint_matches(self):
+        first_login = self._login()
+        primary_resp = self.client.post(
+            self.device_link_url,
+            {'label': 'Primary Phone', 'platform': 'android'},
+            format='json',
+            **self._auth_headers(first_login['access']),
+        )
+        primary_device_id = primary_resp.json()['device']['device_id']
+        tokens = self._login(primary_device_id)
+        auth_headers = self._auth_headers(tokens['access'], primary_device_id)
+
+        fingerprint = 'fp-browser-123'
+        stored_id = 'stored-browser-123'
+
+        qr_resp = self.client.post(
+            self.login_qr_create_url,
+            {'device_fingerprint': fingerprint, 'stored_device_id': stored_id},
+            format='json',
+        )
+        self.assertEqual(qr_resp.status_code, status.HTTP_200_OK)
+        qr_data = qr_resp.json()
+
+        approve_resp = self.client.post(
+            self.login_qr_approve_url,
+            {
+                'payload': qr_data['payload'],
+                'label': 'Chrome Laptop',
+                'stored_device_id': stored_id,
+                'device_fingerprint': fingerprint,
+            },
+            format='json',
+            **auth_headers,
+        )
+        self.assertEqual(approve_resp.status_code, status.HTTP_200_OK)
+        first_device_id = approve_resp.json()['device_id']
+        first_device = UserDevice.objects.get(id=first_device_id)
+        self.assertTrue(first_device.is_web)
+        self.assertEqual(first_device.device_fingerprint, fingerprint)
+        self.assertEqual(first_device.stored_device_id, stored_id)
+
+        # Second login attempt from the same browser
+        qr_resp_two = self.client.post(
+            self.login_qr_create_url,
+            {'device_fingerprint': fingerprint, 'stored_device_id': stored_id},
+            format='json',
+        )
+        self.assertEqual(qr_resp_two.status_code, status.HTTP_200_OK)
+        qr_data_two = qr_resp_two.json()
+
+        approve_resp_two = self.client.post(
+            self.login_qr_approve_url,
+            {
+                'payload': qr_data_two['payload'],
+                'label': 'Chrome Laptop',
+                'stored_device_id': stored_id,
+                'device_fingerprint': fingerprint,
+            },
+            format='json',
+            **auth_headers,
+        )
+        self.assertEqual(approve_resp_two.status_code, status.HTTP_200_OK)
+        self.assertEqual(approve_resp_two.json()['device_id'], first_device_id)
+
+        active_web_devices = UserDevice.objects.filter(
+            user=self.user,
+            is_web=True,
+            status__in=[UserDevice.Status.PRIMARY, UserDevice.Status.ACTIVE]
+        )
+        self.assertEqual(active_web_devices.count(), 1)
+
+    def test_status_endpoint_updates_session_and_reuses_by_stored_id(self):
+        first_login = self._login()
+        primary_resp = self.client.post(
+            self.device_link_url,
+            {'label': 'Primary Phone', 'platform': 'android'},
+            format='json',
+            **self._auth_headers(first_login['access']),
+        )
+        primary_device_id = primary_resp.json()['device']['device_id']
+        tokens = self._login(primary_device_id)
+        auth_headers = self._auth_headers(tokens['access'], primary_device_id)
+
+        stored_id = 'stored-device-xyz'
+        fingerprint_one = 'fingerprint-one'
+        fingerprint_two = 'fingerprint-two'
+
+        # First browser link: create QR via GET then attach identifiers via status POST
+        qr_resp = self.client.get(self.login_qr_create_url)
+        self.assertEqual(qr_resp.status_code, status.HTTP_200_OK)
+        qr_data = qr_resp.json()
+        status_url = reverse('login_qr_status', kwargs={'request_id': qr_data['request_id']})
+
+        attach_resp = self.client.post(
+            status_url,
+            {'device_fingerprint': fingerprint_one, 'stored_device_id': stored_id},
+            format='json',
+        )
+        self.assertEqual(attach_resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(attach_resp.json()['detail'], 'updated')
+
+        approve_resp = self.client.post(
+            self.login_qr_approve_url,
+            {
+                'payload': qr_data['payload'],
+                'label': 'Office Chrome',
+                'stored_device_id': stored_id,
+            },
+            format='json',
+            **auth_headers,
+        )
+        self.assertEqual(approve_resp.status_code, status.HTTP_200_OK)
+        device_id = approve_resp.json()['device_id']
+        device = UserDevice.objects.get(id=device_id)
+        self.assertEqual(device.device_fingerprint, fingerprint_one)
+        self.assertEqual(device.stored_device_id, stored_id)
+
+        # Second login: attach new fingerprint but same stored_id to trigger fallback
+        qr_resp_second = self.client.get(self.login_qr_create_url)
+        self.assertEqual(qr_resp_second.status_code, status.HTTP_200_OK)
+        qr_data_second = qr_resp_second.json()
+        status_url_second = reverse('login_qr_status', kwargs={'request_id': qr_data_second['request_id']})
+
+        attach_resp_second = self.client.post(
+            status_url_second,
+            {'device_fingerprint': fingerprint_two, 'stored_device_id': stored_id},
+            format='json',
+        )
+        self.assertEqual(attach_resp_second.status_code, status.HTTP_200_OK)
+        self.assertEqual(attach_resp_second.json()['detail'], 'updated')
+
+        approve_resp_second = self.client.post(
+            self.login_qr_approve_url,
+            {
+                'payload': qr_data_second['payload'],
+                'label': 'Office Chrome',
+                'stored_device_id': stored_id,
+                'device_fingerprint': fingerprint_two,
+            },
+            format='json',
+            **auth_headers,
+        )
+        self.assertEqual(approve_resp_second.status_code, status.HTTP_200_OK)
+        self.assertEqual(approve_resp_second.json()['device_id'], device_id)
+
+        device.refresh_from_db()
+        self.assertEqual(device.device_fingerprint, fingerprint_two)
+        self.assertEqual(device.stored_device_id, stored_id)
+
+        self.assertEqual(
+            UserDevice.objects.filter(
+                user=self.user,
+                is_web=True,
+                status__in=[UserDevice.Status.PRIMARY, UserDevice.Status.ACTIVE],
+            ).count(),
+            1,
+        )
