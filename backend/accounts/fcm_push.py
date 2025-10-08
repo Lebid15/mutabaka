@@ -106,7 +106,7 @@ def send_fcm_notifications(tokens: List[str], title: str, body: str, data: Optio
                 priority='high',
                 notification_count=badge if badge is not None else 0,
                 channel_id='mutabaka-messages-v2',
-                tag=f'conversation_{conversation_id}',
+                tag=f'message_{string_data.get("message_id", conversation_id)}',
             )
             
             # Add icon if available
