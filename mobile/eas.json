@@ -23,9 +23,9 @@
     },
     "production": {
       "autoIncrement": true,
-      "distribution": "internal",
+      "distribution": "store",
       "android": {
-        "buildType": "apk",
+        "buildType": "app-bundle",
         "withoutCredentials": false
       },
       "env": {
