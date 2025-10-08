@@ -554,7 +554,7 @@ export default function ConversationPage() {
           <div className="text-sm">محادثة #{convId}</div>
         </div>
       </div>
-      <div ref={listRef} className="flex-1 max-w-4xl mx-auto w-full overflow-auto p-3 space-y-2">
+  <div ref={listRef} className="flex-1 max-w-4xl mx-auto w-full overflow-auto p-3 space-y-2 flex flex-col">
         {messages.map(m => {
           if (isWalletSettlementMessage(m)) {
             const timestamp = formatSettlementTimestamp(m.settled_at ?? m.created_at);
