@@ -2953,6 +2953,7 @@ export default function Home() {
   // Fetch messages when conversation changes (single fetch; no re-fetch on contact list reorder)
   useEffect(() => {
     if (!isAuthed || !selectedConversationId) return;
+    if (!profile?.id) return;
     let active = true;
     // Reset state to prevent leaking messages from previous conversation
     setMessages([]);
@@ -3019,7 +3020,7 @@ export default function Home() {
       }
     })();
     return () => { active = false; };
-  }, [isAuthed, selectedConversationId]);
+  }, [isAuthed, selectedConversationId, profile?.id]);
 
   // التمرير التلقائي لأسفل عند تغير الرسائل
   useEffect(() => {
