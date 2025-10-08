@@ -45,9 +45,13 @@ class InboxConsumer(AsyncWebsocketConsumer):
             from django.utils import timezone
             from .models import Message, Conversation
             from django.db import models as dj_models
+            import logging
+            logger = logging.getLogger(__name__)
+            
             async_get_convs = sync_to_async(list)
             convs = await async_get_convs(Conversation.objects.filter(models.Q(user_a_id=self.user_id) | models.Q(user_b_id=self.user_id)).only('id'))
             now = timezone.now()
+            conversations_to_update = []
             for c in convs:
                 # Fetch up to last 100 inbound messages that are not yet delivered
                 async_get_ids = sync_to_async(list)
@@ -60,6 +64,7 @@ class InboxConsumer(AsyncWebsocketConsumer):
                 )
                 if not ids:
                     continue
+                conversations_to_update.append(c.id)
                 async_update = sync_to_async(Message.objects.filter(id__in=ids).update)
                 await async_update(
                     delivered_at=now,
@@ -68,17 +73,53 @@ class InboxConsumer(AsyncWebsocketConsumer):
                         default=dj_models.F('delivery_status')
                     )
                 )
-                # Broadcast per-message status so senders update ticks to double gray
-                for mid in ids:
+                # Broadcast per-message status ONLY if not already READ (monotonic: never downgrade)
+                async_get_messages = sync_to_async(list)
+                updated_messages = await async_get_messages(
+                    Message.objects.filter(id__in=ids).values('id', 'delivery_status')
+                )
+                for msg_data in updated_messages:
+                    mid = msg_data['id']
+                    final_status = msg_data['delivery_status']
+                    # Only broadcast if status is DELIVERED (1), never if READ (2) to prevent downgrade
+                    if final_status == 1:
+                        try:
+                            await self.channel_layer.group_send(f"conv_{c.id}", {
+                                'type': 'broadcast.message',
+                                'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 1, 'status': 'delivered' }
+                            })
+                        except Exception:
+                            pass
+                    elif final_status >= 2:
+                        # Message is already READ, don't broadcast anything to avoid downgrade
+                        logger.info(f"📬 [INBOX] Skip broadcast for message {mid} in conv {c.id} - already READ (status={final_status})")
+            
+            if conversations_to_update:
+                logger.info(f"📬 [INBOX] User {self.user_id} reconnected - sending catchup for {len(conversations_to_update)} conversations")
+                from .push import _total_unread_for_user
+                async_total_unread = sync_to_async(_total_unread_for_user)
+                user_unread = await async_total_unread(self.user_id)
+                
+                for conv_id in conversations_to_update:
                     try:
-                        await self.channel_layer.group_send(f"conv_{c.id}", {
-                            'type': 'broadcast.message',
-                            'data': { 'type': 'message.status', 'id': int(mid), 'delivery_status': 1, 'status': 'delivered' }
-                        })
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+                        async_get_last_msg = sync_to_async(lambda cid: Message.objects.filter(conversation_id=cid).order_by('-id').first())
+                        last_msg = await async_get_last_msg(conv_id)
+                        if last_msg:
+                            preview = last_msg.body[:80] if last_msg.body else ''
+                            logger.info(f"📬 [INBOX] Sending catchup inbox.update for conv {conv_id} to user {self.user_id}: preview='{preview[:30]}...', unread={user_unread}")
+                            await self.send(text_data=json.dumps({
+                                'type': 'inbox.update',
+                                'conversation_id': conv_id,
+                                'last_message_preview': preview,
+                                'last_message_at': last_msg.created_at.isoformat(),
+                                'unread_count': user_unread,
+                            }))
+                    except Exception as e:
+                        logger.exception(f"❌ [INBOX] Failed to send catchup for conv {conv_id}: {e}")
+            else:
+                logger.info(f"📬 [INBOX] User {self.user_id} reconnected - no catchup needed (no undelivered messages)")
+        except Exception as e:
+            logger.exception(f"❌ [INBOX] Catchup logic failed for user {self.user_id}: {e}")
         try:
             cnt = add_channel(self.group_name, self.channel_name)
             print(f"[WS] inbox connected user={self.user_id} join group={self.group_name} subscribers={cnt}")

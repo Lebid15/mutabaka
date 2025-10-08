@@ -307,6 +307,40 @@ class ConversationConsumer(AsyncWebsocketConsumer):
         except Exception:
             pass
 
+        initial_delivery_status = 1
+        initial_status = 'delivered'
+        initial_read_at = None
+        try:
+            from .group_registry import get_count
+            conv = await self.get_conversation()
+            recipient_id = None
+            if user.id == conv.user_a_id:
+                recipient_id = conv.user_b_id
+            elif user.id == conv.user_b_id:
+                recipient_id = conv.user_a_id
+            
+            if recipient_id:
+                recipient_in_conv = get_count(self.group_name) > 1
+                
+                if recipient_in_conv:
+                    from django.utils import timezone
+                    from django.db import models as dj_models
+                    read_now = timezone.now()
+                    await sync_to_async(Message.objects.filter(id=msg.id).update)(
+                        delivery_status=dj_models.Case(
+                            dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)),
+                            default=dj_models.F('delivery_status')
+                        ),
+                        read_at=read_now,
+                        delivered_at=read_now
+                    )
+                    initial_delivery_status = 2
+                    initial_status = 'read'
+                    initial_read_at = read_now.isoformat()
+                    logger.info(f"💬 [WS] Message {msg.id} set to READ before broadcast: recipient {recipient_id} is in conversation")
+        except Exception as e:
+            logger.exception(f"❌ [WS] Failed to check recipient status before broadcast for message {msg.id}: {e}")
+
         # Broadcast chat.message to conversation group
         sender_display = (getattr(tm, 'display_name', '') or getattr(tm, 'username', '')) if tm else (getattr(user, 'display_name', '') or user.username)
         payload_message = {
@@ -320,11 +354,11 @@ class ConversationConsumer(AsyncWebsocketConsumer):
             'body': body,
             'created_at': msg.created_at.isoformat(),
             'delivered_at': msg.created_at.isoformat(),
-            'read_at': None,
+            'read_at': initial_read_at,
             'kind': msg_type,
             'client_id': client_id,
-            'delivery_status': 1,
-            'status': 'delivered',
+            'delivery_status': initial_delivery_status,
+            'status': initial_status,
         }
         # Instrumentation: log the outgoing realtime payload to diagnose missing recipient updates.
         try:
@@ -343,9 +377,20 @@ class ConversationConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': payload_message})
         # Explicit status broadcast (redundant) kept for downstream listeners not capturing initial message
         try:
-            await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': { 'type': 'message.status', 'conversation_id': int(self.conversation_id), 'id': msg.id, 'message_id': msg.id, 'delivery_status': 1, 'status': 'delivered' }})
+            status_data = {
+                'type': 'message.status',
+                'conversation_id': int(self.conversation_id),
+                'id': msg.id,
+                'message_id': msg.id,
+                'delivery_status': initial_delivery_status,
+                'status': initial_status
+            }
+            if initial_read_at:
+                status_data['read_at'] = initial_read_at
+            await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': status_data})
         except Exception:
             pass
+        
         # Mirror to Pusher so deployments using Pusher-only listeners remain in sync
         try:
             from .pusher_client import pusher_client
@@ -363,7 +408,7 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                         'id': msg.id,
                         'message_id': msg.id,
                         'delivered_at': msg.created_at.isoformat(),
-                        'read_at': None,
+                        'read_at': initial_read_at,
                     }
                 )
         except Exception:
