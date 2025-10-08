@@ -329,7 +329,8 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                     await sync_to_async(Message.objects.filter(id=msg.id).update)(
                         delivery_status=dj_models.Case(
                             dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)),
-                            default=dj_models.F('delivery_status')
+                            default=dj_models.F('delivery_status'),
+                            output_field=dj_models.PositiveSmallIntegerField()
                         ),
                         read_at=read_now,
                         delivered_at=read_now

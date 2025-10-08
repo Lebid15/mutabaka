@@ -869,7 +869,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
                         read_now = timezone.now()
                         Message.objects.filter(id=msg.id).update(delivery_status=dj_models.Case(
                             dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)), 
-                            default=dj_models.F('delivery_status')
+                            default=dj_models.F('delivery_status'),
+                            output_field=dj_models.PositiveSmallIntegerField()
                         ), read_at=read_now, delivered_at=read_now)
                         initial_delivery_status = 2
                         initial_status = 'read'
@@ -879,7 +880,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
                         # Upgrade to DELIVERED (1) before broadcast - recipient is online but not in conv
                         Message.objects.filter(id=msg.id).update(delivery_status=dj_models.Case(
                             dj_models.When(delivery_status__lt=1, then=dj_models.Value(1)), 
-                            default=dj_models.F('delivery_status')
+                            default=dj_models.F('delivery_status'),
+                            output_field=dj_models.PositiveSmallIntegerField()
                         ), delivered_at=timezone.now())
                         logger.info(f"📨 [VIEWS] Message {msg.id} set to DELIVERED before broadcast: recipient {recipient_id} is online")
                 except Exception as e:
