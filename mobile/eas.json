@@ -15,10 +15,10 @@
         "withoutCredentials": false
       },
       "env": {
-        "EXPO_PUBLIC_APP_ENV": "production",
-        "EXPO_PUBLIC_API_BASE_URL": "https://mutabaka.com/api",
-        "EXPO_PUBLIC_WS_BASE_URL": "wss://mutabaka.com/ws",
-        "EXPO_PUBLIC_TENANT_HOST": "mutabaka.com"
+        "EXPO_PUBLIC_APP_ENV": "development",
+        "EXPO_PUBLIC_API_BASE_URL": "https://dealing-upgrades-readily-diesel.trycloudflare.com/api",
+        "EXPO_PUBLIC_WS_BASE_URL": "wss://dealing-upgrades-readily-diesel.trycloudflare.com/ws",
+        "EXPO_PUBLIC_TENANT_HOST": "dealing-upgrades-readily-diesel.trycloudflare.com"
       }
     },
     "production": {
