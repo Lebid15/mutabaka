@@ -1,0 +1,92 @@
+diff --git a/node_modules/@react-native/gradle-plugin/settings-plugin/src/main/kotlin/com/facebook/react/ReactSettingsExtension.kt b/node_modules/@react-native/gradle-plugin/settings-plugin/src/main/kotlin/com/facebook/react/ReactSettingsExtension.kt
+index 41ca6c5..cfb3d0f 100644
+--- a/node_modules/@react-native/gradle-plugin/settings-plugin/src/main/kotlin/com/facebook/react/ReactSettingsExtension.kt
++++ b/node_modules/@react-native/gradle-plugin/settings-plugin/src/main/kotlin/com/facebook/react/ReactSettingsExtension.kt
+@@ -16,16 +16,16 @@ import java.security.MessageDigest
+ import javax.inject.Inject
+ import kotlin.math.min
+ import org.gradle.api.GradleException
+-import org.gradle.api.file.FileCollection
+ import org.gradle.api.initialization.Settings
+ import org.gradle.api.logging.Logging
+ 
+ abstract class ReactSettingsExtension @Inject constructor(val settings: Settings) {
+ 
+-  private val outputFile =
+-      settings.layout.rootDirectory.file("build/generated/autolinking/autolinking.json").asFile
+-  private val outputFolder =
+-      settings.layout.rootDirectory.file("build/generated/autolinking/").asFile
++  private val rootDirectory: File = settings.settingsDir
++  private val workspaceDirectory: File = rootDirectory.parentFile ?: rootDirectory
++
++  private val outputFile = File(rootDirectory, "build/generated/autolinking/autolinking.json")
++  private val outputFolder = File(rootDirectory, "build/generated/autolinking/")
+ 
+   private val defaultConfigCommand: List<String> =
+       windowsAwareCommandLine(listOf("npx", "@react-native-community/cli", "config")).map {
+@@ -46,12 +46,14 @@ abstract class ReactSettingsExtension @Inject constructor(val settings: Settings
+    */
+   @JvmOverloads
+   public fun autolinkLibrariesFromCommand(
+-      command: List<String> = defaultConfigCommand,
+-      workingDirectory: File? = settings.layout.rootDirectory.dir("../").asFile,
+-      lockFiles: FileCollection =
+-          settings.layout.rootDirectory
+-              .dir("../")
+-              .files("yarn.lock", "package-lock.json", "package.json", "react-native.config.js")
++    command: List<String> = defaultConfigCommand,
++    workingDirectory: File? = workspaceDirectory,
++    lockFiles: Collection<File> =
++      listOf(
++        File(workspaceDirectory, "yarn.lock"),
++        File(workspaceDirectory, "package-lock.json"),
++        File(workspaceDirectory, "package.json"),
++        File(workspaceDirectory, "react-native.config.js"))
+   ) {
+     outputFile.parentFile.mkdirs()
+ 
+@@ -119,11 +121,11 @@ abstract class ReactSettingsExtension @Inject constructor(val settings: Settings
+      * @param lockFiles The [FileCollection] of the lockfiles to check.
+      * @return `true` if the cache needs to be rebuilt, `false` otherwise
+      */
+-    internal fun isCacheDirty(
+-        cacheJsonConfig: File,
+-        cacheFolder: File,
+-        lockFiles: FileCollection,
+-    ): Boolean {
++  internal fun isCacheDirty(
++    cacheJsonConfig: File,
++    cacheFolder: File,
++    lockFiles: Collection<File>,
++  ): Boolean {
+       if (cacheJsonConfig.exists().not() || cacheJsonConfig.length() == 0L) {
+         return true
+       }
+@@ -142,12 +144,12 @@ abstract class ReactSettingsExtension @Inject constructor(val settings: Settings
+      * @param cacheFolder The folder we store our cached SHAs and config
+      * @param lockFiles The [FileCollection] of the lockfiles to check.
+      */
+-    internal fun checkAndUpdateCache(
+-        updateJsonConfig: GenerateConfig,
+-        cacheJsonConfig: File,
+-        cacheFolder: File,
+-        lockFiles: FileCollection,
+-    ) {
++  internal fun checkAndUpdateCache(
++    updateJsonConfig: GenerateConfig,
++    cacheJsonConfig: File,
++    cacheFolder: File,
++    lockFiles: Collection<File>,
++  ) {
+       if (isCacheDirty(cacheJsonConfig, cacheFolder, lockFiles)) {
+         val exitValue = updateJsonConfig.execute()
+         if (exitValue != 0) {
+@@ -179,7 +181,7 @@ abstract class ReactSettingsExtension @Inject constructor(val settings: Settings
+      * @param outputFolder The folder where the hashes will be stored.
+      * @return `true` if the lockfiles have been updated, `false` otherwise.
+      */
+-    internal fun checkAndUpdateLockfiles(lockFiles: FileCollection, outputFolder: File): Boolean {
++    internal fun checkAndUpdateLockfiles(lockFiles: Collection<File>, outputFolder: File): Boolean {
+       var changed = false
+       lockFiles.forEach { lockFile ->
+         if (lockFile.exists()) {

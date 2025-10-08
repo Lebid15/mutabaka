@@ -46,7 +46,7 @@ jobs:
           echo "$BUILD_JSON" | jq '.' > ../build-aab.json
           BUILD_URL=$(echo "$BUILD_JSON" | jq -r 'if type=="array" then (.[0].artifacts.buildUrl // .[0].artifacts.applicationArchiveUrl // empty) else (.artifacts.buildUrl // .artifacts.applicationArchiveUrl // empty) end')
           BUILD_PAGE_URL=$(echo "$BUILD_JSON" | jq -r 'if type=="array" then (.[0].buildDetailsPageUrl // empty) else (.buildDetailsPageUrl // empty) end')
-          
+           
           if [ -z "$BUILD_URL" ] || [ "$BUILD_URL" == "null" ]; then
             echo "::error::Failed to get AAB build URL from EAS."
             exit 1
