@@ -11,7 +11,7 @@ const KOTLIN_VERSION = '2.0.20'; // نسخة موصى بها مع React Native 0
 const GOOGLE_SERVICES_CLASSPATH = 'com.google.gms:google-services:4.4.1';
 const ANDROID_GRADLE_PLUGIN = 'com.android.tools.build:gradle:8.1.1';
 const KOTLIN_GRADLE_PLUGIN = 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.20';
-const GRADLE_WRAPPER_VERSION = '8.4';
+const GRADLE_WRAPPER_VERSION = '8.14.3';
 
 const ensureClasspath = (contents, dependency) => {
   const target = `classpath("${dependency}")`;
