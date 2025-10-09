@@ -1320,11 +1320,6 @@ export default function HomeScreen() {
               <FeatherIcon name="x" size={18} color={modalSubtitleColor} />
             </Pressable>
           </View>
-          <Text style={[styles.modalSubtitle, { color: modalSubtitleColor }]}
-            numberOfLines={2}
-          >
-            ابحث عن المستخدمين باستخدام اسم المستخدم لبدء محادثة مباشرة معهم.
-          </Text>
           <View style={[styles.modalInputWrapper, { backgroundColor: modalInputBg, borderColor: modalInputBorder }]}
             accessibilityLabel="حقل البحث عن المستخدمين"
           >
@@ -1351,9 +1346,7 @@ export default function HomeScreen() {
           <ScrollView style={styles.modalResults} keyboardShouldPersistTaps="handled">
             {contactSearching ? (
               <ActivityIndicator size="small" color={actionTint} />
-            ) : contactQuery.trim().length === 0 ? (
-              <Text style={[styles.modalEmptyText, { color: modalEmptyText }]}>ابدأ بالبحث عن طريق كتابة اسم المستخدم.</Text>
-            ) : contactQuery.trim().length < 2 ? (
+            ) : contactQuery.trim().length === 0 ? null : contactQuery.trim().length < 2 ? (
               <Text style={[styles.modalEmptyText, { color: modalEmptyText }]}>اكتب على الأقل حرفين لإظهار النتائج.</Text>
             ) : contactResults.length === 0 ? (
               <Text style={[styles.modalEmptyText, { color: modalEmptyText }]}>لا توجد نتائج مطابقة.</Text>

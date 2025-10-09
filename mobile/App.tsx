@@ -192,15 +192,8 @@ function extractUnreadCount(notification: Notification | null | undefined): numb
   if (!notification) {
     return null;
   }
-  const badge = notification.request?.content?.badge;
-  if (typeof badge === 'number' && Number.isFinite(badge)) {
-    return badge < 0 ? 0 : Math.floor(badge);
-  }
-  const data = notification.request?.content?.data as Record<string, unknown> | undefined;
-  if (!data) {
-    return null;
-  }
 
+  const data = notification.request?.content?.data as Record<string, unknown> | undefined;
   const candidateKeys = [
     'unread_count',
     'unreadCount',
@@ -211,24 +204,44 @@ function extractUnreadCount(notification: Notification | null | undefined): numb
     'notificationCount',
   ];
 
-  for (const key of candidateKeys) {
-    const candidate = sanitizeBadgeCandidate((data as Record<string, unknown>)[key]);
-    if (candidate !== null) {
-      return candidate;
+  const extractFromObject = (source: Record<string, unknown> | undefined, descriptor: string): number | null => {
+    if (!source) {
+      return null;
     }
+    for (const key of candidateKeys) {
+      const candidate = sanitizeBadgeCandidate(source[key]);
+      if (candidate !== null) {
+        console.log(`[Badge] extractUnreadCount: using ${descriptor}.${key}=${candidate}`);
+        return candidate;
+      }
+    }
+    return null;
+  };
+
+  const dataCandidate = extractFromObject(data, 'data');
+  if (dataCandidate !== null) {
+    return dataCandidate;
   }
 
-  const nested = ['data', 'payload', 'extra'];
-  for (const key of nested) {
-    const value = data[key];
-    if (value && typeof value === 'object') {
-      for (const nestedKey of candidateKeys) {
-        const nestedCandidate = sanitizeBadgeCandidate((value as Record<string, unknown>)[nestedKey]);
+  if (data && typeof data === 'object') {
+    const nested = ['data', 'payload', 'extra'];
+    for (const key of nested) {
+      const value = data[key];
+      if (value && typeof value === 'object') {
+        const nestedCandidate = extractFromObject(value as Record<string, unknown>, `data.${key}`);
         if (nestedCandidate !== null) {
           return nestedCandidate;
         }
       }
     }
+  }
+
+  const badge = notification.request?.content?.badge;
+  if (typeof badge === 'number' && Number.isFinite(badge)) {
+    const sanitized = badge < 0 ? 0 : Math.floor(badge);
+    console.log(`[Badge] extractUnreadCount: using notification.badge=${sanitized}`);
+    // على أندرويد نفضّل أرقام البيانات، لذلك لا نعود للبادج إلا إذا لم نجد شيئاً آخر.
+    return sanitized;
   }
 
   return null;

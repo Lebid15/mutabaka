@@ -44,7 +44,6 @@ import {
   HttpError,
 } from '../services/devices';
 import { getStoredDeviceId } from '../lib/deviceIdentity';
-import { isQaBuild } from '../utils/qa';
 import { checkPermissionStatus, openNotificationSettings, getExpoPushToken } from '../lib/pushNotifications';
 import * as Notifications from 'expo-notifications';
 import { updateCurrentDevicePushToken } from '../services/devices';
@@ -137,7 +136,6 @@ export default function SettingsScreen() {
   const { mode, toggleTheme } = useThemeMode();
   const isLight = mode === 'light';
   const isRTL = I18nManager.isRTL;
-  const qaEnabled = isQaBuild();
   const directionStyle = useMemo(() => (isRTL ? styles.rtlDirection : styles.ltrDirection), [isRTL]);
   const textDirectionStyle = useMemo(() => (isRTL ? styles.textAlignRight : styles.textAlignLeft), [isRTL]);
 
@@ -633,10 +631,6 @@ export default function SettingsScreen() {
   );
   const deviceUsageText = `${activeDevices.length}/${deviceLimit}`;
 
-  const handleOpenQaDevices = useCallback(() => {
-    navigation.navigate('QADevices');
-  }, [navigation]);
-
   const handleApproveDevice = useCallback(
     (device: LinkedDevice) => {
       if (!actingIsPrimary) {
@@ -984,27 +978,6 @@ export default function SettingsScreen() {
                         </Text>
                       </View>
                     ) : null}
-                  </View>
-                ) : null}
-
-                {qaEnabled && !currentUser?.is_team_member ? (
-                  <View style={[styles.card, { backgroundColor: palette.cardBg, borderColor: palette.cardBorder }]}
-                  >
-                    <View style={[styles.cardSimpleRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}
-                    >
-                      <View style={[styles.cardHeaderText, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}
-                      >
-                        <Text style={[styles.cardTitle, textDirectionStyle, { color: palette.heading }]}>وضع QA للأجهزة</Text>
-                        <Text style={[styles.cardSubtitle, textDirectionStyle, { color: palette.subText }]}>افتح شاشة اختبار الأجهزة لعمليات الموافقة، الاستبدال، الإلغاء السريع.</Text>
-                      </View>
-                      <Pressable
-                        style={[styles.primaryButton, { backgroundColor: palette.primaryButtonBg }]}
-                        onPress={handleOpenQaDevices}
-                        accessibilityRole="button"
-                      >
-                        <Text style={[styles.buttonText, { color: palette.primaryButtonText }]}>فتح شاشة QA</Text>
-                      </Pressable>
-                    </View>
                   </View>
                 ) : null}
 

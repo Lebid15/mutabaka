@@ -649,6 +649,7 @@ export default function QADevicesScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
+    paddingTop: 40,
   },
   header: {
     margin: 16,
