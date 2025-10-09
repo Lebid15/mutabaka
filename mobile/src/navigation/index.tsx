@@ -22,7 +22,7 @@ import type { PinStatusPayload } from '../lib/pinSession';
 import type { LoginCredentials } from '../services/auth';
 import type { LinkedDevice } from '../services/devices';
 import { isQaBuild } from '../utils/qa';
-import { useNotificationHandlers } from '../hooks/useNotificationHandlers';
+import { navigationRef, onNavigationReady } from './navigationService';
 
 export type RootStackParamList = {
   Bootstrap: undefined;
@@ -62,9 +62,6 @@ export default function RootNavigator() {
   const { mode, tokens } = useThemeMode();
   const qaEnabled = isQaBuild();
   
-  // إعداد معالجات الإشعارات (التنقل للمحادثة عند الضغط على إشعار)
-  useNotificationHandlers();
-
   const theme = useMemo(() => {
     const base = mode === 'light' ? NavigationLightTheme : NavigationDarkTheme;
     return {
@@ -97,7 +94,11 @@ export default function RootNavigator() {
   }, [qaEnabled]);
 
   return (
-    <NavigationContainer theme={theme} linking={linking}
+    <NavigationContainer
+      ref={navigationRef}
+      theme={theme}
+      linking={linking}
+      onReady={onNavigationReady}
     >
       <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Bootstrap">
         <Stack.Screen name="Bootstrap" component={BootstrapScreen} />

@@ -13,20 +13,6 @@ let cachedPushToken: string | null = null;
 let tokenPromise: Promise<string | null> | null = null;
 let isInitialized = false;
 
-// تكوين كيفية عرض الإشعارات
-Notifications.setNotificationHandler({
-  handleNotification: async (notification) => {
-    console.log('[PushNotifications] 📬 Handling notification:', notification.request.content.title);
-    return {
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: true,
-      shouldShowBanner: true,
-      shouldShowList: true,
-    };
-  },
-});
-
 /**
  * التحقق من أن الجهاز يدعم Push Notifications
  */

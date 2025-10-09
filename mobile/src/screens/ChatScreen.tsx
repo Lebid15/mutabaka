@@ -59,6 +59,7 @@ import { emitConversationPreviewUpdate } from '../lib/conversationEvents';
 import { createWebSocket } from '../lib/wsClient';
 import { listTeamMembers, type TeamMember } from '../services/team';
 import { dismissNotificationsForConversation } from '../lib/notificationRegistry';
+import { setActiveConversationId, clearActiveConversationId } from '../lib/activeConversation';
 
 interface BalanceSummary {
   code: string;
@@ -1871,6 +1872,11 @@ export default function ChatScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      if (Number.isFinite(numericConversationId)) {
+        setActiveConversationId(numericConversationId);
+      } else {
+        clearActiveConversationId();
+      }
       loadConversationData();
       let focusTimer: ReturnType<typeof setTimeout> | null = null;
       if (Number.isFinite(numericConversationId)) {
@@ -1886,6 +1892,7 @@ export default function ChatScreen() {
       }
 
       return () => {
+        clearActiveConversationId();
         if (focusTimer) {
           clearTimeout(focusTimer);
           focusTimer = null;

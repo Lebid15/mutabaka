@@ -10,12 +10,14 @@ import { AppState, type AppStateStatus, I18nManager, Platform, type ViewStyle } 
 import RootNavigator from './src/navigation';
 import { ThemeProvider, useThemeMode } from './src/theme';
 import { initializeAppBadge, setAppBadgeCount, getSystemBadgeCount } from './src/lib/appBadge';
-import { getExpoPushToken, checkPermissionStatus } from './src/lib/pushNotifications';
+import { getExpoPushToken, checkPermissionStatus, getLastNotificationResponse } from './src/lib/pushNotifications';
 import { updateCurrentDevicePushToken } from './src/services/devices';
 import { getAccessToken } from './src/lib/authStorage';
 import { inboxSocketManager } from './src/lib/inboxSocketManager';
 import messaging from '@react-native-firebase/messaging';
 import { fetchUnreadBadgeCount } from './src/services/conversations';
+import { getActiveConversationId, isAppInForeground, setAppForegroundState } from './src/lib/activeConversation';
+import { navigateToConversation } from './src/navigation/navigationService';
 import {
   dismissAllNotifications,
   dismissNotificationIds,
@@ -25,10 +27,11 @@ import {
   extractMessageIdFromData,
   extractNotificationIdsFromData,
   registerExpoNotification,
-  registerNotification,
 } from './src/lib/notificationRegistry';
 
 // معالج الإشعارات في الخلفية (FCM Background Handler)
+setAppForegroundState(AppState.currentState === 'active');
+
 messaging().setBackgroundMessageHandler(async (remoteMessage) => {
   console.log('[FCM] Background message received:', remoteMessage);
   const normalizedData = normalizeRemoteMessageData(remoteMessage?.data as Record<string, string | undefined> | undefined);
@@ -39,13 +42,25 @@ messaging().setBackgroundMessageHandler(async (remoteMessage) => {
 });
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
+  handleNotification: async () => {
+    const appForeground = isAppInForeground();
+    if (appForeground) {
+      return {
+        shouldShowAlert: false,
+        shouldPlaySound: false,
+        shouldSetBadge: true,
+        shouldShowBanner: false,
+        shouldShowList: false,
+      };
+    }
+    return {
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    };
+  },
 });
 
 function normalizeRemoteMessageData(data?: Record<string, string | undefined> | null): Record<string, unknown> {
@@ -305,6 +320,57 @@ function useNotificationBadgeBridge() {
   void synchronizeBadgeFromSource(undefined, 'app.bootstrap');
 
     // معالج الإشعارات الواردة من FCM (Foreground)
+    const handledResponseIds = new Set<string>();
+
+    const handleNotificationResponseNavigation = (response: Notifications.NotificationResponse | null, source: string) => {
+      if (!response) {
+        return;
+      }
+
+      const identifier = response.notification.request.identifier;
+      if (identifier && handledResponseIds.has(identifier)) {
+        console.log(`[Notifications] Response ${identifier} from ${source} already handled`);
+        return;
+      }
+
+      registerExpoNotification(response.notification);
+
+      const data = response.notification.request.content?.data as Record<string, unknown> | undefined;
+      const conversationNumeric = extractConversationIdFromData(data);
+      if (conversationNumeric !== null) {
+        void dismissNotificationsForConversation(conversationNumeric, `notification.response.${source}`, {
+          expectedIds: identifier ? [identifier] : undefined,
+          fallbackToAll: true,
+        });
+      } else if (identifier) {
+        void dismissNotificationIds([identifier], `notification.response.${source}`, null);
+      }
+
+      const conversationIdFromPayload = conversationNumeric !== null
+        ? conversationNumeric
+        : typeof data?.conversation_id === 'string'
+          ? data.conversation_id
+          : typeof data?.conversation_id === 'number'
+            ? data.conversation_id
+            : typeof data?.conversation === 'string'
+              ? data.conversation
+              : typeof data?.conversation === 'number'
+                ? data.conversation
+                : null;
+
+      if (conversationIdFromPayload !== null && conversationIdFromPayload !== undefined) {
+        navigateToConversation(conversationIdFromPayload);
+      } else {
+        console.warn(`[Notifications] Unable to resolve conversation from response (${source})`);
+      }
+
+      if (identifier) {
+        handledResponseIds.add(identifier);
+      }
+
+      void synchronizeBadgeFromSource(extractUnreadCount(response.notification), `notification.response.${source}`);
+    };
+
     const unsubscribeFCM = messaging().onMessage(async (remoteMessage) => {
       console.log('[FCM] 📨 Foreground message received');
       console.log('[FCM] Title:', remoteMessage.notification?.title);
@@ -327,55 +393,14 @@ function useNotificationBadgeBridge() {
         console.log('[FCM] 🧮 Sanitized badge:', badgeCount);
 
         const conversationNumeric = extractConversationIdFromData(normalizedData);
-        const messageNumeric = extractMessageIdFromData(normalizedData);
-        const threadIdentifier = conversationNumeric !== null ? `conversation-${conversationNumeric}` : undefined;
-        const androidTag = conversationNumeric !== null ? `conversation-${conversationNumeric}` : undefined;
-        const notificationTitle = remoteMessage.notification.title?.trim();
-        const notificationBody = remoteMessage.notification.body?.trim();
-
-        const content: Notifications.NotificationContentInput & {
-          threadIdentifier?: string;
-          android?: {
-            channelId?: string;
-            priority?: Notifications.AndroidNotificationPriority | string;
-            color?: string;
-            tag?: string;
-            groupId?: string;
-          };
-        } = {
-          title: notificationTitle && notificationTitle.length > 0 ? notificationTitle : undefined,
-          body: notificationBody && notificationBody.length > 0 ? notificationBody : undefined,
-          data: normalizedData,
-          badge: badgeCount ?? undefined,
-          sound: 'default',
-          priority: Notifications.AndroidNotificationPriority.MAX,
-          autoDismiss: true,
-          color: '#FF7D44',
-        };
-        if (threadIdentifier) {
-          content.threadIdentifier = threadIdentifier;
-        }
-        content.android = {
-          channelId: 'mutabaka-messages-v2',
-          priority: Notifications.AndroidNotificationPriority.MAX,
-          color: '#FF7D44',
-          tag: androidTag,
-          groupId: androidTag,
-        };
-
-        try {
-          const identifier = await Notifications.scheduleNotificationAsync({
-            content,
-            trigger: null,
-          });
-          registerNotification({
-            conversationId: conversationNumeric ?? undefined,
-            messageId: messageNumeric ?? undefined,
-            notificationId: identifier,
-          });
-          console.log('[FCM] ✅ Local notification scheduled id=', identifier);
-        } catch (error) {
-          console.warn('[FCM] ❌ Failed to schedule local notification', error);
+        const activeConversationId = getActiveConversationId();
+        const isConversationFocused = typeof conversationNumeric === 'number'
+          && typeof activeConversationId === 'number'
+          && conversationNumeric === activeConversationId;
+        if (isConversationFocused) {
+          console.log('[FCM] 🔕 Conversation is currently focused; no foreground banner needed');
+        } else {
+          console.log('[FCM] 🔕 Suppressing foreground banner (app handles in-app messaging UI)');
         }
       }
 
@@ -388,40 +413,44 @@ function useNotificationBadgeBridge() {
     });
 
     const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      registerExpoNotification(response.notification);
-      const identifier = response.notification.request.identifier;
-      const data = response.notification.request.content?.data as Record<string, unknown> | undefined;
-      const conversationNumeric = extractConversationIdFromData(data);
-      if (conversationNumeric !== null) {
-        void dismissNotificationsForConversation(conversationNumeric, 'notification.response', {
-          expectedIds: identifier ? [identifier] : undefined,
-          fallbackToAll: true,
-        });
-      } else if (identifier) {
-        void dismissNotificationIds([identifier], 'notification.response', null);
-      }
-      void synchronizeBadgeFromSource(extractUnreadCount(response.notification), 'expo.notification.response');
+      handleNotificationResponseNavigation(response, 'listener');
     });
+    // معالجة الإشعار الأخير عند فتح التطبيق (مثلاً بعد إنهاء التطبيق)
+    getLastNotificationResponse()
+      .then((lastResponse) => {
+        if (lastResponse) {
+          console.log('[Notifications] Handling last notification response on startup');
+          handleNotificationResponseNavigation(lastResponse, 'startup');
+        }
+      })
+      .catch((error) => {
+        console.error('[Notifications] Failed to fetch last notification response', error);
+      });
 
-    inboxSocketManager.setForeground(AppState.currentState === 'active');
-    if (AppState.currentState === 'active') {
+    const initialActive = AppState.currentState === 'active';
+    setAppForegroundState(initialActive);
+    inboxSocketManager.setForeground(initialActive);
+    if (initialActive) {
+      void dismissAllNotifications('app.bootstrap.active');
       inboxSocketManager.ensureConnection('foreground');
     }
 
     const appStateSubscription = AppState.addEventListener('change', (status: AppStateStatus) => {
       const isActive = status === 'active';
+      setAppForegroundState(isActive);
       inboxSocketManager.setForeground(isActive);
       if (isActive) {
         void synchronizeBadgeFromSource(undefined, 'appstate.active');
         // فحص وتحديث Token عند العودة للتطبيق
         checkAndUpdatePushToken();
+        void dismissAllNotifications('appstate.active');
         inboxSocketManager.ensureConnection('foreground');
       }
     });
 
     return () => {
       receivedSubscription.remove();
-      responseSubscription.remove();
+  responseSubscription.remove();
       appStateSubscription.remove();
       unsubscribeFCM(); // إلغاء الاشتراك في FCM
       inboxSocketManager.setForeground(false);
