@@ -330,6 +330,9 @@ function useNotificationBadgeBridge() {
         const messageNumeric = extractMessageIdFromData(normalizedData);
         const threadIdentifier = conversationNumeric !== null ? `conversation-${conversationNumeric}` : undefined;
         const androidTag = conversationNumeric !== null ? `conversation-${conversationNumeric}` : undefined;
+        const notificationTitle = remoteMessage.notification.title?.trim();
+        const notificationBody = remoteMessage.notification.body?.trim();
+
         const content: Notifications.NotificationContentInput & {
           threadIdentifier?: string;
           android?: {
@@ -340,8 +343,8 @@ function useNotificationBadgeBridge() {
             groupId?: string;
           };
         } = {
-          title: remoteMessage.notification.title || 'إشعار جديد',
-          body: remoteMessage.notification.body || '',
+          title: notificationTitle && notificationTitle.length > 0 ? notificationTitle : undefined,
+          body: notificationBody && notificationBody.length > 0 ? notificationBody : undefined,
           data: normalizedData,
           badge: badgeCount ?? undefined,
           sound: 'default',

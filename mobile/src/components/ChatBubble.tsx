@@ -466,9 +466,9 @@ function ChatBubbleBase({ text, caption, time, date, isMine, senderName, status,
     : isLight ? '#8c6d52' : '#94a3b8';
 
   const showTicks = Boolean(isMine && status);
-  const deliveredColor = isLight ? '#94a3b8' : '#cbd5f5';
+  const deliveredColor = isLight ? '#5e5e5eff' : '#cbd5f5';
   const readColor = isLight ? '#38bdf8' : '#60a5fa';
-  const fallbackTicksColor = isLight ? '#9ca3af' : '#94a3b8';
+  const fallbackTicksColor = isLight ? '#9caf9cff' : '#94a3b8';
   const ticksColor = (() => {
     if (status === 'read') {
       return readColor;
