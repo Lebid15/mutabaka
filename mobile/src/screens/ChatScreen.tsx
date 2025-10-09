@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   FlatList,
   Image,
   InteractionManager,
@@ -57,6 +58,7 @@ import { fetchCurrentUser, type CurrentUser } from '../services/user';
 import { emitConversationPreviewUpdate } from '../lib/conversationEvents';
 import { createWebSocket } from '../lib/wsClient';
 import { listTeamMembers, type TeamMember } from '../services/team';
+import { dismissNotificationsForConversation } from '../lib/notificationRegistry';
 
 interface BalanceSummary {
   code: string;
@@ -1276,7 +1278,14 @@ export default function ChatScreen() {
       pendingReadRef.current = messageId;
     }
     flushPendingRead();
-  }, [flushPendingRead]);
+    if (Number.isFinite(numericConversationId)) {
+      void dismissNotificationsForConversation(numericConversationId, 'conversation.queueRead', {
+        fallbackToAll: AppState.currentState === 'active',
+      }).catch((error) => {
+        console.warn('[Mutabaka] Failed to dismiss notifications after queueRead', error);
+      });
+    }
+  }, [flushPendingRead, numericConversationId]);
 
   const refreshNetBalance = useCallback(async () => {
     if (!shouldUseBackend || !Number.isFinite(numericConversationId) || !currentUser || !conversationMeta) {
@@ -1865,9 +1874,15 @@ export default function ChatScreen() {
       loadConversationData();
       let focusTimer: ReturnType<typeof setTimeout> | null = null;
       if (Number.isFinite(numericConversationId)) {
+        const conversationNumeric = numericConversationId;
         focusTimer = setTimeout(() => {
-          emitConversationPreviewUpdate({ id: numericConversationId, unreadCount: 0 });
+          emitConversationPreviewUpdate({ id: conversationNumeric, unreadCount: 0 });
         }, 0);
+        void dismissNotificationsForConversation(conversationNumeric, 'conversation.focus', {
+          fallbackToAll: AppState.currentState === 'active',
+        }).catch((error) => {
+          console.warn('[Mutabaka] Failed to dismiss notifications on conversation focus', error);
+        });
       }
 
       return () => {

@@ -16,10 +16,26 @@ import { getAccessToken } from './src/lib/authStorage';
 import { inboxSocketManager } from './src/lib/inboxSocketManager';
 import messaging from '@react-native-firebase/messaging';
 import { fetchUnreadBadgeCount } from './src/services/conversations';
+import {
+  dismissAllNotifications,
+  dismissNotificationIds,
+  dismissNotificationsForConversation,
+  extractConversationId,
+  extractConversationIdFromData,
+  extractMessageIdFromData,
+  extractNotificationIdsFromData,
+  registerExpoNotification,
+  registerNotification,
+} from './src/lib/notificationRegistry';
 
 // معالج الإشعارات في الخلفية (FCM Background Handler)
 messaging().setBackgroundMessageHandler(async (remoteMessage) => {
   console.log('[FCM] Background message received:', remoteMessage);
+  const normalizedData = normalizeRemoteMessageData(remoteMessage?.data as Record<string, string | undefined> | undefined);
+  if (Object.keys(normalizedData).length && isBadgeResetPayload(normalizedData)) {
+    console.log('[FCM] Background badge reset payload detected');
+    await handleBadgeResetPayload(normalizedData, 'background');
+  }
 });
 
 Notifications.setNotificationHandler({
@@ -31,6 +47,98 @@ Notifications.setNotificationHandler({
     shouldShowList: true,
   }),
 });
+
+function normalizeRemoteMessageData(data?: Record<string, string | undefined> | null): Record<string, unknown> {
+  if (!data) {
+    return {};
+  }
+  const normalized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (typeof value === 'string') {
+      normalized[key] = value;
+    } else if (value !== undefined && value !== null) {
+      normalized[key] = value;
+    }
+  }
+  return normalized;
+}
+
+function valueRepresentsBadgeReset(value: unknown): boolean {
+  const sanitized = sanitizeBadgeCandidate(value);
+  if (sanitized === 0) {
+    return true;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim().toLowerCase();
+    return trimmed === '0' || trimmed === 'false' || trimmed === 'reset';
+  }
+  return false;
+}
+
+function isBadgeResetPayload(data: Record<string, unknown>): boolean {
+  if (!data) {
+    return false;
+  }
+  const directKeys = ['badge.update', 'badge_update', 'badgeUpdate'];
+  for (const key of directKeys) {
+    if (key in data && valueRepresentsBadgeReset((data as Record<string, unknown>)[key])) {
+      return true;
+    }
+  }
+  const typeValue = typeof data.type === 'string' ? data.type.toLowerCase() : null;
+  const eventValue = typeof data.event === 'string' ? data.event.toLowerCase() : null;
+  if (typeValue === 'badge.update' || eventValue === 'badge.update') {
+    const candidate = (data as Record<string, unknown>).value
+      ?? (data as Record<string, unknown>).badge
+      ?? (data as Record<string, unknown>).count;
+    if (valueRepresentsBadgeReset(candidate)) {
+      return true;
+    }
+  }
+  if ('badge' in data && valueRepresentsBadgeReset((data as Record<string, unknown>).badge)) {
+    const marker = (data as Record<string, unknown>).reason
+      ?? (data as Record<string, unknown>).source
+      ?? (data as Record<string, unknown>).context;
+    if (typeof marker === 'string' && marker.toLowerCase().includes('badge')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function handleBadgeResetPayload(data: Record<string, unknown>, source: string): Promise<void> {
+  try {
+    await setAppBadgeCount(0);
+  } catch (error) {
+    console.warn(`[Badge] ${source}: failed to reset badge count`, error);
+  }
+
+  const conversationId = extractConversationIdFromData(data);
+  let fallbackConversation: number | null = null;
+  const tagCandidate = typeof data.tag === 'string' ? data.tag : typeof data.group === 'string' ? data.group : null;
+  if (tagCandidate) {
+    fallbackConversation = extractConversationId(tagCandidate);
+  }
+  const notificationIds = extractNotificationIdsFromData(data);
+  const reason = `push.badge.reset.${source}`;
+  const expectedIds = notificationIds.length ? notificationIds : undefined;
+  const targetConversation = conversationId ?? fallbackConversation;
+
+  if (targetConversation !== null) {
+    await dismissNotificationsForConversation(targetConversation, reason, {
+      expectedIds,
+      fallbackToAll: !expectedIds,
+    });
+    return;
+  }
+
+  if (expectedIds) {
+    await dismissNotificationIds(expectedIds, reason, null);
+    return;
+  }
+
+  await dismissAllNotifications(reason);
+}
 
 function sanitizeBadgeCandidate(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -203,35 +311,92 @@ function useNotificationBadgeBridge() {
       console.log('[FCM] Body:', remoteMessage.notification?.body);
       console.log('[FCM] Data:', JSON.stringify(remoteMessage.data));
 
-  const badgeCandidate = remoteMessage.data?.unread_count ?? remoteMessage.data?.badge;
+      const normalizedData = normalizeRemoteMessageData(remoteMessage.data as Record<string, string | undefined> | undefined);
+      if (Object.keys(normalizedData).length && isBadgeResetPayload(normalizedData)) {
+        console.log('[FCM] Foreground badge reset payload detected');
+        await handleBadgeResetPayload(normalizedData, 'foreground');
+        await synchronizeBadgeFromSource(0, 'fcm.foreground');
+        return;
+      }
+
+      const badgeCandidate = remoteMessage.data?.unread_count ?? remoteMessage.data?.badge;
 
       if (remoteMessage.notification) {
         const badgeCount = sanitizeBadgeCandidate(badgeCandidate);
         console.log('[FCM] 🏷️ Badge candidate from push:', badgeCandidate);
-        console.log('[FCM] � Sanitized badge:', badgeCount);
+        console.log('[FCM] 🧮 Sanitized badge:', badgeCount);
 
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: remoteMessage.notification.title || 'إشعار جديد',
-            body: remoteMessage.notification.body || '',
-            data: remoteMessage.data || {},
-            badge: badgeCount ?? undefined,
-            sound: 'default',
-          },
-          trigger: null,
-        });
+        const conversationNumeric = extractConversationIdFromData(normalizedData);
+        const messageNumeric = extractMessageIdFromData(normalizedData);
+        const threadIdentifier = conversationNumeric !== null ? `conversation-${conversationNumeric}` : undefined;
+        const androidTag = conversationNumeric !== null ? `conversation-${conversationNumeric}` : undefined;
+        const content: Notifications.NotificationContentInput & {
+          threadIdentifier?: string;
+          android?: {
+            channelId?: string;
+            priority?: Notifications.AndroidNotificationPriority | string;
+            color?: string;
+            tag?: string;
+            groupId?: string;
+          };
+        } = {
+          title: remoteMessage.notification.title || 'إشعار جديد',
+          body: remoteMessage.notification.body || '',
+          data: normalizedData,
+          badge: badgeCount ?? undefined,
+          sound: 'default',
+          priority: Notifications.AndroidNotificationPriority.MAX,
+          autoDismiss: true,
+          color: '#FF7D44',
+        };
+        if (threadIdentifier) {
+          content.threadIdentifier = threadIdentifier;
+        }
+        content.android = {
+          channelId: 'mutabaka-messages-v2',
+          priority: Notifications.AndroidNotificationPriority.MAX,
+          color: '#FF7D44',
+          tag: androidTag,
+          groupId: androidTag,
+        };
 
-        console.log('[FCM] ✅ Local notification scheduled');
+        try {
+          const identifier = await Notifications.scheduleNotificationAsync({
+            content,
+            trigger: null,
+          });
+          registerNotification({
+            conversationId: conversationNumeric ?? undefined,
+            messageId: messageNumeric ?? undefined,
+            notificationId: identifier,
+          });
+          console.log('[FCM] ✅ Local notification scheduled id=', identifier);
+        } catch (error) {
+          console.warn('[FCM] ❌ Failed to schedule local notification', error);
+        }
       }
 
       await synchronizeBadgeFromSource(badgeCandidate, 'fcm.foreground');
     });
 
     const receivedSubscription = Notifications.addNotificationReceivedListener((notification) => {
+      registerExpoNotification(notification);
       void synchronizeBadgeFromSource(extractUnreadCount(notification), 'expo.notification.received');
     });
 
     const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      registerExpoNotification(response.notification);
+      const identifier = response.notification.request.identifier;
+      const data = response.notification.request.content?.data as Record<string, unknown> | undefined;
+      const conversationNumeric = extractConversationIdFromData(data);
+      if (conversationNumeric !== null) {
+        void dismissNotificationsForConversation(conversationNumeric, 'notification.response', {
+          expectedIds: identifier ? [identifier] : undefined,
+          fallbackToAll: true,
+        });
+      } else if (identifier) {
+        void dismissNotificationIds([identifier], 'notification.response', null);
+      }
       void synchronizeBadgeFromSource(extractUnreadCount(response.notification), 'expo.notification.response');
     });
 

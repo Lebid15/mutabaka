@@ -5,6 +5,12 @@ import * as Notifications from 'expo-notifications';
 import { setupNotificationHandlers, getLastNotificationResponse } from '../lib/pushNotifications';
 import { setAppBadgeCount } from '../lib/appBadge';
 import type { RootStackParamList } from '../navigation';
+import {
+  dismissNotificationIds,
+  dismissNotificationsForConversation,
+  extractConversationIdFromData,
+  registerExpoNotification,
+} from '../lib/notificationRegistry';
 
 type Navigation = NativeStackNavigationProp<RootStackParamList>;
 
@@ -37,6 +43,7 @@ export function useNotificationHandlers() {
     // معالج الإشعارات الواردة (عندما يكون التطبيق مفتوح)
     const handleNotificationReceived = (notification: Notifications.Notification) => {
       console.log('[App] 📨 Notification received:', notification.request.content.title);
+      registerExpoNotification(notification);
       
       // تحديث badge count إذا كان موجوداً في data
       const data = notification.request.content.data;
@@ -54,12 +61,24 @@ export function useNotificationHandlers() {
     // معالج الضغط على الإشعار
     const handleNotificationTapped = (response: Notifications.NotificationResponse) => {
       console.log('[App] 🔔 Notification tapped:', response.notification.request.content.title);
+      registerExpoNotification(response.notification);
       
       const data = response.notification.request.content.data;
       
       if (!data || typeof data !== 'object') {
         console.warn('[App] ⚠️ No data in notification');
         return;
+      }
+
+      const identifier = response.notification.request.identifier;
+      const conversationNumeric = extractConversationIdFromData(data);
+      if (conversationNumeric !== null) {
+        void dismissNotificationsForConversation(conversationNumeric, 'notification.tap', {
+          expectedIds: identifier ? [identifier] : undefined,
+          fallbackToAll: true,
+        });
+      } else if (identifier) {
+        void dismissNotificationIds([identifier], 'notification.tap', null);
       }
 
       // التنقل للمحادثة إذا كان الإشعار من رسالة
