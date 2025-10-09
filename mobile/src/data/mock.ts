@@ -12,7 +12,7 @@ export interface Message {
   author: 'me' | 'them';
   text: string;
   time: string;
-  status?: 'sent' | 'delivered' | 'read';
+  status?: 'delivered' | 'read';
 }
 
 export const conversations: Conversation[] = [
@@ -27,6 +27,6 @@ export const messages: Message[] = [
   { id: 'm3', conversationId: 'c1', author: 'them', text: 'رائع، سأحضر معي عرض التحديثات الأخيرة.', time: '09:18', status: 'read' },
   { id: 'm4', conversationId: 'c1', author: 'me', text: 'تمام، أراك هناك 🙌', time: '09:24', status: 'read' },
   { id: 'm5', conversationId: 'c2', author: 'them', text: 'تم تحويل الدفعة إلى حساب الشركة الرئيسي.', time: 'أمس', status: 'delivered' },
-  { id: 'm6', conversationId: 'c2', author: 'me', text: 'ممتاز يعطيكم العافية، سأراجعها الآن.', time: 'أمس', status: 'sent' },
+  { id: 'm6', conversationId: 'c2', author: 'me', text: 'ممتاز يعطيكم العافية، سأراجعها الآن.', time: 'أمس', status: 'delivered' },
   { id: 'm7', conversationId: 'c3', author: 'them', text: 'أرسلت لك نسخة PDF على البريد.', time: 'أمس', status: 'delivered' },
 ];

@@ -267,8 +267,7 @@ interface NormalizedMessage {
   time: string;
   date: string;
   timestamp: string | null;
-  status?: 'sent' | 'delivered' | 'read';
-  deliveredPassively?: boolean;
+  status?: 'delivered' | 'read';
   variant: 'text' | 'transaction' | 'system' | 'attachment' | 'wallet';
   transaction?: TransactionDetails;
   attachment?: AttachmentMeta | null;
@@ -278,12 +277,6 @@ interface NormalizedMessage {
   };
 }
 
-type DeliveryContext = 'passive' | 'active';
-
-type DeliveryDisplay = {
-  status: 'sent' | 'delivered' | 'read';
-  passive: boolean;
-};
 
 function normalizeIdentity(value?: string | null): string | null {
   if (!value) {
@@ -554,59 +547,6 @@ function parseTransactionMessage(body: string | null | undefined): TransactionDe
   };
 }
 
-function resolveDeliveryContext(
-  status?: number,
-  fallback?: string | null,
-  hint?: DeliveryContext | null,
-  previous?: DeliveryContext | null,
-): DeliveryContext | undefined {
-  if (typeof status === 'number') {
-    if (status >= 2) {
-      return 'active';
-    }
-    if (status >= 1) {
-      if (hint === 'active' || previous === 'active') {
-        return 'active';
-      }
-      return hint ?? previous ?? 'passive';
-    }
-  }
-  if (fallback === 'read') {
-    return 'active';
-  }
-  if (fallback === 'delivered') {
-    if (hint === 'active' || previous === 'active') {
-      return 'active';
-    }
-    return hint ?? previous ?? 'passive';
-  }
-  return previous ?? hint ?? undefined;
-}
-
-function mapDeliveryStatus(
-  status?: number,
-  fallback?: string | null,
-  context?: DeliveryContext | null,
-): DeliveryDisplay {
-  if (typeof status === 'number') {
-    if (status >= 2) {
-      return { status: 'read', passive: false };
-    }
-    if (status >= 1) {
-      return { status: 'delivered', passive: context !== 'active' };
-    }
-  }
-  if (fallback === 'read' || fallback === 'delivered' || fallback === 'sent') {
-    if (fallback === 'read') {
-      return { status: 'read', passive: false };
-    }
-    if (fallback === 'delivered') {
-      return { status: 'delivered', passive: context !== 'active' };
-    }
-    return { status: 'sent', passive: true };
-  }
-  return { status: 'sent', passive: true };
-}
 
 const MEMBER_EVENT_PATTERNS: RegExp[] = [
   /قام\s+\S+\s+بإضافة\s+/u,
@@ -636,6 +576,22 @@ function isMemberSystemMessage(type: string | null | undefined, body: string | n
     }
   }
   return isMemberEventBody(body);
+}
+
+type DeliveryStatusLabel = 'delivered' | 'read';
+
+function normalizeDeliveryStatus(
+  deliveryStatus?: number,
+  readAt?: string | null,
+  fallback?: string | null,
+): { code: 1 | 2; label: DeliveryStatusLabel } {
+  if (readAt || fallback === 'read' || (typeof deliveryStatus === 'number' && deliveryStatus >= 2)) {
+    return { code: 2, label: 'read' };
+  }
+  if (fallback === 'delivered' || (typeof deliveryStatus === 'number' && deliveryStatus >= 1)) {
+    return { code: 1, label: 'delivered' };
+  }
+  return { code: 1, label: 'delivered' };
 }
 
 const WALLET_SETTLED_MATCHES = [
@@ -1227,7 +1183,7 @@ export default function ChatScreen() {
           time: m.time,
           date: '',
           timestamp: null,
-          status: isSystem ? undefined : m.status ?? 'sent',
+          status: isSystem ? undefined : 'delivered',
           variant: isSystem ? 'system' : transaction ? 'transaction' : 'text',
           transaction: transaction ?? undefined,
           attachment: null,
@@ -1443,14 +1399,13 @@ export default function ChatScreen() {
       const createdAt = typeof payload.created_at === 'string' && payload.created_at
         ? payload.created_at
         : new Date().toISOString();
-      const deliveryStatus = typeof payload.delivery_status === 'number'
-        ? payload.delivery_status
-        : payload.status === 'read'
-          ? 2
-          : payload.status === 'delivered'
-            ? 1
-            : 0;
-      const messageStatus: MessageDto['status'] = deliveryStatus >= 2 ? 'read' : deliveryStatus >= 1 ? 'delivered' : 'sent';
+      const rawReadAt = typeof payload.read_at === 'string' && payload.read_at ? payload.read_at : undefined;
+      const normalizedDelivery = normalizeDeliveryStatus(
+        typeof payload.delivery_status === 'number' ? payload.delivery_status : undefined,
+        rawReadAt ?? null,
+        typeof payload.status === 'string' ? payload.status : null,
+      );
+      const messageStatus: MessageDto['status'] = normalizedDelivery.label === 'read' ? 'read' : 'delivered';
       const senderUsername = typeof payload.sender === 'string' ? payload.sender : '';
       const meUsername = currentUser?.username?.toLowerCase() ?? '';
       const isMine = senderUsername && meUsername && senderUsername.toLowerCase() === meUsername;
@@ -1547,23 +1502,14 @@ export default function ChatScreen() {
         type: typeof payload.kind === 'string' ? payload.kind : 'text',
         body: typeof payload.body === 'string' ? payload.body : '',
         created_at: createdAt,
-        status: messageStatus,
-        delivery_status: deliveryStatus,
-        delivered_at: typeof payload.delivered_at === 'string' ? payload.delivered_at : undefined,
-        read_at: typeof payload.read_at === 'string' ? payload.read_at : undefined,
+  status: messageStatus,
+  delivery_status: normalizedDelivery.code,
+  delivered_at: typeof payload.delivered_at === 'string' ? payload.delivered_at : undefined,
+  read_at: rawReadAt,
         attachment_url: attachmentUrl,
         attachment_name: attachmentName,
         attachment_mime: attachmentMime,
         attachment_size: attachmentSize,
-        delivery_context: (() => {
-          if (deliveryStatus >= 2) {
-            return 'active' as DeliveryContext;
-          }
-          if (deliveryStatus >= 1) {
-            return isMine ? 'passive' : 'active';
-          }
-          return undefined;
-        })(),
         systemSubtype: systemSubtypeValue,
         system_subtype: systemSubtypeValue,
         settledAt: settledAtValue,
@@ -1587,19 +1533,13 @@ export default function ChatScreen() {
             sender: msg.sender ?? nextMessage.sender,
             senderDisplay: nextMessage.senderDisplay || msg.senderDisplay,
             status: nextMessage.status ?? msg.status,
-            delivery_status: nextMessage.delivery_status ?? msg.delivery_status ?? 0,
+            delivery_status: nextMessage.delivery_status ?? msg.delivery_status ?? 1,
             delivered_at: nextMessage.delivered_at ?? msg.delivered_at,
             read_at: nextMessage.read_at ?? msg.read_at,
             attachment_url: nextMessage.attachment_url ?? msg.attachment_url ?? null,
             attachment_name: nextMessage.attachment_name ?? msg.attachment_name ?? null,
             attachment_mime: nextMessage.attachment_mime ?? msg.attachment_mime ?? null,
             attachment_size: nextMessage.attachment_size ?? msg.attachment_size ?? null,
-            delivery_context: resolveDeliveryContext(
-              nextMessage.delivery_status ?? msg.delivery_status,
-              nextMessage.status ?? msg.status ?? null,
-              nextMessage.delivery_context ?? null,
-              msg.delivery_context ?? null,
-            ),
           };
         });
 
@@ -1620,15 +1560,7 @@ export default function ChatScreen() {
           });
         }
         if (!updated) {
-          mapped.push({
-            ...nextMessage,
-            delivery_context: resolveDeliveryContext(
-              nextMessage.delivery_status,
-              nextMessage.status ?? null,
-              nextMessage.delivery_context ?? null,
-              undefined,
-            ),
-          });
+          mapped.push(nextMessage);
         }
 
         mapped.sort((a, b) => {
@@ -1659,15 +1591,16 @@ export default function ChatScreen() {
                 }
                 const mergedDelivery = found.delivery_status ?? msg.delivery_status;
                 const mergedStatus = found.status ?? msg.status ?? null;
+                const normalized = normalizeDeliveryStatus(
+                  mergedDelivery,
+                  found.read_at ?? msg.read_at ?? null,
+                  mergedStatus,
+                );
                 return {
                   ...msg,
                   ...found,
-                  delivery_context: resolveDeliveryContext(
-                    mergedDelivery,
-                    mergedStatus,
-                    found.delivery_context ?? null,
-                    msg.delivery_context ?? null,
-                  ),
+                  delivery_status: normalized.code,
+                  status: normalized.label === 'read' ? 'read' : 'delivered',
                 };
               }));
             }
@@ -1695,56 +1628,28 @@ export default function ChatScreen() {
       if (!Number.isFinite(rawId) || rawId <= 0) {
         return;
       }
-      const deliveryStatus = typeof payload.delivery_status === 'number'
-        ? payload.delivery_status
-        : payload.status === 'read'
-          ? 2
-          : payload.status === 'delivered'
-            ? 1
-            : undefined;
+      const deliveryStatus = typeof payload.delivery_status === 'number' ? payload.delivery_status : undefined;
       const readAt = typeof payload.read_at === 'string' && payload.read_at ? payload.read_at : undefined;
       const deliveredAt = typeof payload.delivered_at === 'string' && payload.delivered_at ? payload.delivered_at : undefined;
+      const normalized = normalizeDeliveryStatus(
+        deliveryStatus,
+        readAt ?? null,
+        typeof payload.status === 'string' ? payload.status : null,
+      );
 
       setRemoteMessages((prev) =>
         prev.map((msg) => {
           if (msg.id !== rawId) {
             return msg;
           }
-          const nextDelivery = deliveryStatus !== undefined
-            ? Math.max(msg.delivery_status ?? 0, deliveryStatus)
-            : msg.delivery_status ?? 0;
-          const nextStatus: MessageDto['status'] = nextDelivery >= 2 ? 'read' : nextDelivery >= 1 ? 'delivered' : msg.status ?? 'sent';
-          const eventContext: DeliveryContext | null = (() => {
-            if (deliveryStatus === undefined) {
-              return null;
-            }
-            if (deliveryStatus >= 2) {
-              return 'active';
-            }
-            if (deliveryStatus >= 1) {
-              const rawConversationId = (payload as Record<string, unknown> | null | undefined)?.conversation_id;
-              const numericContextId = typeof rawConversationId === 'string' || typeof rawConversationId === 'number'
-                ? Number(rawConversationId)
-                : NaN;
-              if (Number.isFinite(numericContextId) && numericContextId === numericConversationId) {
-                return 'active';
-              }
-              return 'passive';
-            }
-            return null;
-          })();
+          const nextDelivery = Math.max(msg.delivery_status ?? 1, normalized.code);
+          const isRead = normalized.label === 'read' || nextDelivery >= 2 || Boolean(readAt);
           return {
             ...msg,
-            delivery_status: nextDelivery,
-            status: nextStatus,
-            read_at: readAt ?? msg.read_at ?? (nextStatus === 'read' ? msg.read_at ?? new Date().toISOString() : msg.read_at),
+            delivery_status: isRead ? 2 : 1,
+            status: isRead ? 'read' : 'delivered',
+            read_at: readAt ?? msg.read_at ?? (isRead ? msg.read_at ?? new Date().toISOString() : msg.read_at),
             delivered_at: deliveredAt ?? msg.delivered_at ?? (nextDelivery >= 1 ? (msg.delivered_at ?? msg.created_at) : msg.delivered_at),
-            delivery_context: resolveDeliveryContext(
-              nextDelivery,
-              nextStatus ?? null,
-              eventContext,
-              msg.delivery_context ?? null,
-            ),
           };
         }),
       );
@@ -1774,12 +1679,6 @@ export default function ChatScreen() {
               delivery_status: 2,
               status: 'read',
               read_at: msg.read_at ?? new Date().toISOString(),
-              delivery_context: resolveDeliveryContext(
-                2,
-                'read',
-                'active',
-                msg.delivery_context ?? null,
-              ),
             };
           }
           return msg;
@@ -1897,19 +1796,19 @@ export default function ChatScreen() {
       const sortedMessages = (messagesResponse.results || [])
         .filter((msg) => msg.conversation === numericConversationId)
         .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-      const normalizedMessages = sortedMessages.map((msg) => ({
-        ...msg,
-        delivery_context: resolveDeliveryContext(
+      const normalizedMessages = sortedMessages.map((msg) => {
+        const normalized = normalizeDeliveryStatus(
           msg.delivery_status,
+          msg.read_at ?? null,
           msg.status ?? null,
-          msg.delivery_context ?? null,
-          undefined,
-        ) ?? msg.delivery_context ?? (msg.delivery_status && msg.delivery_status >= 2
-          ? 'active'
-          : msg.delivery_status && msg.delivery_status >= 1
-            ? 'passive'
-            : undefined),
-      }));
+        );
+        const nextStatus: MessageDto['status'] = normalized.label === 'read' ? 'read' : 'delivered';
+        return {
+          ...msg,
+          delivery_status: normalized.code,
+          status: nextStatus,
+        };
+      });
       setRemoteMessages(normalizedMessages);
       if (sortedMessages.length) {
         const inboundMax = sortedMessages.reduce((max, msg) => {
@@ -2150,7 +2049,7 @@ export default function ChatScreen() {
           : (msg.senderDisplay || msg.sender?.display_name || msg.sender?.username || 'مستخدم');
         const deliveryDisplay = isSystem
           ? null
-          : mapDeliveryStatus(msg.delivery_status, msg.status, msg.delivery_context ?? null);
+          : normalizeDeliveryStatus(msg.delivery_status, msg.read_at ?? null, msg.status ?? null);
         return {
           id: String(msg.id),
           conversationId: String(msg.conversation),
@@ -2161,8 +2060,7 @@ export default function ChatScreen() {
           time: formatMessageTime(msg.created_at),
           date: formatMessageDate(msg.created_at),
           timestamp: msg.created_at ?? null,
-          status: walletMeta.detected ? undefined : deliveryDisplay?.status,
-          deliveredPassively: deliveryDisplay?.status === 'delivered' ? deliveryDisplay.passive : undefined,
+          status: walletMeta.detected ? undefined : deliveryDisplay?.label,
           variant,
           transaction: walletMeta.detected ? undefined : transaction ?? undefined,
           attachment: walletMeta.detected ? null : attachmentMeta,
@@ -3177,7 +3075,6 @@ export default function ChatScreen() {
           isMine={item.author === 'me'}
           senderName={item.senderName}
           status={item.status}
-          deliveredPassively={item.deliveredPassively}
           variant={item.variant}
           transaction={item.transaction}
           attachment={item.attachment}
@@ -3280,8 +3177,9 @@ export default function ChatScreen() {
       type: 'text',
       body: optimisticBody,
       created_at: createdAt,
-      status: 'sent',
-      delivery_status: 0,
+      status: 'delivered',
+      delivery_status: 1,
+      read_at: null,
       attachment_url: pickedAsset.uri,
       attachment_name: uploadAsset.name ?? null,
       attachment_mime: uploadAsset.mimeType ?? null,
@@ -3358,14 +3256,15 @@ export default function ChatScreen() {
       setRemoteMessages((prev) => {
         const withoutOptimistic = prev.filter((msg) => msg.id !== optimisticId);
         const withoutDuplicate = withoutOptimistic.filter((msg) => msg.id !== response!.id);
+        const normalizedDelivery = normalizeDeliveryStatus(
+          response!.delivery_status,
+          response!.read_at ?? null,
+          response!.status ?? null,
+        );
         const normalizedResponse: MessageDto = {
           ...response!,
-          delivery_context: resolveDeliveryContext(
-            response!.delivery_status,
-            response!.status ?? null,
-            response!.delivery_context ?? (response!.delivery_status && response!.delivery_status >= 1 ? 'passive' : null),
-            undefined,
-          ),
+          delivery_status: normalizedDelivery.code,
+          status: normalizedDelivery.label === 'read' ? 'read' : 'delivered',
         };
         const next = [...withoutDuplicate, normalizedResponse];
         return next.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
@@ -3443,8 +3342,9 @@ export default function ChatScreen() {
         type: 'text',
         body: text,
         created_at: new Date().toISOString(),
-        status: 'sent',
-        delivery_status: 0,
+        status: 'delivered',
+        delivery_status: 1,
+        read_at: null,
       };
       myMessageIdsRef.current.add(optimistic.id);
       setRemoteMessages((prev) => [...prev, optimistic]);
@@ -3476,8 +3376,9 @@ export default function ChatScreen() {
       type: 'text',
       body: text,
       created_at: new Date().toISOString(),
-      status: 'sent',
-      delivery_status: 0,
+      status: 'delivered',
+      delivery_status: 1,
+      read_at: null,
     };
 
     myMessageIdsRef.current.add(optimisticId);
@@ -3507,14 +3408,15 @@ export default function ChatScreen() {
       setRemoteMessages((prev) => {
         const filtered = prev.filter((msg) => msg.id !== optimisticId);
         const withoutDuplicate = filtered.filter((msg) => msg.id !== response.id);
+        const normalizedDelivery = normalizeDeliveryStatus(
+          response.delivery_status,
+          response.read_at ?? null,
+          response.status ?? null,
+        );
         const normalizedResponse: MessageDto = {
           ...response,
-          delivery_context: resolveDeliveryContext(
-            response.delivery_status,
-            response.status ?? null,
-            response.delivery_context ?? (response.delivery_status && response.delivery_status >= 1 ? 'passive' : null),
-            undefined,
-          ),
+          delivery_status: normalizedDelivery.code,
+          status: normalizedDelivery.label === 'read' ? 'read' : 'delivered',
         };
         const next = [...withoutDuplicate, normalizedResponse];
         return next.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());

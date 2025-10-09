@@ -41,8 +41,7 @@ interface ChatBubbleProps {
   date?: string;
   isMine?: boolean;
   senderName?: string;
-  status?: 'sent' | 'delivered' | 'read';
-  deliveredPassively?: boolean;
+  status?: 'delivered' | 'read';
   variant?: 'text' | 'transaction' | 'system' | 'attachment' | 'wallet';
   transaction?: TransactionPayload;
   attachment?: AttachmentData | null;
@@ -50,7 +49,7 @@ interface ChatBubbleProps {
   highlightActive?: boolean;
 }
 
-function ChatBubbleBase({ text, caption, time, date, isMine, senderName, status, deliveredPassively, variant = 'text', transaction, attachment, highlightQuery, highlightActive }: ChatBubbleProps) {
+function ChatBubbleBase({ text, caption, time, date, isMine, senderName, status, variant = 'text', transaction, attachment, highlightQuery, highlightActive }: ChatBubbleProps) {
   const { mode } = useThemeMode();
   const isLight = mode === 'light';
   const isTransaction = variant === 'transaction' && transaction;
@@ -467,17 +466,17 @@ function ChatBubbleBase({ text, caption, time, date, isMine, senderName, status,
     : isLight ? '#8c6d52' : '#94a3b8';
 
   const showTicks = Boolean(isMine && status);
-  const baseSentColor = isLight ? '#696552ff' : '#807a6bff';
-  const deliveredActiveColor = isLight ? '#38bdf8' : '#60a5fa';
-  const readColor = isLight ? '#10b981' : '#34d399';
+  const deliveredColor = isLight ? '#94a3b8' : '#cbd5f5';
+  const readColor = isLight ? '#38bdf8' : '#60a5fa';
+  const fallbackTicksColor = isLight ? '#9ca3af' : '#94a3b8';
   const ticksColor = (() => {
-    if (!status || status === 'sent') {
-      return baseSentColor;
+    if (status === 'read') {
+      return readColor;
     }
     if (status === 'delivered') {
-      return deliveredPassively ? baseSentColor : deliveredActiveColor;
+      return deliveredColor;
     }
-    return readColor;
+    return fallbackTicksColor;
   })();
 
   const badgeBackground = transaction?.direction === 'lna'
