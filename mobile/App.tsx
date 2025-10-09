@@ -29,6 +29,26 @@ import {
   registerExpoNotification,
 } from './src/lib/notificationRegistry';
 
+type BadgeUpdateSource = 'push' | 'fallback' | 'system';
+
+const BADGE_PUSH_PROTECTION_WINDOW_MS = 5000;
+
+const badgeState: {
+  lastValue: number | null;
+  lastSource: BadgeUpdateSource;
+  lastUpdatedAt: number;
+} = {
+  lastValue: null,
+  lastSource: 'system',
+  lastUpdatedAt: 0,
+};
+
+function rememberBadgeUpdate(value: number, source: BadgeUpdateSource) {
+  badgeState.lastValue = value;
+  badgeState.lastSource = source;
+  badgeState.lastUpdatedAt = Date.now();
+}
+
 // معالج الإشعارات في الخلفية (FCM Background Handler)
 setAppForegroundState(AppState.currentState === 'active');
 
@@ -221,10 +241,14 @@ async function fetchBadgeFallback(context: string): Promise<number | null> {
       console.log(`[Badge] ${context}: no access token, skipping fallback fetch`);
       return null;
     }
+    const FALLBACK_ENDPOINT = 'inbox/unread_count';
+    console.log(`[Badge] ${context}: querying fallback endpoint ${FALLBACK_ENDPOINT}`);
     const count = await fetchUnreadBadgeCount();
     if (typeof count === 'number' && Number.isFinite(count)) {
+      console.log(`[Badge] ${context}: fallback endpoint ${FALLBACK_ENDPOINT} returned`, count);
       return count;
     }
+    console.log(`[Badge] ${context}: fallback endpoint ${FALLBACK_ENDPOINT} returned no usable count`);
   } catch (error) {
     console.warn(`[Badge] ${context}: failed to fetch fallback unread count`, error);
   }
@@ -237,18 +261,31 @@ async function synchronizeBadgeFromSource(candidate: unknown, context: string): 
     const sanitized = sanitizeBadgeCandidate(candidate);
     if (sanitized !== null) {
       await setAppBadgeCount(sanitized);
+      rememberBadgeUpdate(sanitized, 'push');
       console.log(`[Badge] ${context}: applied push badge`, sanitized);
       return sanitized;
+    }
+
+    const now = Date.now();
+    const protectingPush = badgeState.lastSource === 'push'
+      && badgeState.lastValue !== null
+      && now - badgeState.lastUpdatedAt < BADGE_PUSH_PROTECTION_WINDOW_MS;
+
+    if (protectingPush) {
+      console.log(`[Badge] ${context}: skipped fallback/system to protect recent push badge`, badgeState.lastValue);
+      return badgeState.lastValue;
     }
 
     const fallback = await fetchBadgeFallback(context);
     if (fallback !== null) {
       await setAppBadgeCount(fallback);
+      rememberBadgeUpdate(fallback, 'fallback');
       console.log(`[Badge] ${context}: applied fallback badge`, fallback);
       return fallback;
     }
 
     await setAppBadgeCount(systemBefore);
+    rememberBadgeUpdate(systemBefore, 'system');
     console.log(`[Badge] ${context}: retained system badge`, systemBefore);
     return systemBefore;
   } catch (error) {
