@@ -28,6 +28,7 @@ import {
   extractNotificationIdsFromData,
   registerExpoNotification,
 } from './src/lib/notificationRegistry';
+import { isMessagePushPayload, presentConversationNotification } from './src/lib/conversationNotifications';
 
 type BadgeUpdateSource = 'push' | 'fallback' | 'system';
 
@@ -58,6 +59,34 @@ messaging().setBackgroundMessageHandler(async (remoteMessage) => {
   if (Object.keys(normalizedData).length && isBadgeResetPayload(normalizedData)) {
     console.log('[FCM] Background badge reset payload detected');
     await handleBadgeResetPayload(normalizedData, 'background');
+    await synchronizeBadgeFromSource(0, 'fcm.background.reset');
+    return;
+  }
+
+  const hasLegacyNotification = Boolean(remoteMessage?.notification);
+  const androidCount = remoteMessage?.notification?.android?.count;
+  if (typeof androidCount === 'number') {
+    console.log('[FCM] 📟 Android status-bar count hint:', androidCount);
+  }
+
+  const badgeCandidate = normalizedData.unread_count
+    ?? normalizedData.unreadCount
+    ?? normalizedData.badge
+    ?? remoteMessage?.data?.notification_count
+    ?? remoteMessage?.data?.badge
+    ?? remoteMessage?.data?.unread_count;
+
+  const sanitizedBadge = sanitizeBadgeCandidate(badgeCandidate);
+
+  if (isMessagePushPayload(normalizedData) && !isAppInForeground() && !hasLegacyNotification) {
+    await presentConversationNotification(normalizedData, {
+      unreadCount: sanitizedBadge,
+      source: 'fcm.background',
+    });
+  }
+
+  if (badgeCandidate !== undefined) {
+    await synchronizeBadgeFromSource(badgeCandidate, 'fcm.background');
   }
 });
 
@@ -276,6 +305,8 @@ async function synchronizeBadgeFromSource(candidate: unknown, context: string): 
       await setAppBadgeCount(sanitized);
       rememberBadgeUpdate(sanitized, 'push');
       console.log(`[Badge] ${context}: applied push badge`, sanitized);
+      const systemAfter = await getSystemBadgeCount();
+      console.log(`[Badge] ${context}: system badge now`, systemAfter);
       return sanitized;
     }
 
@@ -294,12 +325,16 @@ async function synchronizeBadgeFromSource(candidate: unknown, context: string): 
       await setAppBadgeCount(fallback);
       rememberBadgeUpdate(fallback, 'fallback');
       console.log(`[Badge] ${context}: applied fallback badge`, fallback);
+      const systemAfter = await getSystemBadgeCount();
+      console.log(`[Badge] ${context}: system badge now`, systemAfter);
       return fallback;
     }
 
     await setAppBadgeCount(systemBefore);
     rememberBadgeUpdate(systemBefore, 'system');
     console.log(`[Badge] ${context}: retained system badge`, systemBefore);
+    const systemAfter = await getSystemBadgeCount();
+    console.log(`[Badge] ${context}: system badge now`, systemAfter);
     return systemBefore;
   } catch (error) {
     console.warn(`[Badge] ${context}: failed to synchronize badge`, error);
@@ -436,11 +471,15 @@ function useNotificationBadgeBridge() {
       }
 
       const badgeCandidate = remoteMessage.data?.unread_count ?? remoteMessage.data?.badge;
+      const badgeCount = sanitizeBadgeCandidate(badgeCandidate);
 
       if (remoteMessage.notification) {
-        const badgeCount = sanitizeBadgeCandidate(badgeCandidate);
         console.log('[FCM] 🏷️ Badge candidate from push:', badgeCandidate);
         console.log('[FCM] 🧮 Sanitized badge:', badgeCount);
+        const androidCount = remoteMessage.notification?.android?.count;
+        if (typeof androidCount === 'number') {
+          console.log('[FCM] 📟 Android status-bar count hint:', androidCount);
+        }
 
         const conversationNumeric = extractConversationIdFromData(normalizedData);
         const activeConversationId = getActiveConversationId();
@@ -452,6 +491,13 @@ function useNotificationBadgeBridge() {
         } else {
           console.log('[FCM] 🔕 Suppressing foreground banner (app handles in-app messaging UI)');
         }
+      }
+
+      if (!remoteMessage.notification && isMessagePushPayload(normalizedData) && !isAppInForeground()) {
+        await presentConversationNotification(normalizedData, {
+          unreadCount: badgeCount,
+          source: 'fcm.foreground.backgrounded',
+        });
       }
 
       await synchronizeBadgeFromSource(badgeCandidate, 'fcm.foreground');

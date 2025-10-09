@@ -93,45 +93,55 @@ def send_fcm_notifications(tokens: List[str], title: str, body: str, data: Optio
             string_data[key] = str(value)
     
     conversation_id = string_data.get('conversation_id', 'default')
+
+    if title:
+        string_data.setdefault('title', title)
+    if body:
+        string_data.setdefault('body', body)
     
     # Get notification icon from settings (if uploaded)
     notification_icon = get_notification_icon_url()
-    
+
+    # Precompute configs for data-only delivery
+    collapse_key = f'conversation_{conversation_id}' if conversation_id else 'conversation_generic'
+    android_config = messaging.AndroidConfig(
+        priority='high',
+        collapse_key=collapse_key,
+    )
+
+    apns_headers = {
+        'apns-push-type': 'background',
+        'apns-priority': '5',
+    }
+
+    aps_kwargs: Dict[str, Any] = {
+        'content_available': True,
+        'mutable_content': True,
+    }
+    if badge is not None:
+        try:
+            aps_kwargs['badge'] = int(badge)
+        except (TypeError, ValueError):
+            aps_kwargs['badge'] = 0
+
+    apns_payload = messaging.APNSPayload(
+        aps=messaging.Aps(**aps_kwargs),
+    )
+
+    if notification_icon:
+        string_data['notification_icon'] = notification_icon
+
     # Send notifications
     for token in tokens:
         try:
-            # Build Android notification config with icon
-            android_notification = messaging.AndroidNotification(
-                sound='default',
-                priority='high',
-                notification_count=badge if badge is not None else 0,
-                channel_id='mutabaka-messages-v2',
-                tag=f'conversation_{conversation_id}',
-            )
-            
-            # Add icon if available
-            if notification_icon:
-                android_notification.icon = notification_icon
-            
             # Create notification message
             message = messaging.Message(
-                notification=messaging.Notification(
-                    title=title,
-                    body=body,
-                ),
                 data=string_data,
                 token=token,
-                android=messaging.AndroidConfig(
-                    priority='high',
-                    notification=android_notification,
-                ),
+                android=android_config,
                 apns=messaging.APNSConfig(
-                    payload=messaging.APNSPayload(
-                        aps=messaging.Aps(
-                            sound='default',
-                            badge=badge if badge is not None else 0,
-                        ),
-                    ),
+                    headers=apns_headers,
+                    payload=apns_payload,
                 ),
             )
             
