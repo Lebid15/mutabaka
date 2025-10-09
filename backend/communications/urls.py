@@ -7,7 +7,8 @@ from .views import (
     NotificationSoundView, BrandingView, LoginPageView, ContactLinkListView, 
     CustomEmojiListView, PrivacyPolicyView,
     TermsOfUseView,
-    EnsureAdminConversationView, TeamMemberViewSet, TeamLoginView
+    EnsureAdminConversationView, TeamMemberViewSet, TeamLoginView,
+    InboxUnreadCountView,
 )
 from finance.views import WalletViewSet, CurrencyViewSet
 
@@ -35,5 +36,6 @@ urlpatterns = [
     path('terms-of-use', TermsOfUseView.as_view(), name='terms_of_use'),
     path('ensure_admin_conversation', EnsureAdminConversationView.as_view(), name='ensure_admin_conversation'),
     path('auth/team/login', TeamLoginView.as_view(), name='team_login'),
+    path('inbox/unread_count', InboxUnreadCountView.as_view(), name='inbox_unread_count'),
     path('', include(router.urls))
 ]

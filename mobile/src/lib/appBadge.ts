@@ -5,8 +5,6 @@ import type { NotificationPermissionsStatus } from 'expo-notifications';
 const SUPPORTED_PLATFORM = Platform.OS === 'ios' || Platform.OS === 'android';
 const MAX_BADGE_COUNT = 999;
 export const ANDROID_MESSAGES_CHANNEL_ID = 'mutabaka-messages';
-
-let lastKnownCount = 0;
 let permissionState: 'unknown' | 'granted' | 'denied' = 'unknown';
 let permissionPromise: Promise<boolean> | null = null;
 let androidChannelReady = false;
@@ -172,27 +170,25 @@ export async function initializeAppBadge(): Promise<void> {
   if (!SUPPORTED_PLATFORM) {
     return;
   }
-  await applyBadge(lastKnownCount);
+  try {
+    const current = await Notifications.getBadgeCountAsync();
+    const sanitized = typeof current === 'number' && Number.isFinite(current) ? sanitizeBadgeCount(current) : 0;
+    await applyBadge(sanitized);
+  } catch (error) {
+    console.warn('[Mutabaka] Failed to mirror existing badge count during initialization', error);
+  }
 }
 
 export async function setAppBadgeCount(count: number): Promise<void> {
   if (!SUPPORTED_PLATFORM) {
-    lastKnownCount = 0;
     return;
   }
   const sanitized = sanitizeBadgeCount(count);
-  
-  // Always apply badge updates (removed duplicate check to fix badge increment issue)
-  // Previous code: if (sanitized === lastKnownCount) { return; }
-  // This was preventing badge from updating when backend sent same value due to race condition
-  
-  lastKnownCount = sanitized;
   await ensureInitialized();
   await applyBadge(sanitized);
 }
 
 export async function clearAppBadge(): Promise<void> {
-  lastKnownCount = 0;
   if (!SUPPORTED_PLATFORM) {
     return;
   }
@@ -200,16 +196,18 @@ export async function clearAppBadge(): Promise<void> {
   await applyBadge(0);
 }
 
-export function refreshAppBadge(): void {
+export async function getSystemBadgeCount(): Promise<number> {
   if (!SUPPORTED_PLATFORM) {
-    return;
+    return 0;
   }
-  void (async () => {
-    await ensureInitialized();
-    await applyBadge(lastKnownCount);
-  })();
-}
-
-export function getLastBadgeCount(): number {
-  return lastKnownCount;
+  try {
+    const current = await Notifications.getBadgeCountAsync();
+    if (typeof current === 'number' && Number.isFinite(current) && current > 0) {
+      return Math.floor(current);
+    }
+    return 0;
+  } catch (error) {
+    console.warn('[Mutabaka] Failed to query system badge count', error);
+    return 0;
+  }
 }

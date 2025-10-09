@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Optional
 
 from django.db.models import F, OuterRef, Q, Subquery
 from django.utils import timezone
@@ -162,3 +162,57 @@ def send_message_push(
                 "message_id": getattr(message, "id", None),
             },
         )
+
+
+def send_unread_badge_push(
+    user_id: int,
+    unread_count: int,
+    *,
+    reason: str = "badge.update",
+    conversation_id: Optional[int] = None,
+) -> None:
+    """Send a silent badge-refresh push to all of a user's devices.
+
+    This is used when the unread count changes without a new inbound message
+    (for example after marking a conversation as read on another device).
+    """
+    try:
+        normalized_count = int(unread_count)
+    except (TypeError, ValueError):
+        normalized_count = 0
+    if normalized_count < 0:
+        normalized_count = 0
+
+    tokens_by_user = get_active_device_tokens([user_id])
+    tokens = tokens_by_user.get(user_id, [])
+    if not tokens:
+        logger.info("🔕 No active tokens found for badge refresh", extra={"user_id": user_id})
+        return
+
+    payload: Dict[str, Any] = {
+        "type": "badge.update",
+        "unread_count": normalized_count,
+        "reason": reason,
+    }
+    if conversation_id:
+        payload["conversation_id"] = conversation_id
+
+    normalized_payload = _normalize_value(payload)
+    push_batch: List[PushMessage] = []
+    for token in tokens:
+        push_batch.append(
+            PushMessage(
+                to=token,
+                title="",
+                body="",
+                data=normalized_payload,
+                badge=normalized_count,
+                sound=None,
+            )
+        )
+
+    logger.info(
+        "📮 Sending badge refresh push",
+        extra={"user_id": user_id, "unread_count": normalized_count, "tokens": len(push_batch)},
+    )
+    send_push_messages(push_batch)

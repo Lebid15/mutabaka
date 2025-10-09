@@ -182,3 +182,26 @@ export async function removeConversationMember(
     },
   });
 }
+
+interface UnreadCountResponse {
+  unread_count?: number | string | null;
+}
+
+export async function fetchUnreadBadgeCount(): Promise<number | null> {
+  const response = await request<UnreadCountResponse>({
+    path: 'inbox/unread_count',
+    method: 'GET',
+  });
+
+  const raw = response?.unread_count;
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return raw < 0 ? 0 : Math.floor(raw);
+  }
+  if (typeof raw === 'string') {
+    const parsed = Number.parseInt(raw.trim(), 10);
+    if (Number.isFinite(parsed)) {
+      return parsed < 0 ? 0 : parsed;
+    }
+  }
+  return null;
+}

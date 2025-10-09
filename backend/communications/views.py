@@ -25,7 +25,7 @@ from .models import (
     CustomEmoji,
     get_conversation_viewer_ids,
 )
-from .push import send_message_push
+from .push import send_message_push, _total_unread_for_user, send_unread_badge_push
 from .serializers import (
     PublicUserSerializer, ContactRelationSerializer, ConversationSerializer,
     MessageSerializer, TransactionSerializer, PushSubscriptionSerializer,
@@ -1312,22 +1312,37 @@ class ConversationViewSet(viewsets.ModelViewSet):
         try:
             import logging
             logger = logging.getLogger(__name__)
-            logger.info(f"📤 Attempting to send FCM push for attachment message {msg.id} in conversation {conv.id}")
+            logger.info(f"📤 Attempting to schedule FCM push for attachment message {msg.id} in conversation {conv.id}")
             sender_display = getattr(request.user, 'display_name', '') or request.user.username
             preview_text = _normalize_bubble_text(preview_label)[:80] if preview_label else '📎 مرفق'
-            send_message_push(
-                conv,
-                msg,
-                title=sender_display,
-                body=preview_text,
-                data={
-                    'sender_display': sender_display,
-                    'preview': preview_text,
-                    'kind': msg.type,
-                    'attachment': attachment_payload,
-                },
-            )
-            logger.info(f"✅ FCM push sent successfully for attachment message {msg.id}")
+
+            def send_push_after_commit() -> None:
+                try:
+                    logger.info(f"🚀 [PUSH] Sending attachment push for message {msg.id} after commit")
+                    send_message_push(
+                        conv,
+                        msg,
+                        title=sender_display,
+                        body=preview_text,
+                        data={
+                            'sender_display': sender_display,
+                            'preview': preview_text,
+                            'kind': msg.type,
+                            'attachment': attachment_payload,
+                        },
+                    )
+                except Exception as push_error:  # pragma: no cover - logging only
+                    logger.exception(
+                        "❌ send_message_push (attachment) failed",
+                        extra={
+                            "conversation_id": conv.id,
+                            "message_id": msg.id,
+                            "error": str(push_error),
+                        },
+                    )
+
+            transaction.on_commit(send_push_after_commit)
+            logger.info(f"✅ FCM push scheduled after commit for attachment message {msg.id}")
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
@@ -1501,6 +1516,40 @@ class ConversationViewSet(viewsets.ModelViewSet):
                 })
         except Exception:
             pass
+        try:
+            import logging
+
+            def push_after_commit() -> None:
+                try:
+                    refreshed = _total_unread_for_user(request.user.id)
+                    send_unread_badge_push(
+                        request.user.id,
+                        refreshed,
+                        reason="conversation.read",
+                        conversation_id=conv.id,
+                    )
+                except Exception:  # pragma: no cover - logging matter only
+                    logger = logging.getLogger(__name__)
+                    logger.exception(
+                        "Failed to send badge refresh push after conversation.read",
+                        extra={
+                            "conversation_id": conv.id,
+                            "user_id": request.user.id,
+                        },
+                    )
+
+            transaction.on_commit(push_after_commit)
+        except Exception:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.exception(
+                "Failed to schedule badge refresh push after conversation.read",
+                extra={
+                    "conversation_id": conv.id,
+                    "user_id": request.user.id,
+                },
+            )
         return Response({'status': 'ok'})
 
     @action(detail=True, methods=['get'])
@@ -1818,6 +1867,31 @@ from django.urls import reverse
 from .models import NotificationSetting
 from django.contrib.auth.hashers import check_password
 from rest_framework_simplejwt.tokens import RefreshToken
+
+
+class InboxUnreadCountView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            total_unread = _total_unread_for_user(request.user.id)
+        except Exception:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.exception(
+                "Failed to compute unread count for fallback endpoint",
+                extra={"user_id": request.user.id},
+            )
+            total_unread = 0
+
+        try:
+            total = int(total_unread)
+        except (TypeError, ValueError):
+            total = 0
+        if total < 0:
+            total = 0
+        return Response({"unread_count": total})
 
 
 class PushSubscribeView(APIView):

@@ -9,12 +9,13 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppState, type AppStateStatus, I18nManager, Platform, type ViewStyle } from 'react-native';
 import RootNavigator from './src/navigation';
 import { ThemeProvider, useThemeMode } from './src/theme';
-import { initializeAppBadge, refreshAppBadge, setAppBadgeCount, getLastBadgeCount } from './src/lib/appBadge';
+import { initializeAppBadge, setAppBadgeCount, getSystemBadgeCount } from './src/lib/appBadge';
 import { getExpoPushToken, checkPermissionStatus } from './src/lib/pushNotifications';
 import { updateCurrentDevicePushToken } from './src/services/devices';
 import { getAccessToken } from './src/lib/authStorage';
 import { inboxSocketManager } from './src/lib/inboxSocketManager';
 import messaging from '@react-native-firebase/messaging';
+import { fetchUnreadBadgeCount } from './src/services/conversations';
 
 // معالج الإشعارات في الخلفية (FCM Background Handler)
 messaging().setBackgroundMessageHandler(async (remoteMessage) => {
@@ -90,6 +91,49 @@ function extractUnreadCount(notification: Notification | null | undefined): numb
   return null;
 }
 
+async function fetchBadgeFallback(context: string): Promise<number | null> {
+  try {
+    const accessToken = await getAccessToken();
+    if (!accessToken) {
+      console.log(`[Badge] ${context}: no access token, skipping fallback fetch`);
+      return null;
+    }
+    const count = await fetchUnreadBadgeCount();
+    if (typeof count === 'number' && Number.isFinite(count)) {
+      return count;
+    }
+  } catch (error) {
+    console.warn(`[Badge] ${context}: failed to fetch fallback unread count`, error);
+  }
+  return null;
+}
+
+async function synchronizeBadgeFromSource(candidate: unknown, context: string): Promise<number | null> {
+  try {
+    const systemBefore = await getSystemBadgeCount();
+    const sanitized = sanitizeBadgeCandidate(candidate);
+    if (sanitized !== null) {
+      await setAppBadgeCount(sanitized);
+      console.log(`[Badge] ${context}: applied push badge`, sanitized);
+      return sanitized;
+    }
+
+    const fallback = await fetchBadgeFallback(context);
+    if (fallback !== null) {
+      await setAppBadgeCount(fallback);
+      console.log(`[Badge] ${context}: applied fallback badge`, fallback);
+      return fallback;
+    }
+
+    await setAppBadgeCount(systemBefore);
+    console.log(`[Badge] ${context}: retained system badge`, systemBefore);
+    return systemBefore;
+  } catch (error) {
+    console.warn(`[Badge] ${context}: failed to synchronize badge`, error);
+    return null;
+  }
+}
+
 function useNotificationBadgeBridge() {
   const lastPermissionCheckRef = useRef<string>('unknown');
 
@@ -150,6 +194,7 @@ function useNotificationBadgeBridge() {
 
     // فحص عند تحميل التطبيق
     checkAndUpdatePushToken();
+  void synchronizeBadgeFromSource(undefined, 'app.bootstrap');
 
     // معالج الإشعارات الواردة من FCM (Foreground)
     const unsubscribeFCM = messaging().onMessage(async (remoteMessage) => {
@@ -157,58 +202,37 @@ function useNotificationBadgeBridge() {
       console.log('[FCM] Title:', remoteMessage.notification?.title);
       console.log('[FCM] Body:', remoteMessage.notification?.body);
       console.log('[FCM] Data:', JSON.stringify(remoteMessage.data));
-      
-      // عرض الإشعار محلياً باستخدام expo-notifications
+
+  const badgeCandidate = remoteMessage.data?.unread_count ?? remoteMessage.data?.badge;
+
       if (remoteMessage.notification) {
-        const badge = remoteMessage.data?.unread_count;
-        const badgeCount = badge !== undefined ? sanitizeBadgeCandidate(badge) : undefined;
-        
-        console.log('[FCM] � Badge from push:', badge);
-        console.log('[FCM] 🔢 Sanitized badge:', badgeCount);
-        console.log('[FCM] 📊 Current lastKnownCount:', getLastBadgeCount());
-        
-        console.log('[FCM] �🔔 Scheduling local notification with badge:', badgeCount);
-        
+        const badgeCount = sanitizeBadgeCandidate(badgeCandidate);
+        console.log('[FCM] 🏷️ Badge candidate from push:', badgeCandidate);
+        console.log('[FCM] � Sanitized badge:', badgeCount);
+
         await Notifications.scheduleNotificationAsync({
           content: {
             title: remoteMessage.notification.title || 'إشعار جديد',
             body: remoteMessage.notification.body || '',
             data: remoteMessage.data || {},
-            badge: badgeCount !== null && badgeCount !== undefined ? badgeCount : undefined,
+            badge: badgeCount ?? undefined,
             sound: 'default',
           },
           trigger: null,
         });
-        
+
         console.log('[FCM] ✅ Local notification scheduled');
       }
-      
-      // تحديث Badge
-      const badge = remoteMessage.data?.unread_count;
-      if (badge !== undefined) {
-        const count = sanitizeBadgeCandidate(badge);
-        if (count !== null) {
-          console.log('[FCM] 🔢 Updating badge count from', getLastBadgeCount(), 'to:', count);
-          void setAppBadgeCount(count);
-          console.log('[FCM] ✅ Badge count updated, new value:', getLastBadgeCount());
-        }
-      }
+
+      await synchronizeBadgeFromSource(badgeCandidate, 'fcm.foreground');
     });
 
     const receivedSubscription = Notifications.addNotificationReceivedListener((notification) => {
-      const count = extractUnreadCount(notification);
-      if (count !== null) {
-        void setAppBadgeCount(count);
-      } else {
-        refreshAppBadge();
-      }
+      void synchronizeBadgeFromSource(extractUnreadCount(notification), 'expo.notification.received');
     });
 
     const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      const count = extractUnreadCount(response.notification);
-      if (count !== null) {
-        void setAppBadgeCount(count);
-      }
+      void synchronizeBadgeFromSource(extractUnreadCount(response.notification), 'expo.notification.response');
     });
 
     inboxSocketManager.setForeground(AppState.currentState === 'active');
@@ -220,7 +244,7 @@ function useNotificationBadgeBridge() {
       const isActive = status === 'active';
       inboxSocketManager.setForeground(isActive);
       if (isActive) {
-        refreshAppBadge();
+        void synchronizeBadgeFromSource(undefined, 'appstate.active');
         // فحص وتحديث Token عند العودة للتطبيق
         checkAndUpdatePushToken();
         inboxSocketManager.ensureConnection('foreground');

@@ -632,9 +632,11 @@ class Transaction(models.Model):
                     })
                     from .models import get_conversation_viewer_ids  # local import
                     last_msg_iso = chat_message.created_at.isoformat()
+                    from .push import _total_unread_for_user  # local import to avoid circular reference
                     for uid in get_conversation_viewer_ids(conversation):
                         if uid == actor.id:
                             continue
+                        unread_total = _total_unread_for_user(uid)
                         async_to_sync(channel_layer.group_send)(f"user_{uid}", {
                             'type': 'broadcast.message',
                             'data': {
@@ -642,7 +644,7 @@ class Transaction(models.Model):
                                 'conversation_id': conversation.id,
                                 'last_message_preview': preview_body[:80],
                                 'last_message_at': last_msg_iso,
-                                'unread_count': 1,
+                                'unread_count': unread_total,
                             }
                         })
             except Exception:
@@ -723,9 +725,11 @@ class Transaction(models.Model):
                         async_to_sync(channel_layer.group_send)(group, {'type': 'broadcast.message', 'data': payload})
                         from .models import get_conversation_viewer_ids  # local import
                         last_msg_iso = settlement_msg.created_at.isoformat()
+                        from .push import _total_unread_for_user  # local import to avoid circular reference
                         for uid in get_conversation_viewer_ids(conversation):
                             if uid == actor.id:
                                 continue
+                            unread_total = _total_unread_for_user(uid)
                             async_to_sync(channel_layer.group_send)(f"user_{uid}", {
                                 'type': 'broadcast.message',
                                 'data': {
@@ -733,7 +737,7 @@ class Transaction(models.Model):
                                     'conversation_id': conversation.id,
                                     'last_message_preview': settlement_msg.body[:80],
                                     'last_message_at': last_msg_iso,
-                                    'unread_count': 1,
+                                    'unread_count': unread_total,
                                 }
                             })
                 except Exception:

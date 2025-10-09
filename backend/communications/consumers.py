@@ -5,6 +5,7 @@ from django.contrib.auth.models import AnonymousUser
 from .models import Conversation, Message, ConversationMember, TeamMember, get_conversation_viewer_ids, ConversationReadMarker
 from decimal import Decimal
 from .group_registry import add_channel, remove_channel, get_count
+from .push import _total_unread_for_user, send_unread_badge_push
 
 logger = logging.getLogger(__name__)
 
@@ -248,6 +249,24 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                         'last_read_id': last_read_id,
                     }
                     await self.channel_layer.group_send(self.group_name, {'type': 'broadcast.message', 'data': payload})
+                    try:
+                        from asgiref.sync import sync_to_async
+                        unread_total = await sync_to_async(_total_unread_for_user)(user.id)
+                        await sync_to_async(send_unread_badge_push)(
+                            user.id,
+                            unread_total,
+                            reason="chat.read",
+                            conversation_id=int(self.conversation_id),
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Failed to send badge update push after chat.read",
+                            extra={
+                                "event": "badge_refresh_error",
+                                "conversation_id": getattr(self, 'conversation_id', None),
+                                "user_id": getattr(user, 'id', None),
+                            },
+                        )
                     return
                 if data.get('type') in ['text']:
                     msg_type = data.get('type')
@@ -371,9 +390,11 @@ class ConversationConsumer(AsyncWebsocketConsumer):
         # Also notify recipient's inbox channel so their conversation list updates instantly
         try:
             conv = await self.get_conversation()
+            from asgiref.sync import sync_to_async
             for uid in get_conversation_viewer_ids(conv):
                 if uid == user.id:
                     continue
+                unread_total = await sync_to_async(_total_unread_for_user)(uid)
                 inbox_group = f"user_{uid}"
                 await self.channel_layer.group_send(inbox_group, {
                     'type': 'broadcast.message',
@@ -382,11 +403,14 @@ class ConversationConsumer(AsyncWebsocketConsumer):
                         'conversation_id': int(self.conversation_id),
                         'last_message_preview': msg.body[:80],
                         'last_message_at': msg.created_at.isoformat(),
-                        'unread_count': 1,
+                        'unread_count': unread_total,
                     }
                 })
         except Exception:
-            pass
+            logger.exception(
+                "Failed to broadcast inbox.update with accurate unread count",
+                extra={"event": "inbox_unread_error", "conversation_id": getattr(self, 'conversation_id', None)},
+            )
 
     async def broadcast_message(self, event):
         await self.send(text_data=json.dumps(event['data']))
