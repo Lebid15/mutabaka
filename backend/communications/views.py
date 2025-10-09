@@ -854,6 +854,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                 initial_delivery_status = 1
                 initial_status = 'delivered'
                 initial_read_at = None
+                recipient_in_conv = False
                 try:
                     from .group_registry import get_count
                     recipient_id = conv.user_b_id if request.user.id == conv.user_a_id else conv.user_a_id
@@ -1034,33 +1035,37 @@ class ConversationViewSet(viewsets.ModelViewSet):
         try:
             import logging
             logger = logging.getLogger(__name__)
-            logger.info(f"📤 Scheduling FCM push for message {msg.id} in conversation {conv.id}")
-            sender_display = getattr(request.user, 'display_name', '') or request.user.username
-            preview_text = _normalize_bubble_text(msg.body)[:80] if msg.body else (msg.attachment_name or '')[:80]
             
-            def send_push_after_commit():
-                try:
-                    logger.info(f"🚀 [PUSH] Sending FCM push for message {msg.id} (after commit)")
-                    send_message_push(
-                        conv,
-                        msg,
-                        title=sender_display,
-                        body=preview_text,
-                        data={
-                            'sender_display': sender_display,
-                            'preview': preview_text,
-                            'kind': msg.type,
-                        },
-                    )
-                    logger.info(f"✅ [PUSH] FCM push sent successfully for message {msg.id}")
-                except Exception as push_error:
-                    logger.exception(f"❌ [PUSH] send_message_push failed: {push_error}")
-            
-            transaction.on_commit(send_push_after_commit)
+            if recipient_in_conv:
+                logger.info(f"⏭️ [PUSH] Skipping FCM push for message {msg.id} - recipient is viewing conversation")
+            else:
+                logger.info(f"📤 [PUSH] Scheduling FCM push for message {msg.id} in conversation {conv.id}")
+                sender_display = getattr(request.user, 'display_name', '') or request.user.username
+                preview_text = _normalize_bubble_text(msg.body)[:80] if msg.body else (msg.attachment_name or '')[:80]
+                
+                def send_push_after_commit():
+                    try:
+                        logger.info(f"🚀 [PUSH] Sending FCM push for message {msg.id} (after commit)")
+                        send_message_push(
+                            conv,
+                            msg,
+                            title=sender_display,
+                            body=preview_text,
+                            data={
+                                'sender_display': sender_display,
+                                'preview': preview_text,
+                                'kind': msg.type,
+                            },
+                        )
+                        logger.info(f"✅ [PUSH] FCM push sent successfully for message {msg.id}")
+                    except Exception as push_error:
+                        logger.exception(f"❌ [PUSH] send_message_push failed: {push_error}")
+                
+                transaction.on_commit(send_push_after_commit)
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.exception(f"❌ Failed to schedule push: {e}")
+            logger.exception(f"❌ [PUSH] Failed to schedule push: {e}")
         return Response(MessageSerializer(msg, context={'request': request}).data)
 
     def _validate_attachment(self, file_obj):
@@ -1213,6 +1218,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                 except Exception:
                     pass
                 # Connectivity-based status
+                recipient_in_conv = False
                 try:
                     from .group_registry import get_count
                     recipient_id = conv.user_b_id if request.user.id == conv.user_a_id else conv.user_a_id
@@ -1223,12 +1229,16 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     if recipient_in_conv:
                         read_now = timezone.now()
                         Message.objects.filter(id=msg.id).update(delivery_status=dj_models.Case(
-                            dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)), default=dj_models.F('delivery_status')
+                            dj_models.When(delivery_status__lt=2, then=dj_models.Value(2)), 
+                            default=dj_models.F('delivery_status'),
+                            output_field=dj_models.PositiveSmallIntegerField()
                         ), read_at=read_now, delivered_at=read_now)
                         async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'delivery_status': 2, 'status':'read', 'read_at': read_now.isoformat()}})
                     elif recipient_online:
                         Message.objects.filter(id=msg.id).update(delivery_status=dj_models.Case(
-                            dj_models.When(delivery_status__lt=1, then=dj_models.Value(1)), default=dj_models.F('delivery_status')
+                            dj_models.When(delivery_status__lt=1, then=dj_models.Value(1)), 
+                            default=dj_models.F('delivery_status'),
+                            output_field=dj_models.PositiveSmallIntegerField()
                         ), delivered_at=timezone.now())
                         async_to_sync(channel_layer.group_send)(group, {'type':'broadcast.message','data': {'type':'message.status','id': msg.id,'delivery_status': 1, 'status':'delivered'}})
                 except Exception:
@@ -1329,26 +1339,30 @@ class ConversationViewSet(viewsets.ModelViewSet):
         try:
             import logging
             logger = logging.getLogger(__name__)
-            logger.info(f"📤 Attempting to send FCM push for attachment message {msg.id} in conversation {conv.id}")
-            sender_display = getattr(request.user, 'display_name', '') or request.user.username
-            preview_text = _normalize_bubble_text(preview_label)[:80] if preview_label else '📎 مرفق'
-            send_message_push(
-                conv,
-                msg,
-                title=sender_display,
-                body=preview_text,
-                data={
-                    'sender_display': sender_display,
-                    'preview': preview_text,
-                    'kind': msg.type,
-                    'attachment': attachment_payload,
-                },
-            )
-            logger.info(f"✅ FCM push sent successfully for attachment message {msg.id}")
+            
+            if recipient_in_conv:
+                logger.info(f"⏭️ [PUSH] Skipping FCM push for attachment message {msg.id} - recipient is viewing conversation")
+            else:
+                logger.info(f"📤 [PUSH] Attempting to send FCM push for attachment message {msg.id} in conversation {conv.id}")
+                sender_display = getattr(request.user, 'display_name', '') or request.user.username
+                preview_text = _normalize_bubble_text(preview_label)[:80] if preview_label else '📎 مرفق'
+                send_message_push(
+                    conv,
+                    msg,
+                    title=sender_display,
+                    body=preview_text,
+                    data={
+                        'sender_display': sender_display,
+                        'preview': preview_text,
+                        'kind': msg.type,
+                        'attachment': attachment_payload,
+                    },
+                )
+                logger.info(f"✅ [PUSH] FCM push sent successfully for attachment message {msg.id}")
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.exception(f"❌ send_message_push (attachment) failed: {e}")
+            logger.exception(f"❌ [PUSH] send_message_push (attachment) failed: {e}")
         return Response(MessageSerializer(msg, context={'request': request}).data)
 
     @action(detail=True, methods=['post'])
