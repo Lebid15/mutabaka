@@ -49,7 +49,7 @@ function rememberBadgeUpdate(value: number, source: BadgeUpdateSource) {
   badgeState.lastUpdatedAt = Date.now();
 }
 
-// معالج الإشعارات في الخلفية (FCM Background Handler)
+// معالج  ناجحة الإشعارات في الخلفية (FCM Background Handler)
 setAppForegroundState(AppState.currentState === 'active');
 
 messaging().setBackgroundMessageHandler(async (remoteMessage) => {
