@@ -28,7 +28,12 @@ import {
   extractNotificationIdsFromData,
   registerExpoNotification,
 } from './src/lib/notificationRegistry';
-import { isMessagePushPayload, presentConversationNotification } from './src/lib/conversationNotifications';
+import {
+  clearAllConversationNotificationHistory,
+  clearConversationNotificationHistory,
+  isMessagePushPayload,
+  presentConversationNotification,
+} from './src/lib/conversationNotifications';
 
 type BadgeUpdateSource = 'push' | 'fallback' | 'system';
 
@@ -193,6 +198,7 @@ async function handleBadgeResetPayload(data: Record<string, unknown>, source: st
       expectedIds,
       fallbackToAll: !expectedIds,
     });
+    await clearConversationNotificationHistory(targetConversation);
     return;
   }
 
@@ -202,6 +208,7 @@ async function handleBadgeResetPayload(data: Record<string, unknown>, source: st
   }
 
   await dismissAllNotifications(reason);
+  await clearAllConversationNotificationHistory();
 }
 
 function sanitizeBadgeCandidate(value: unknown): number | null {
@@ -427,6 +434,7 @@ function useNotificationBadgeBridge() {
           expectedIds: identifier ? [identifier] : undefined,
           fallbackToAll: true,
         });
+        void clearConversationNotificationHistory(conversationNumeric);
       } else if (identifier) {
         void dismissNotificationIds([identifier], `notification.response.${source}`, null);
       }
@@ -527,7 +535,10 @@ function useNotificationBadgeBridge() {
     setAppForegroundState(initialActive);
     inboxSocketManager.setForeground(initialActive);
     if (initialActive) {
-      void dismissAllNotifications('app.bootstrap.active');
+      void (async () => {
+        await dismissAllNotifications('app.bootstrap.active');
+        await clearAllConversationNotificationHistory();
+      })();
       inboxSocketManager.ensureConnection('foreground');
     }
 
@@ -539,14 +550,17 @@ function useNotificationBadgeBridge() {
         void synchronizeBadgeFromSource(undefined, 'appstate.active');
         // فحص وتحديث Token عند العودة للتطبيق
         checkAndUpdatePushToken();
-        void dismissAllNotifications('appstate.active');
+        void (async () => {
+          await dismissAllNotifications('appstate.active');
+          await clearAllConversationNotificationHistory();
+        })();
         inboxSocketManager.ensureConnection('foreground');
       }
     });
 
     return () => {
-      receivedSubscription.remove();
-  responseSubscription.remove();
+    receivedSubscription.remove();
+    responseSubscription.remove();
       appStateSubscription.remove();
       unsubscribeFCM(); // إلغاء الاشتراك في FCM
       inboxSocketManager.setForeground(false);

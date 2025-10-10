@@ -38,6 +38,7 @@ import { useThemeMode } from '../theme';
 import { HttpError } from '../lib/httpClient';
 import { environment } from '../config/environment';
 import { getAccessToken } from '../lib/authStorage';
+import { clearConversationNotificationHistory } from '../lib/conversationNotifications';
 import {
   fetchConversation,
   fetchNetBalance,
@@ -1285,6 +1286,9 @@ export default function ChatScreen() {
       }).catch((error) => {
         console.warn('[Mutabaka] Failed to dismiss notifications after queueRead', error);
       });
+      void clearConversationNotificationHistory(numericConversationId as number).catch((error) => {
+        console.warn('[Mutabaka] Failed to clear conversation notification history after queueRead', error);
+      });
     }
   }, [flushPendingRead, numericConversationId]);
 
@@ -1888,6 +1892,9 @@ export default function ChatScreen() {
           fallbackToAll: AppState.currentState === 'active',
         }).catch((error) => {
           console.warn('[Mutabaka] Failed to dismiss notifications on conversation focus', error);
+        });
+        void clearConversationNotificationHistory(conversationNumeric).catch((error) => {
+          console.warn('[Mutabaka] Failed to clear notification history on conversation focus', error);
         });
       }
 

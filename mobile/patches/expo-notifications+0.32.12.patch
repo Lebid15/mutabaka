@@ -1,0 +1,89 @@
+diff --git a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt
+index 610d303..cd0f25e 100644
+--- a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt
++++ b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt
+@@ -11,6 +11,8 @@ import android.os.Parcel
+ import android.provider.Settings
+ import android.util.Log
+ import androidx.core.app.NotificationCompat
++import org.json.JSONArray
++import org.json.JSONObject
+ import androidx.core.app.RemoteInput
+ import expo.modules.notifications.notifications.SoundResolver
+ import expo.modules.notifications.notifications.enums.NotificationPriority
+@@ -102,11 +104,27 @@ open class ExpoNotificationBuilder(
+ 
+     // see "Notification anatomy" https://developer.android.com/develop/ui/views/notifications#Templates
+     builder.setContentTitle(content.title)
+-    builder.setContentText(content.text)
+     builder.setSubText(content.subText)
+-    // Sets the text/contentText as the bigText to allow the notification to be expanded and the
+-    // entire text to be viewed.
+-    builder.setStyle(NotificationCompat.BigTextStyle().bigText(content.text))
++
++    val collapsedOverride = content.body?.optString("notification_collapsed_body", null)
++    val bigTextOverride = content.body?.optString("notification_big_text", null)
++    val collapsedText = collapsedOverride?.takeUnless { it.isEmpty() } ?: content.text
++    builder.setContentText(collapsedText)
++
++    val history = extractHistoryMessages(content.body)
++
++    val bigText = bigTextOverride?.takeUnless { it.isEmpty() } ?: content.text ?: collapsedText
++    val appliedInboxStyle = if (history.size > 1) {
++      applyInboxStyle(builder, history, content.title, bigText)
++    } else {
++      false
++    }
++
++    if (!appliedInboxStyle) {
++      builder.setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
++    }
++
++    builder.setContentText(collapsedText)
+ 
+     color?.let { builder.color = it.toInt() }
+     notificationContent.badgeCount?.toInt()?.let { builder.setNumber(it) }
+@@ -406,4 +424,43 @@ open class ExpoNotificationBuilder(
+     const val EXTRAS_MARSHALLED_NOTIFICATION_REQUEST_KEY: String = "expo.notification_request"
+     const val EXTRAS_BODY_KEY = "body"
+   }
++
++  private fun extractHistoryMessages(dataBody: JSONObject?): List<String> {
++    if (dataBody == null) {
++      return emptyList()
++    }
++    val historyRaw = dataBody.opt("notification_messages")
++    if (historyRaw !is JSONArray) {
++      return emptyList()
++    }
++    val messages = mutableListOf<String>()
++    for (index in 0 until historyRaw.length()) {
++      val candidate = historyRaw.optString(index, null)
++      if (!candidate.isNullOrBlank()) {
++        messages.add(candidate)
++      }
++    }
++    return messages
++  }
++
++  private fun applyInboxStyle(
++    builder: NotificationCompat.Builder,
++    history: List<String>,
++    conversationTitle: String?,
++    bigText: String?
++  ): Boolean {
++    return runCatching {
++      val inboxStyle = NotificationCompat.InboxStyle()
++
++      history.forEach { message ->
++        inboxStyle.addLine(message)
++      }
++
++      if (!conversationTitle.isNullOrBlank()) {
++        inboxStyle.setBigContentTitle(conversationTitle)
++      }
++
++      builder.setStyle(inboxStyle)
++    }.isSuccess
++  }
+ }
