@@ -47,7 +47,39 @@ export interface UploadAttachmentAsset {
   size?: number | null;
 }
 
-export async function fetchMessages(conversationId: number): Promise<MessagesResponse> {
+export async function fetchMessages(
+  conversationId: number,
+  options?: { before?: number; limit?: number }
+): Promise<MessagesResponse> {
+  // إذا كان هناك before parameter، استخدم endpoint المخصص للمحادثة
+  if (options?.before !== undefined || options?.limit !== undefined) {
+    const query: Record<string, string | number> = {};
+    
+    if (options?.before !== undefined) {
+      query.before = options.before;
+    }
+    
+    if (options?.limit !== undefined) {
+      query.limit = options.limit;
+    }
+    
+    // استخدام endpoint المحادثة الذي يدعم before parameter
+    const response = await request<MessageDto[]>({
+      path: `conversations/${conversationId}/messages/`,
+      method: 'GET',
+      query,
+    });
+    
+    // تحويل النتيجة إلى نفس الشكل المتوقع
+    return {
+      count: Array.isArray(response) ? response.length : 0,
+      next: null,
+      previous: null,
+      results: Array.isArray(response) ? response : [],
+    };
+  }
+  
+  // الحالة العادية - استخدام endpoint القديم
   return request<MessagesResponse>({
     path: 'messages/',
     method: 'GET',

@@ -1017,6 +1017,8 @@ export default function ChatScreen() {
   const [peerUser, setPeerUser] = useState<ConversationDto['user_a'] | null>(null);
   const [conversationMeta, setConversationMeta] = useState<{ userAId: number; userBId: number } | null>(null);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [loadingOlderMessages, setLoadingOlderMessages] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusBanner, setStatusBanner] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   const [composerHeight, setComposerHeight] = useState(0);
@@ -1749,6 +1751,8 @@ export default function ChatScreen() {
       setLoadingMessages(true);
       setErrorMessage(null);
       setBalancesError(false);
+      setHasMoreMessages(true);
+      setLoadingOlderMessages(false);
       let netBalanceErrored = false;
       const [me, conversationData, messagesResponse, netBalance] = await Promise.all([
         fetchCurrentUser(),
@@ -1824,6 +1828,12 @@ export default function ChatScreen() {
         };
       });
       setRemoteMessages(normalizedMessages);
+      
+      // Check if we got less than the default limit (200), meaning no more messages
+      if (normalizedMessages.length < 200) {
+        setHasMoreMessages(false);
+      }
+      
       if (sortedMessages.length) {
         const inboundMax = sortedMessages.reduce((max, msg) => {
           if (msg.sender?.id && msg.sender.id !== me.id) {
@@ -1873,6 +1883,72 @@ export default function ChatScreen() {
       }
     }
   }, [numericConversationId, queueRead, shouldUseBackend]);
+
+  // دالة تحميل الرسائل القديمة (Infinite Scroll)
+  const loadOlderMessages = useCallback(async () => {
+    // تجنب التحميل المتكرر أو إذا لا توجد رسائل متبقية
+    if (!shouldUseBackend || loadingOlderMessages || !hasMoreMessages || !remoteMessages.length) {
+      return;
+    }
+
+    try {
+      setLoadingOlderMessages(true);
+      
+      // الحصول على أقدم رسالة حالية
+      const oldestMessage = remoteMessages[0];
+      if (!oldestMessage) {
+        return;
+      }
+
+      const oldestId = oldestMessage.id;
+      
+      // طلب 50 رسالة أقدم من الرسالة الحالية
+      const response = await fetchMessages(numericConversationId, { before: oldestId, limit: 50 });
+      
+      if (!isMountedRef.current) {
+        return;
+      }
+
+      const olderMessages = (response.results || [])
+        .filter((msg) => msg.conversation === numericConversationId)
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+      // إذا لم نحصل على رسائل، فلا توجد رسائل أقدم
+      if (olderMessages.length === 0) {
+        setHasMoreMessages(false);
+        return;
+      }
+
+      // تطبيع حالة التسليم للرسائل الجديدة
+      const normalizedOlder = olderMessages.map((msg) => {
+        const normalized = normalizeDeliveryStatus(
+          msg.delivery_status,
+          msg.read_at ?? null,
+          msg.status ?? null,
+        );
+        const nextStatus: MessageDto['status'] = normalized.label === 'read' ? 'read' : 'delivered';
+        return {
+          ...msg,
+          delivery_status: normalized.code,
+          status: nextStatus,
+        };
+      });
+
+      // إضافة الرسائل القديمة في بداية القائمة
+      setRemoteMessages((prev) => [...normalizedOlder, ...prev]);
+      
+      // إذا حصلنا على أقل من 50 رسالة، فهذا يعني أننا وصلنا للنهاية
+      if (olderMessages.length < 50) {
+        setHasMoreMessages(false);
+      }
+    } catch (error) {
+      console.warn('[Mutabaka] Failed to load older messages', error);
+    } finally {
+      if (isMountedRef.current) {
+        setLoadingOlderMessages(false);
+      }
+    }
+  }, [shouldUseBackend, loadingOlderMessages, hasMoreMessages, remoteMessages, numericConversationId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -3972,6 +4048,21 @@ export default function ChatScreen() {
                 onRefresh={loadConversationData}
                 onScroll={handleListScroll}
                 scrollEventThrottle={16}
+                onEndReached={loadOlderMessages}
+                onEndReachedThreshold={0.5}
+                ListFooterComponent={
+                  loadingOlderMessages ? (
+                    <View style={{ padding: 16, alignItems: 'center' }}>
+                      <ActivityIndicator size="small" color={tokens.textMuted} />
+                    </View>
+                  ) : !hasMoreMessages && listData.length > 0 ? (
+                    <View style={{ padding: 16, alignItems: 'center' }}>
+                      <Text style={{ color: tokens.textMuted, fontSize: 12 }}>
+                        لا توجد رسائل أقدم
+                      </Text>
+                    </View>
+                  ) : null
+                }
                 onScrollToIndexFailed={({ index }) => {
                   requestAnimationFrame(() => {
                     listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
