@@ -19,7 +19,7 @@
       "icon": "./assets/iosimage.png"
     },
     "android": {
-      "versionCode": 27,
+      "versionCode": 28,
       "icon": "./assets/iosimage.png",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
